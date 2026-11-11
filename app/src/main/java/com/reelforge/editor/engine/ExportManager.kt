@@ -194,6 +194,20 @@ object ExportManager {
         val placements = mutableListOf<LayerPlacement>()
         if (layered) {
             val blank = Uri.fromFile(MediaUtils.blankImage(context))
+            // Track 0 is a hidden blank picture lasting the whole video. Media3 takes the output
+            // frame timing and the audio set-up from track 0, and a track that starts with a
+            // picture fails if a slower-starting video track comes before it, so a picture that
+            // loads instantly goes first.
+            sequences += EditedMediaItemSequence(
+                listOf(
+                    EditedMediaItem.Builder(
+                        MediaItem.Builder().setUri(blank)
+                            .setMimeType(MimeTypes.IMAGE_PNG)
+                            .setImageDurationMs(total)
+                            .build()
+                    ).setDurationUs(total * 1000).setFrameRate(fps).build()
+                )
+            )
             // The layer added last is drawn on top.
             videoLayers.asReversed().forEach { layer ->
                 val (sequence, placement) = buildVideoLayerSequence(layer, total, blank, height, fps)
