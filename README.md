@@ -12,7 +12,11 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Per clip: speed (0.25x–4x), volume (0–200%) and mute, rotate, mirror, zoom, fit or fill
   the frame, opacity, 8 colour filters, brightness / contrast / saturation, fade in / fade out,
   dip-to-black transition to the next clip.
-- Text overlays: colour, font, background box, size, position, start and end time.
+- Text overlays: 13 system fonts plus imported font files, bold / italic, alignment, any
+  colour (palette + hue slider), size, opacity, rotation, outline and box colours, position,
+  start and end time. Tap text or a layer on the video to edit it.
+- Edit, duplicate, delete and delete-all controls for text, layers, sounds and clips;
+  rename and delete projects.
 - Text outline and entry / exit animations (fade, slide, pop) for text, stickers and layers.
 - Emoji stickers.
 - Image layers (picture-in-picture photos, logos, watermarks) with size, position, opacity,

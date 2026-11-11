@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,6 +46,8 @@ import com.reelforge.editor.util.MediaUtils
 @Composable
 fun HomeScreen(vm: EditorViewModel) {
     var showNew by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<String?>(null) }
+    var newName by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("ReelForge") }) },
@@ -84,6 +87,9 @@ fun HomeScreen(vm: EditorViewModel) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            IconButton(onClick = { renaming = p.id; newName = p.name }) {
+                                Icon(Icons.Default.Edit, contentDescription = "Rename project")
+                            }
                             IconButton(onClick = { vm.deleteProject(p.id) }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete project")
                             }
@@ -92,6 +98,24 @@ fun HomeScreen(vm: EditorViewModel) {
                 }
             }
         }
+    }
+
+    val renameTarget = vm.projects.firstOrNull { it.id == renaming }
+    if (renameTarget != null) {
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename project") },
+            text = {
+                OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.renameProject(renameTarget, newName)
+                    renaming = null
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
+        )
     }
 
     if (showNew) {

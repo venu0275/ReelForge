@@ -12,6 +12,7 @@ import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TextItem
 import org.json.JSONArray
@@ -54,6 +55,7 @@ class ProjectRepository(context: Context) {
                     put("x", l.x.toDouble())
                     put("y", l.y.toDouble())
                     put("opacity", l.opacity.toDouble())
+                    put("rotation", l.rotation.toDouble())
                     put("startMs", l.startMs)
                     put("endMs", l.endMs)
                     put("animIn", l.animIn.name)
@@ -128,6 +130,13 @@ class ProjectRepository(context: Context) {
         put("animIn", t.animIn.name)
         put("animOut", t.animOut.name)
         t.fontPath?.let { put("fontPath", it) }
+        put("bold", t.bold)
+        put("italic", t.italic)
+        put("align", t.align.name)
+        put("opacity", t.opacity.toDouble())
+        put("rotation", t.rotation.toDouble())
+        put("outlineColor", t.outlineColor)
+        put("boxColor", t.boxColor)
         put("moving", t.moving)
         put("x2", t.x2.toDouble())
         put("y2", t.y2.toDouble())
@@ -187,6 +196,14 @@ class ProjectRepository(context: Context) {
                 animIn = anim(t.optString("animIn")),
                 animOut = anim(t.optString("animOut")),
                 fontPath = t.optString("fontPath").ifBlank { null },
+                bold = t.optBoolean("bold", true),
+                italic = t.optBoolean("italic", false),
+                align = runCatching { TextAlignH.valueOf(t.optString("align")) }
+                    .getOrDefault(TextAlignH.CENTER),
+                opacity = t.optDouble("opacity", 1.0).toFloat(),
+                rotation = t.optDouble("rotation", 0.0).toFloat(),
+                outlineColor = t.optInt("outlineColor", 0xFF000000.toInt()),
+                boxColor = t.optInt("boxColor", 0x99000000.toInt()),
                 moving = t.optBoolean("moving", false),
                 x2 = t.optDouble("x2", 0.0).toFloat(),
                 y2 = t.optDouble("y2", 0.0).toFloat(),
@@ -211,6 +228,7 @@ class ProjectRepository(context: Context) {
                 x = l.optDouble("x", 0.0).toFloat(),
                 y = l.optDouble("y", 0.0).toFloat(),
                 opacity = l.optDouble("opacity", 1.0).toFloat(),
+                rotation = l.optDouble("rotation", 0.0).toFloat(),
                 startMs = l.optLong("startMs", 0),
                 endMs = l.optLong("endMs", 3000),
                 animIn = anim(l.optString("animIn")),

@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -44,12 +45,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.engine.overlayAnim
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.ClipType
+import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
-import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
 import java.io.File
@@ -94,6 +96,8 @@ fun EditorScreen(vm: EditorViewModel) {
     ) { granted ->
         if (granted) vm.startRecording() else vm.message = "Microphone permission is needed to record"
     }
+    var editingTextId by remember { mutableStateOf<String?>(null) }
+    var editingLayerId by remember { mutableStateOf<String?>(null) }
     var fontTarget by remember { mutableStateOf<String?>(null) }
     val pickFont = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -142,7 +146,17 @@ fun EditorScreen(vm: EditorViewModel) {
             ) { Text("Export") }
         }
 
-        PreviewArea(vm, project, Modifier.weight(1f))
+        PreviewArea(
+            vm, project, Modifier.weight(1f),
+            onEditText = { id ->
+                editingTextId = id
+                panel = Panel.TEXT
+            },
+            onEditLayer = { id ->
+                editingLayerId = id
+                panel = Panel.LAYER
+            },
+        )
 
         vm.message?.let { msg ->
             Text(
@@ -179,6 +193,7 @@ fun EditorScreen(vm: EditorViewModel) {
             Column(
                 Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 24.dp)
             ) {
@@ -190,14 +205,21 @@ fun EditorScreen(vm: EditorViewModel) {
                     Panel.FILTER -> clip?.let { FilterPanel(vm, it) }
                     Panel.ADJUST -> clip?.let { AdjustPanel(vm, it) }
                     Panel.FADE -> clip?.let { FadePanel(vm, it) }
-                    Panel.TEXT -> TextPanel(vm, project) { textId ->
-                        fontTarget = textId
-                        pickFont.launch(arrayOf("*/*"))
-                    }
+                    Panel.TEXT -> TextPanel(
+                        vm, project,
+                        editingId = editingTextId,
+                        onEditing = { editingTextId = it },
+                        pickFont = { textId ->
+                            fontTarget = textId
+                            pickFont.launch(arrayOf("*/*"))
+                        },
+                    )
                     Panel.BACKGROUND -> BackgroundPanel(vm, project)
                     Panel.DRAW -> Unit
                     Panel.LAYER -> LayerPanel(
                         vm, project,
+                        editingId = editingLayerId,
+                        onEditing = { editingLayerId = it },
                         pickImage = {
                             pickLayer.launch(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
@@ -221,7 +243,13 @@ fun EditorScreen(vm: EditorViewModel) {
 // ------------------------------------------------------------------ preview
 
 @Composable
-private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifier) {
+private fun PreviewArea(
+    vm: EditorViewModel,
+    project: Project,
+    modifier: Modifier,
+    onEditText: (String) -> Unit,
+    onEditLayer: (String) -> Unit,
+) {
     val location = project.locate(vm.playheadMs)
     val current = location?.let { project.clips[it.first] }
     val local = location?.second ?: 0L
@@ -335,77 +363,45 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                                         scaleX = anim.scale,
                                         scaleY = anim.scale,
                                         translationY = -anim.dy * frameHeightPx / 2f,
-                                    ),
+                                        rotationZ = -layer.rotation,
+                                    )
+                                    .clickable { onEditLayer(layer.id) },
                             )
                         }
                     }
                 }
 
+            // Text is drawn from the same bitmap the export uses, so it looks identical.
             project.texts
                 .filter { now >= it.startMs && now < it.endMs }
                 .forEach { t ->
                     key(t.id) {
                         val anim = overlayAnim(now - t.startMs, t.endMs - t.startMs, t.animIn, t.animOut)
-                        val fontSize = with(density) { (frameHeight * t.size).toSp() }
-                        val custom = remember(t.fontPath) {
-                            t.fontPath?.let { path ->
-                                runCatching { FontFamily(Font(File(path))) }.getOrNull()
-                            }
+                        val look = t.copy(
+                            x = 0f, y = 0f, x2 = 0f, y2 = 0f, startMs = 0, endMs = 0, moving = false,
+                            animIn = OverlayAnim.NONE, animOut = OverlayAnim.NONE,
+                            opacity = 1f, rotation = 0f,
+                        )
+                        val heightPx = frameHeightPx.toInt().coerceAtLeast(16)
+                        val bitmap = remember(look, heightPx) {
+                            EffectFactory.renderText(look, heightPx).asImageBitmap()
                         }
-                        val family = custom ?: when (t.font) {
-                            TextFont.SANS -> FontFamily.SansSerif
-                            TextFont.SERIF -> FontFamily.Serif
-                            TextFont.MONO -> FontFamily.Monospace
-                        }
-                        Box(
-                            Modifier
+                        Image(
+                            bitmap = bitmap,
+                            contentDescription = t.text,
+                            modifier = Modifier
                                 .align(
                                     glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
                                 )
                                 .graphicsLayer(
-                                    alpha = anim.alpha,
+                                    alpha = (anim.alpha * t.opacity).coerceIn(0f, 1f),
                                     scaleX = anim.scale,
                                     scaleY = anim.scale,
                                     translationY = -anim.dy * frameHeightPx / 2f,
+                                    rotationZ = -t.rotation,
                                 )
-                                .then(
-                                    if (t.background) {
-                                        Modifier
-                                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                                    } else Modifier
-                                )
-                        ) {
-                            if (t.outline) {
-                                Text(
-                                    t.text,
-                                    color = Color.Black,
-                                    fontSize = fontSize,
-                                    lineHeight = fontSize * 1.2f,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = family,
-                                    textAlign = TextAlign.Center,
-                                    style = TextStyle(
-                                        drawStyle = Stroke(
-                                            width = frameHeightPx * t.size * 0.12f,
-                                            join = StrokeJoin.Round,
-                                        )
-                                    ),
-                                )
-                            }
-                            Text(
-                                t.text,
-                                color = Color(t.color),
-                                fontSize = fontSize,
-                                lineHeight = fontSize * 1.2f,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = family,
-                                textAlign = TextAlign.Center,
-                                style = TextStyle(
-                                    shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(0f, 2f), 6f)
-                                ),
-                            )
-                        }
+                                .clickable { onEditText(t.id) },
+                        )
                     }
                 }
         }
@@ -562,6 +558,7 @@ private fun Tools(
         ToolButton("◀ Move", hasClip) { vm.moveClip(id, -1) }
         ToolButton("Move ▶", hasClip) { vm.moveClip(id, 1) }
         ToolButton("Delete", hasClip) { vm.deleteClip(id) }
+        ToolButton("Delete all clips", project.clips.isNotEmpty()) { vm.deleteAllClips() }
     }
 }
 

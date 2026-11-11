@@ -36,7 +36,7 @@ import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
-import com.reelforge.editor.model.TextFont
+import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.TransitionStyle
 import java.nio.ByteBuffer
@@ -131,6 +131,7 @@ class TimedBitmapOverlay(
     private val animOut: OverlayAnim,
     private val x2: Float = x,
     private val y2: Float = y,
+    private val rotation: Float = 0f,
 ) : BitmapOverlay() {
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
     private var baseUs = C.TIME_UNSET
@@ -156,6 +157,7 @@ class TimedBitmapOverlay(
             .setBackgroundFrameAnchor(px, (py + anim.dy).coerceIn(-1f, 1f))
             .setOverlayFrameAnchor(px, py)
             .setScale(anim.scale, anim.scale)
+            .setRotationDegrees(rotation)
             .setAlphaScale((anim.alpha * opacity).coerceIn(0f, 1f))
             .build()
     }
@@ -435,21 +437,33 @@ object EffectFactory {
                 "${project.background}|${project.backgroundColor}|${project.aspect}"
             } else "-"
 
-    /** Renders a text item to a transparent bitmap sized for a frame [frameHeight] pixels tall. */
+    /** The typeface for a text item: an imported font file, or a system family with its style. */
+    fun typeface(item: TextItem): Typeface {
+        val style = when {
+            item.bold && item.italic -> Typeface.BOLD_ITALIC
+            item.bold -> Typeface.BOLD
+            item.italic -> Typeface.ITALIC
+            else -> Typeface.NORMAL
+        }
+        val custom = item.fontPath?.let { runCatching { Typeface.createFromFile(it) }.getOrNull() }
+        return if (custom != null) Typeface.create(custom, style)
+        else Typeface.create(item.font.family, style)
+    }
+
+    /**
+     * Renders a text item to a transparent bitmap sized for a frame [frameHeight] pixels tall.
+     * The preview and the export both draw this bitmap, so they look the same.
+     */
     fun renderText(item: TextItem, frameHeight: Int): Bitmap {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = item.color
             textSize = max(8f, item.size * frameHeight)
-            val custom = item.fontPath?.let { runCatching { Typeface.createFromFile(it) }.getOrNull() }
-            typeface = custom ?: Typeface.create(
-                when (item.font) {
-                    TextFont.SANS -> Typeface.SANS_SERIF
-                    TextFont.SERIF -> Typeface.SERIF
-                    TextFont.MONO -> Typeface.MONOSPACE
-                },
-                Typeface.BOLD,
-            )
-            textAlign = Paint.Align.CENTER
+            typeface = typeface(item)
+            textAlign = when (item.align) {
+                TextAlignH.LEFT -> Paint.Align.LEFT
+                TextAlignH.CENTER -> Paint.Align.CENTER
+                TextAlignH.RIGHT -> Paint.Align.RIGHT
+            }
             setShadowLayer(textSize * 0.08f, 0f, textSize * 0.04f, 0xB0000000.toInt())
         }
         val lines = item.text.ifBlank { " " }.split("\n")
@@ -460,22 +474,27 @@ object EffectFactory {
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         if (item.background) {
-            val box = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x99000000.toInt() }
+            val box = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = item.boxColor }
             canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), pad, pad, box)
         }
-        var baseline = pad - paint.fontMetrics.ascent
         val stroke = if (item.outline) {
             Paint(paint).apply {
                 clearShadowLayer()
                 style = Paint.Style.STROKE
                 strokeJoin = Paint.Join.ROUND
                 strokeWidth = textSize * 0.12f
-                color = 0xFF000000.toInt()
+                color = item.outlineColor
             }
         } else null
+        val x = when (item.align) {
+            TextAlignH.LEFT -> pad
+            TextAlignH.CENTER -> width / 2f
+            TextAlignH.RIGHT -> width - pad
+        }
+        var baseline = pad - paint.fontMetrics.ascent
         for (line in lines) {
-            if (stroke != null) canvas.drawText(line, width / 2f, baseline, stroke)
-            canvas.drawText(line, width / 2f, baseline, paint)
+            if (stroke != null) canvas.drawText(line, x, baseline, stroke)
+            canvas.drawText(line, x, baseline, paint)
             baseline += lineHeight
         }
         return bitmap

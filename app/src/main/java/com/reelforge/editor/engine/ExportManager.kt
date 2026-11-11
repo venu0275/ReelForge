@@ -91,6 +91,7 @@ object ExportManager {
         val animOut: OverlayAnim,
         val x2: Float,
         val y2: Float,
+        val rotation: Float,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -106,12 +107,14 @@ object ExportManager {
                 Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true),
                 layer.startMs, layer.endMs, layer.x, layer.y, layer.opacity, layer.animIn, layer.animOut,
                 if (layer.moving) layer.x2 else layer.x, if (layer.moving) layer.y2 else layer.y,
+                layer.rotation,
             )
         } + project.texts.map { text ->
             OverlaySpec(
                 EffectFactory.renderText(text, height),
-                text.startMs, text.endMs, text.x, text.y, 1f, text.animIn, text.animOut,
+                text.startMs, text.endMs, text.x, text.y, text.opacity, text.animIn, text.animOut,
                 if (text.moving) text.x2 else text.x, if (text.moving) text.y2 else text.y,
+                text.rotation,
             )
         }
 
@@ -132,6 +135,7 @@ object ExportManager {
                         animOut = s.animOut,
                         x2 = s.x2,
                         y2 = s.y2,
+                        rotation = s.rotation,
                     )
                 }
             buildClipItem(context, project, clip, width, height, overlays)

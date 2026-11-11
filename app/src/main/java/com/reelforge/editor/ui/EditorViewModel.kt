@@ -181,6 +181,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun renameProject(p: Project, name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { repo.save(p.copy(name = name.trim())) }
+            projects = withContext(Dispatchers.IO) { repo.list() }
+        }
+    }
+
     fun deleteProject(id: String) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.delete(id) }
@@ -331,6 +339,24 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteText(id: String) = mutate { p -> p.copy(texts = p.texts.filterNot { it.id == id }) }
+
+    fun duplicateText(id: String): String {
+        val source = project?.texts?.firstOrNull { it.id == id } ?: return ""
+        val copy = source.copy(id = newId(), y = (source.y - 0.2f).coerceIn(-1f, 1f))
+        mutate { it.copy(texts = it.texts + copy) }
+        return copy.id
+    }
+
+    fun deleteAllTexts() = mutate { it.copy(texts = emptyList()) }
+
+    fun deleteAllLayers() = mutate { it.copy(layers = emptyList()) }
+
+    fun deleteAllAudio() = mutate { it.copy(audio = emptyList()) }
+
+    fun deleteAllClips() {
+        mutate { it.copy(clips = emptyList()) }
+        selectedClipId = null
+    }
 
     fun setMusic(uri: Uri) {
         viewModelScope.launch {

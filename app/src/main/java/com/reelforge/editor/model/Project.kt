@@ -70,7 +70,24 @@ enum class TransitionStyle(val label: String) { FADE("Fade"), SLIDE("Slide"), ZO
 /** Entry / exit animation for text, stickers and image layers. */
 enum class OverlayAnim(val label: String) { NONE("None"), FADE("Fade"), SLIDE("Slide"), POP("Pop") }
 
-enum class TextFont(val label: String) { SANS("Sans"), SERIF("Serif"), MONO("Mono") }
+/** Every font family that ships with Android. [family] is the system family name. */
+enum class TextFont(val label: String, val family: String) {
+    SANS("Sans", "sans-serif"),
+    SERIF("Serif", "serif"),
+    MONO("Mono", "monospace"),
+    LIGHT("Light", "sans-serif-light"),
+    THIN("Thin", "sans-serif-thin"),
+    MEDIUM("Medium", "sans-serif-medium"),
+    BLACK("Heavy", "sans-serif-black"),
+    CONDENSED("Condensed", "sans-serif-condensed"),
+    CONDENSED_LIGHT("Condensed light", "sans-serif-condensed-light"),
+    SMALLCAPS("Small caps", "sans-serif-smallcaps"),
+    TYPEWRITER("Typewriter", "serif-monospace"),
+    CASUAL("Casual", "casual"),
+    CURSIVE("Cursive", "cursive"),
+}
+
+enum class TextAlignH(val label: String) { LEFT("Left"), CENTER("Centre"), RIGHT("Right") }
 
 data class TextItem(
     val id: String = newId(),
@@ -86,6 +103,13 @@ data class TextItem(
     val outline: Boolean = false,
     val animIn: OverlayAnim = OverlayAnim.NONE,
     val animOut: OverlayAnim = OverlayAnim.NONE,
+    val bold: Boolean = true,
+    val italic: Boolean = false,
+    val align: TextAlignH = TextAlignH.CENTER,
+    val opacity: Float = 1f,
+    val rotation: Float = 0f,     // degrees, counter-clockwise
+    val outlineColor: Int = 0xFF000000.toInt(),
+    val boxColor: Int = 0x99000000.toInt(),
     val fontPath: String? = null, // imported .ttf / .otf file
     val moving: Boolean = false,  // glide from (x, y) to (x2, y2) while visible
     val x2: Float = 0f,
@@ -100,6 +124,7 @@ data class ImageLayer(
     val x: Float = 0f,
     val y: Float = 0f,
     val opacity: Float = 1f,
+    val rotation: Float = 0f,
     val startMs: Long = 0,
     val endMs: Long = 3000,
     val animIn: OverlayAnim = OverlayAnim.NONE,

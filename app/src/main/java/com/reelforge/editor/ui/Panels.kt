@@ -42,6 +42,7 @@ import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.util.MediaUtils
@@ -281,35 +282,96 @@ private val Stickers = listOf(
     "😀", "😂", "😍", "😎", "🥳", "😢", "😡", "👍", "👏", "🙏", "❤️", "🔥", "⭐", "🎉", "🎵", "✅",
 )
 
-private val TextColors = listOf(
-    0xFFFFFFFF, 0xFF000000, 0xFFFF4D5E, 0xFFFFC107, 0xFF4CAF50, 0xFF4DD0E1, 0xFF7C4DFF, 0xFFFF80AB,
+private val Palette = listOf(
+    0xFFFFFFFF, 0xFF000000, 0xFF9E9E9E, 0xFF607D8B, 0xFFF44336, 0xFFE91E63, 0xFFFF80AB,
+    0xFF9C27B0, 0xFF673AB7, 0xFF3F51B5, 0xFF2196F3, 0xFF03A9F4, 0xFF00BCD4, 0xFF009688,
+    0xFF4CAF50, 0xFF8BC34A, 0xFFCDDC39, 0xFFFFEB3B, 0xFFFFC107, 0xFFFF9800, 0xFFFF5722,
+    0xFF795548,
 ).map { it.toInt() }
 
 @Composable
-fun TextPanel(vm: EditorViewModel, project: Project, pickFont: (String) -> Unit) {
-    var editingId by remember { mutableStateOf<String?>(null) }
+private fun Swatches(selected: Int, onPick: (Int) -> Unit) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Palette.forEach { c ->
+            val isSelected = (selected and 0xFFFFFF) == (c and 0xFFFFFF)
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color(c))
+                    .border(
+                        width = if (isSelected) 3.dp else 1.dp,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray,
+                        shape = CircleShape,
+                    )
+                    .clickable { onPick(c) }
+            )
+        }
+    }
+}
+
+/** Palette dots plus a hue slider for any other colour. */
+@Composable
+private fun ColorPicker(selected: Int, onPick: (Int) -> Unit) {
+    Swatches(selected, onPick)
+    var hue by remember { mutableFloatStateOf(0f) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Custom", style = MaterialTheme.typography.labelLarge)
+        Slider(
+            value = hue,
+            onValueChange = {
+                hue = it
+                onPick(android.graphics.Color.HSVToColor(floatArrayOf(it, 1f, 1f)))
+            },
+            valueRange = 0f..360f,
+            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+        )
+        Box(Modifier.size(24.dp).clip(CircleShape).background(Color(selected)))
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+fun TextPanel(
+    vm: EditorViewModel,
+    project: Project,
+    editingId: String?,
+    onEditing: (String?) -> Unit,
+    pickFont: (String) -> Unit,
+) {
     val editing = project.texts.firstOrNull { it.id == editingId }
 
     if (editing == null) {
-        PanelTitle("Text")
+        PanelTitle("Text and stickers")
         project.texts.forEach { t ->
-            Row(
-                Modifier.fillMaxWidth().clickable { editingId = t.id }.padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    t.text.replace("\n", " "),
-                    Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    "${MediaUtils.formatTime(t.startMs)} – ${MediaUtils.formatTime(t.endMs)}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(t.text.replace("\n", " "), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${MediaUtils.formatTime(t.startMs)} – ${MediaUtils.formatTime(t.endMs)}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                TextButton(onClick = { onEditing(t.id) }) { Text("Edit") }
+                TextButton(onClick = { vm.deleteText(t.id) }) { Text("Delete") }
             }
         }
-        Button(onClick = { editingId = vm.addText() }) { Text("Add text at playhead") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { onEditing(vm.addText()) }) { Text("Add text at playhead") }
+            if (project.texts.isNotEmpty()) {
+                TextButton(onClick = { vm.deleteAllTexts() }) { Text("Delete all") }
+            }
+        }
         Spacer(Modifier.height(12.dp))
         Text("Stickers", style = MaterialTheme.typography.labelLarge)
         Row(
@@ -317,22 +379,27 @@ fun TextPanel(vm: EditorViewModel, project: Project, pickFont: (String) -> Unit)
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Stickers.forEach { emoji ->
-                TextButton(onClick = { editingId = vm.addText(emoji, 0.18f) }) {
+                TextButton(onClick = { onEditing(vm.addText(emoji, 0.18f)) }) {
                     Text(emoji, style = MaterialTheme.typography.headlineSmall)
                 }
             }
         }
+        Text(
+            "Tip: tap any text or sticker on the video to edit it.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         return
     }
 
     val id = editing.id
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Edit text", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        TextButton(onClick = { onEditing(vm.duplicateText(id)) }) { Text("Copy") }
         TextButton(onClick = {
-            editingId = null
+            onEditing(null)
             vm.deleteText(id)
         }) { Text("Delete") }
-        TextButton(onClick = { editingId = null }) { Text("Done") }
+        TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
     OutlinedTextField(
         value = editing.text,
@@ -340,20 +407,21 @@ fun TextPanel(vm: EditorViewModel, project: Project, pickFont: (String) -> Unit)
         modifier = Modifier.fillMaxWidth(),
         maxLines = 3,
     )
+
     Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        TextColors.forEach { c ->
-            Box(
-                Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Color(c))
-                    .border(
-                        width = if (editing.color == c) 3.dp else 1.dp,
-                        color = if (editing.color == c) MaterialTheme.colorScheme.primary else Color.Gray,
-                        shape = CircleShape,
-                    )
-                    .clickable { vm.updateText(id) { it.copy(color = c) } }
+    Text("Colour", style = MaterialTheme.typography.labelLarge)
+    ColorPicker(editing.color) { c -> vm.updateText(id) { it.copy(color = c) } }
+
+    Text("Font", style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        TextFont.entries.forEach { f ->
+            FilterChip(
+                selected = editing.fontPath == null && editing.font == f,
+                onClick = { vm.updateText(id) { it.copy(font = f, fontPath = null) } },
+                label = { Text(f.label) },
             )
         }
     }
@@ -361,65 +429,65 @@ fun TextPanel(vm: EditorViewModel, project: Project, pickFont: (String) -> Unit)
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextFont.entries.forEach { f ->
-            FilterChip(
-                selected = editing.font == f,
-                onClick = { vm.updateText(id) { it.copy(font = f) } },
-                label = { Text(f.label) },
-            )
-        }
-        Spacer(Modifier.weight(1f))
-        Text("Box")
-        Switch(
-            checked = editing.background,
-            onCheckedChange = { b -> vm.updateText(id) { it.copy(background = b) } },
+        FilterChip(
+            selected = editing.bold,
+            onClick = { vm.updateText(id) { it.copy(bold = !it.bold) } },
+            label = { Text("Bold") },
+        )
+        FilterChip(
+            selected = editing.italic,
+            onClick = { vm.updateText(id) { it.copy(italic = !it.italic) } },
+            label = { Text("Italic") },
+        )
+        FilterChip(
+            selected = editing.fontPath != null,
+            onClick = { pickFont(id) },
+            label = { Text(if (editing.fontPath == null) "Import font file" else "Imported font") },
         )
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Outline", Modifier.weight(1f))
-        Switch(
-            checked = editing.outline,
-            onCheckedChange = { b -> vm.updateText(id) { it.copy(outline = b) } },
-        )
+
+    Text("Alignment", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextAlignH.entries.forEach { a ->
+            FilterChip(
+                selected = editing.align == a,
+                onClick = { vm.updateText(id) { it.copy(align = a) } },
+                label = { Text(a.label) },
+            )
+        }
+    }
+
+    LabeledSlider("Size", editing.size, 0.02f..0.4f) { v -> vm.updateText(id) { it.copy(size = v) } }
+    LabeledSlider("Opacity", editing.opacity, 0f..1f) { v -> vm.updateText(id) { it.copy(opacity = v) } }
+    LabeledSlider("Rotation", editing.rotation, -180f..180f) { v ->
+        vm.updateText(id) { it.copy(rotation = v) }
+    }
+    LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
+    LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
+
+    SwitchRow("Outline", editing.outline) { b -> vm.updateText(id) { it.copy(outline = b) } }
+    if (editing.outline) {
+        Swatches(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
+    }
+    SwitchRow("Background box", editing.background) { b -> vm.updateText(id) { it.copy(background = b) } }
+    if (editing.background) {
+        Swatches(editing.boxColor) { c ->
+            // Keep the box slightly see-through.
+            vm.updateText(id) { it.copy(boxColor = (c and 0xFFFFFF) or (0xCC shl 24)) }
+        }
+    }
+
+    TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
+        vm.updateText(id) { it.copy(startMs = s, endMs = e) }
     }
     AnimChips("Animate in", editing.animIn) { a -> vm.updateText(id) { it.copy(animIn = a) } }
     AnimChips("Animate out", editing.animOut) { a -> vm.updateText(id) { it.copy(animOut = a) } }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            if (editing.fontPath == null) "Custom font: none" else "Custom font: imported",
-            Modifier.weight(1f),
-        )
-        if (editing.fontPath != null) {
-            TextButton(onClick = { vm.updateText(id) { it.copy(fontPath = null) } }) { Text("Remove") }
-        }
-        TextButton(onClick = { pickFont(id) }) { Text("Import .ttf") }
-    }
     MotionControls(editing.moving, editing.x2, editing.y2,
         onToggle = { on ->
             vm.updateText(id) { if (on) it.copy(moving = true, x2 = it.x, y2 = it.y) else it.copy(moving = false) }
         },
         onX = { v -> vm.updateText(id) { it.copy(x2 = v) } },
         onY = { v -> vm.updateText(id) { it.copy(y2 = v) } },
-    )
-    LabeledSlider("Size", editing.size, 0.03f..0.25f) { v -> vm.updateText(id) { it.copy(size = v) } }
-    LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
-    LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
-
-    val total = maxOf(project.durationMs, 500L).toFloat()
-    Text(
-        "Visible ${MediaUtils.formatTime(editing.startMs)} – ${MediaUtils.formatTime(editing.endMs)}",
-        style = MaterialTheme.typography.labelLarge,
-    )
-    RangeSlider(
-        value = editing.startMs.toFloat().coerceIn(0f, total)..editing.endMs.toFloat().coerceIn(0f, total),
-        onValueChange = { r ->
-            if (r.endInclusive - r.start >= 200f) {
-                vm.updateText(id) {
-                    it.copy(startMs = r.start.toLong(), endMs = r.endInclusive.toLong())
-                }
-            }
-        },
-        valueRange = 0f..total,
     )
 }
 
@@ -492,10 +560,16 @@ private fun TimeRange(startMs: Long, endMs: Long, totalMs: Long, onChange: (Long
     )
 }
 
-/** Picture-in-picture image layers: photos, logos and watermarks on top of the video. */
+/** Picture-in-picture image layers: photos, logos, watermarks and drawings on top of the video. */
 @Composable
-fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit, draw: () -> Unit) {
-    var editingId by remember { mutableStateOf<String?>(null) }
+fun LayerPanel(
+    vm: EditorViewModel,
+    project: Project,
+    editingId: String?,
+    onEditing: (String?) -> Unit,
+    pickImage: () -> Unit,
+    draw: () -> Unit,
+) {
     val editing = project.layers.firstOrNull { it.id == editingId }
 
     if (editing == null) {
@@ -504,22 +578,30 @@ fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit, dra
             Text("Put a photo, logo or watermark on top of your video.")
         }
         project.layers.forEachIndexed { i, layer ->
-            Row(
-                Modifier.fillMaxWidth().clickable { editingId = layer.id }.padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Layer ${i + 1}", Modifier.weight(1f))
-                Text(
-                    "${MediaUtils.formatTime(layer.startMs)} – ${MediaUtils.formatTime(layer.endMs)}",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Layer ${i + 1}")
+                    Text(
+                        "${MediaUtils.formatTime(layer.startMs)} – ${MediaUtils.formatTime(layer.endMs)}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                TextButton(onClick = { onEditing(layer.id) }) { Text("Edit") }
+                TextButton(onClick = { vm.deleteLayer(layer.id) }) { Text("Delete") }
             }
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = pickImage) { Text("Add image at playhead") }
+            Button(onClick = pickImage) { Text("Add image") }
             TextButton(onClick = draw) { Text("Draw") }
+            if (project.layers.isNotEmpty()) {
+                TextButton(onClick = { vm.deleteAllLayers() }) { Text("Delete all") }
+            }
         }
+        Text(
+            "Tip: tap any layer on the video to edit it.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         return
     }
 
@@ -527,13 +609,16 @@ fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit, dra
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Edit layer", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         TextButton(onClick = {
-            editingId = null
+            onEditing(null)
             vm.deleteLayer(id)
         }) { Text("Delete") }
-        TextButton(onClick = { editingId = null }) { Text("Done") }
+        TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
     LabeledSlider("Size", editing.scale, 0.05f..1f) { v -> vm.updateLayer(id) { it.copy(scale = v) } }
     LabeledSlider("Opacity", editing.opacity, 0f..1f) { v -> vm.updateLayer(id) { it.copy(opacity = v) } }
+    LabeledSlider("Rotation", editing.rotation, -180f..180f) { v ->
+        vm.updateLayer(id) { it.copy(rotation = v) }
+    }
     LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateLayer(id) { it.copy(x = v) } }
     LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateLayer(id) { it.copy(y = v) } }
     TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
@@ -581,11 +666,20 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
         }
         CommitSlider(
+            label = "Starts at",
+            value = clip.startMs.toFloat(),
+            range = 0f..maxOf(project.durationMs - 100, 1L).toFloat(),
+            format = { MediaUtils.formatTime(it.toLong()) },
+        ) { v -> vm.updateAudioClip(clip.id) { it.copy(startMs = v.toLong()) } }
+        CommitSlider(
             label = "Volume",
             value = clip.volume,
             range = 0f..2f,
             format = { "${(it * 100).roundToInt()}%" },
         ) { v -> vm.updateAudioClip(clip.id) { it.copy(volume = v) } }
+    }
+    if (project.audio.isNotEmpty()) {
+        TextButton(onClick = { vm.deleteAllAudio() }) { Text("Delete all sounds") }
     }
 }
 
@@ -624,24 +718,7 @@ fun BackgroundPanel(vm: EditorViewModel, project: Project) {
     }
     if (project.background == Background.COLOR) {
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextColors.forEach { c ->
-                Box(
-                    Modifier
-                        .size(30.dp)
-                        .clip(CircleShape)
-                        .background(Color(c))
-                        .border(
-                            width = if (project.backgroundColor == c) 3.dp else 1.dp,
-                            color = if (project.backgroundColor == c) {
-                                MaterialTheme.colorScheme.primary
-                            } else Color.Gray,
-                            shape = CircleShape,
-                        )
-                        .clickable { vm.setBackground(Background.COLOR, c) }
-                )
-            }
-        }
+        ColorPicker(project.backgroundColor) { c -> vm.setBackground(Background.COLOR, c) }
     }
     Text(
         "Applies to clips set to Fit. Clips set to Fill cover the whole frame.",
