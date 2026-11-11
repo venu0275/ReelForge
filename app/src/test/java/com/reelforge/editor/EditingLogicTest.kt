@@ -396,6 +396,29 @@ class EffectMathTest {
         assertEquals(0f, settled.dy, 0.001f)
     }
 
+    @Test fun `sideways and turning animations start away and settle in place`() {
+        val left = overlayAnim(0, 3_000, OverlayAnim.FROM_LEFT, OverlayAnim.NONE)
+        val right = overlayAnim(0, 3_000, OverlayAnim.FROM_RIGHT, OverlayAnim.NONE)
+        val down = overlayAnim(0, 3_000, OverlayAnim.SLIDE_DOWN, OverlayAnim.NONE)
+        val spin = overlayAnim(0, 3_000, OverlayAnim.SPIN, OverlayAnim.NONE)
+        val zoom = overlayAnim(0, 3_000, OverlayAnim.ZOOM, OverlayAnim.NONE)
+        assertTrue(left.dx < 0f)
+        assertTrue(right.dx > 0f)
+        assertTrue(down.dy > 0f)
+        assertEquals(180f, spin.rotation, 0.001f)
+        assertTrue(zoom.scale > 1f)
+        for (anim in OverlayAnim.entries) {
+            val settled = overlayAnim(1_500, 3_000, anim, anim)
+            assertEquals("$anim alpha", 1f, settled.alpha, 0.001f)
+            assertEquals("$anim scale", 1f, settled.scale, 0.001f)
+            assertEquals("$anim dx", 0f, settled.dx, 0.001f)
+            assertEquals("$anim dy", 0f, settled.dy, 0.001f)
+            assertEquals("$anim turn", 0f, settled.rotation, 0.001f)
+            val leaving = overlayAnim(3_000, 3_000, OverlayAnim.NONE, anim)
+            if (anim != OverlayAnim.NONE) assertEquals("$anim ends hidden", 0f, leaving.alpha, 0.001f)
+        }
+    }
+
     @Test fun `no animation leaves the overlay untouched`() {
         for (t in listOf(0L, 10L, 1_500L, 2_990L)) {
             val s = overlayAnim(t, 3_000, OverlayAnim.NONE, OverlayAnim.NONE)

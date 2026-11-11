@@ -260,7 +260,8 @@ class ExportDeviceTest {
                 x = -0.8f + (i % 4) * 0.5f, y = 0.8f - (i / 4) * 0.4f,
                 startMs = i * 100L, endMs = 1_500L + i * 100L,
                 bold = i % 2 == 0, italic = i % 3 == 0, outline = i % 2 == 1, background = i % 4 == 0,
-                animIn = OverlayAnim.entries[i % 4], animOut = OverlayAnim.entries[(i + 1) % 4],
+                animIn = OverlayAnim.entries[i % OverlayAnim.entries.size],
+                animOut = OverlayAnim.entries[(i + 3) % OverlayAnim.entries.size],
                 opacity = 0.9f, rotation = i * 10f, moving = i % 5 == 0, x2 = 0.5f, y2 = -0.5f,
             )
         } + TextItem(text = "😀🔥", size = 0.2f, startMs = 0, endMs = 3_000) +

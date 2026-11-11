@@ -83,8 +83,17 @@ fun fadeAlpha(t: Long, duration: Long, fadeIn: Long, fadeOut: Long): Float {
     return a.coerceIn(0f, 1f)
 }
 
-/** Alpha, scale and vertical offset (in frame units, -1..1) of an overlay at one moment. */
-data class AnimState(val alpha: Float, val scale: Float, val dy: Float)
+/**
+ * How an overlay looks at one moment of its entry / exit animation: opacity, size, offset from
+ * its resting place (in frame units, where the frame spans -1..1) and extra turn in degrees.
+ */
+data class AnimState(
+    val alpha: Float,
+    val scale: Float,
+    val dy: Float,
+    val dx: Float = 0f,
+    val rotation: Float = 0f,
+)
 
 private const val ANIM_MS = 400f
 
@@ -93,26 +102,49 @@ fun overlayAnim(tMs: Long, durationMs: Long, animIn: OverlayAnim, animOut: Overl
     val window = minOf(ANIM_MS, durationMs / 2f).coerceAtLeast(1f)
     var alpha = 1f
     var scale = 1f
+    var dx = 0f
     var dy = 0f
+    var rotation = 0f
     fun blend(anim: OverlayAnim, progress: Float) {
         val p = progress.coerceIn(0f, 1f)
+        val away = 1f - p
         when (anim) {
             OverlayAnim.NONE -> Unit
             OverlayAnim.FADE -> alpha *= p
             OverlayAnim.SLIDE -> {
                 alpha *= p
-                dy -= (1f - p) * 0.25f
+                dy -= away * 0.25f
+            }
+            OverlayAnim.SLIDE_DOWN -> {
+                alpha *= p
+                dy += away * 0.25f
+            }
+            OverlayAnim.FROM_LEFT -> {
+                alpha *= p
+                dx -= away * 0.4f
+            }
+            OverlayAnim.FROM_RIGHT -> {
+                alpha *= p
+                dx += away * 0.4f
             }
             OverlayAnim.POP -> {
                 alpha *= p
                 scale *= 0.3f + 0.7f * p
+            }
+            OverlayAnim.SPIN -> {
+                alpha *= p
+                rotation += away * 180f
+            }
+            OverlayAnim.ZOOM -> {
+                alpha *= p
+                scale *= 1f + away * 0.8f
             }
         }
     }
     if (tMs < window) blend(animIn, tMs / window)
     val remaining = durationMs - tMs
     if (remaining < window) blend(animOut, remaining / window)
-    return AnimState(alpha, scale, dy)
+    return AnimState(alpha, scale, dy, dx, rotation)
 }
 
 /**
@@ -151,13 +183,13 @@ class TimedBitmapOverlay(
         if (t < startUs || t >= endUs) return hidden
         val anim = overlayAnim((t - startUs) / 1000, (endUs - startUs) / 1000, animIn, animOut)
         val progress = ((t - startUs).toFloat() / (endUs - startUs).coerceAtLeast(1)).coerceIn(0f, 1f)
-        val px = (x + (x2 - x) * progress).coerceIn(-1f, 1f)
+        val px = (x + (x2 - x) * progress + anim.dx).coerceIn(-1f, 1f)
         val py = (y + (y2 - y) * progress).coerceIn(-1f, 1f)
         return OverlaySettings.Builder()
             .setBackgroundFrameAnchor(px, (py + anim.dy).coerceIn(-1f, 1f))
             .setOverlayFrameAnchor(px, py)
             .setScale(anim.scale, anim.scale)
-            .setRotationDegrees(rotation)
+            .setRotationDegrees(rotation + anim.rotation)
             .setAlphaScale((anim.alpha * opacity).coerceIn(0f, 1f))
             .build()
     }

@@ -390,6 +390,8 @@ fun TextPanel(
     }
 
     val id = editing.id
+    var tab by remember { mutableStateOf(TextTab.TEXT) }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Edit text", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         TextButton(onClick = { onEditing(vm.duplicateText(id)) }) { Text("Copy") }
@@ -399,94 +401,170 @@ fun TextPanel(
         }) { Text("Delete") }
         TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
-    OutlinedTextField(
-        value = editing.text,
-        onValueChange = { v -> vm.updateText(id) { it.copy(text = v) } },
-        modifier = Modifier.fillMaxWidth(),
-        maxLines = 3,
-    )
-
-    Spacer(Modifier.height(8.dp))
-    Text("Colour", style = MaterialTheme.typography.labelLarge)
-    ColorPicker(editing.color) { c -> vm.updateText(id) { it.copy(color = c) } }
-
-    Text("Font", style = MaterialTheme.typography.labelLarge)
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        TextFont.entries.forEach { f ->
-            FilterChip(
-                selected = editing.fontPath == null && editing.font == f,
-                onClick = { vm.updateText(id) { it.copy(font = f, fontPath = null) } },
-                label = { Text(f.label) },
+        TextTab.entries.forEach { t ->
+            FilterChip(selected = tab == t, onClick = { tab = t }, label = { Text(t.label) })
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+
+    when (tab) {
+        TextTab.TEXT -> {
+            OutlinedTextField(
+                value = editing.text,
+                onValueChange = { v -> vm.updateText(id) { it.copy(text = v) } },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text("Colour", style = MaterialTheme.typography.labelLarge)
+            ColorPicker(editing.color) { c -> vm.updateText(id) { it.copy(color = c) } }
+            LabeledSlider("Size", editing.size, 0.02f..0.4f) { v -> vm.updateText(id) { it.copy(size = v) } }
+            LabeledSlider("Opacity", editing.opacity, 0f..1f) { v ->
+                vm.updateText(id) { it.copy(opacity = v) }
+            }
+        }
+
+        TextTab.FONT -> {
+            Text("Font", style = MaterialTheme.typography.labelLarge)
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TextFont.entries.forEach { f ->
+                    FilterChip(
+                        selected = editing.fontPath == null && editing.font == f,
+                        onClick = { vm.updateText(id) { it.copy(font = f, fontPath = null) } },
+                        label = { Text(f.label) },
+                    )
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = editing.bold,
+                    onClick = { vm.updateText(id) { it.copy(bold = !it.bold) } },
+                    label = { Text("Bold") },
+                )
+                FilterChip(
+                    selected = editing.italic,
+                    onClick = { vm.updateText(id) { it.copy(italic = !it.italic) } },
+                    label = { Text("Italic") },
+                )
+                FilterChip(
+                    selected = editing.fontPath != null,
+                    onClick = { pickFont(id) },
+                    label = { Text(if (editing.fontPath == null) "Import font file" else "Imported font") },
+                )
+            }
+            Text("Alignment", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextAlignH.entries.forEach { a ->
+                    FilterChip(
+                        selected = editing.align == a,
+                        onClick = { vm.updateText(id) { it.copy(align = a) } },
+                        label = { Text(a.label) },
+                    )
+                }
+            }
+            SwitchRow("Outline", editing.outline) { b -> vm.updateText(id) { it.copy(outline = b) } }
+            if (editing.outline) {
+                Text("Outline colour", style = MaterialTheme.typography.labelLarge)
+                ColorPicker(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
+            }
+        }
+
+        TextTab.BACKGROUND -> {
+            SwitchRow("Background box", editing.background) { b ->
+                vm.updateText(id) { it.copy(background = b) }
+            }
+            Text("Background colour", style = MaterialTheme.typography.labelLarge)
+            // Picking a colour turns the box on and keeps its current see-through level.
+            ColorPicker(editing.boxColor or (0xFF shl 24)) { c ->
+                vm.updateText(id) {
+                    it.copy(background = true, boxColor = (c and 0xFFFFFF) or (it.boxColor and (0xFF shl 24)))
+                }
+            }
+            LabeledSlider("Background opacity", ((editing.boxColor ushr 24) and 0xFF) / 255f, 0.1f..1f) { v ->
+                vm.updateText(id) {
+                    it.copy(
+                        background = true,
+                        boxColor = (it.boxColor and 0xFFFFFF) or ((v * 255).toInt().coerceIn(0, 255) shl 24),
+                    )
+                }
+            }
+        }
+
+        TextTab.ANIMATION -> {
+            AnimChips("In animation (how it appears)", editing.animIn) { a ->
+                vm.updateText(id) { it.copy(animIn = a) }
+            }
+            Spacer(Modifier.height(8.dp))
+            AnimChips("Out animation (how it leaves)", editing.animOut) { a ->
+                vm.updateText(id) { it.copy(animOut = a) }
+            }
+            Spacer(Modifier.height(8.dp))
+            MotionControls(editing.moving, editing.x2, editing.y2,
+                onToggle = { on ->
+                    vm.updateText(id) {
+                        if (on) it.copy(moving = true, x2 = it.x, y2 = it.y) else it.copy(moving = false)
+                    }
+                },
+                onX = { v -> vm.updateText(id) { it.copy(x2 = v) } },
+                onY = { v -> vm.updateText(id) { it.copy(y2 = v) } },
             )
         }
-    }
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FilterChip(
-            selected = editing.bold,
-            onClick = { vm.updateText(id) { it.copy(bold = !it.bold) } },
-            label = { Text("Bold") },
-        )
-        FilterChip(
-            selected = editing.italic,
-            onClick = { vm.updateText(id) { it.copy(italic = !it.italic) } },
-            label = { Text("Italic") },
-        )
-        FilterChip(
-            selected = editing.fontPath != null,
-            onClick = { pickFont(id) },
-            label = { Text(if (editing.fontPath == null) "Import font file" else "Imported font") },
-        )
-    }
 
-    Text("Alignment", style = MaterialTheme.typography.labelLarge)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextAlignH.entries.forEach { a ->
-            FilterChip(
-                selected = editing.align == a,
-                onClick = { vm.updateText(id) { it.copy(align = a) } },
-                label = { Text(a.label) },
-            )
+        TextTab.PLACE -> {
+            Text("Turn", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = false,
+                    onClick = { vm.updateText(id) { it.copy(rotation = turned(it.rotation, 90f)) } },
+                    label = { Text("Turn left 90°") },
+                )
+                FilterChip(
+                    selected = false,
+                    onClick = { vm.updateText(id) { it.copy(rotation = turned(it.rotation, -90f)) } },
+                    label = { Text("Turn right 90°") },
+                )
+                FilterChip(
+                    selected = editing.rotation == 0f,
+                    onClick = { vm.updateText(id) { it.copy(rotation = 0f) } },
+                    label = { Text("Straight") },
+                )
+            }
+            LabeledSlider("Angle: ${editing.rotation.roundToInt()}°", editing.rotation, -180f..180f) { v ->
+                vm.updateText(id) { it.copy(rotation = v) }
+            }
+            LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
+            LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
+            TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
+                vm.updateText(id) { it.copy(startMs = s, endMs = e) }
+            }
         }
     }
+}
 
-    LabeledSlider("Size", editing.size, 0.02f..0.4f) { v -> vm.updateText(id) { it.copy(size = v) } }
-    LabeledSlider("Opacity", editing.opacity, 0f..1f) { v -> vm.updateText(id) { it.copy(opacity = v) } }
-    LabeledSlider("Rotation", editing.rotation, -180f..180f) { v ->
-        vm.updateText(id) { it.copy(rotation = v) }
-    }
-    LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
-    LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
+private enum class TextTab(val label: String) {
+    TEXT("Text"),
+    FONT("Font"),
+    BACKGROUND("Background"),
+    ANIMATION("Animation"),
+    PLACE("Place"),
+}
 
-    SwitchRow("Outline", editing.outline) { b -> vm.updateText(id) { it.copy(outline = b) } }
-    if (editing.outline) {
-        Swatches(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
-    }
-    SwitchRow("Background box", editing.background) { b -> vm.updateText(id) { it.copy(background = b) } }
-    if (editing.background) {
-        Swatches(editing.boxColor) { c ->
-            // Keep the box slightly see-through.
-            vm.updateText(id) { it.copy(boxColor = (c and 0xFFFFFF) or (0xCC shl 24)) }
-        }
-    }
-
-    TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
-        vm.updateText(id) { it.copy(startMs = s, endMs = e) }
-    }
-    AnimChips("Animate in", editing.animIn) { a -> vm.updateText(id) { it.copy(animIn = a) } }
-    AnimChips("Animate out", editing.animOut) { a -> vm.updateText(id) { it.copy(animOut = a) } }
-    MotionControls(editing.moving, editing.x2, editing.y2,
-        onToggle = { on ->
-            vm.updateText(id) { if (on) it.copy(moving = true, x2 = it.x, y2 = it.y) else it.copy(moving = false) }
-        },
-        onX = { v -> vm.updateText(id) { it.copy(x2 = v) } },
-        onY = { v -> vm.updateText(id) { it.copy(y2 = v) } },
-    )
+/** Adds [by] degrees and keeps the angle within -180..180 (positive is counter-clockwise). */
+private fun turned(angle: Float, by: Float): Float {
+    var next = (angle + by) % 360f
+    if (next > 180f) next -= 360f
+    if (next < -180f) next += 360f
+    return next
 }
 
 @Composable

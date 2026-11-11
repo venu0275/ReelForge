@@ -228,5 +228,16 @@ class ScreenshotTest {
         tap("Edit")
         waitForText("Colour")
         save("08_text_editor_landscape")
+
+        // 9-11. The other text tabs.
+        tap("Background")
+        waitForText("Background colour")
+        save("09_text_background_landscape")
+        tap("Animation")
+        waitForText("In animation (how it appears)")
+        save("10_text_animation_landscape")
+        tap("Place", scroll = true)
+        waitForText("Turn left 90°")
+        save("11_text_turn_landscape")
     }
 }

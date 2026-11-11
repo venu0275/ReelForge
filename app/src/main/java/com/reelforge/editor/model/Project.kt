@@ -68,7 +68,17 @@ enum class Background(val label: String) { BLACK("Black"), COLOR("Colour"), BLUR
 enum class TransitionStyle(val label: String) { FADE("Fade"), SLIDE("Slide"), ZOOM("Zoom") }
 
 /** Entry / exit animation for text, stickers and image layers. */
-enum class OverlayAnim(val label: String) { NONE("None"), FADE("Fade"), SLIDE("Slide"), POP("Pop") }
+enum class OverlayAnim(val label: String) {
+    NONE("None"),
+    FADE("Fade"),
+    SLIDE("Slide up"),
+    POP("Pop"),
+    SLIDE_DOWN("Slide down"),
+    FROM_LEFT("From left"),
+    FROM_RIGHT("From right"),
+    SPIN("Turn"),
+    ZOOM("Zoom out"),
+}
 
 /** Every font family that ships with Android. [family] is the system family name. */
 enum class TextFont(val label: String, val family: String) {

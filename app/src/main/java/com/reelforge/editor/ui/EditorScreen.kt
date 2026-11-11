@@ -1066,6 +1066,7 @@ private fun PreviewArea(
 
             val density = LocalDensity.current
             val frameHeightPx = with(density) { frameHeight.toPx() }
+            val frameWidthPx = with(density) { maxWidth.toPx() }
             val now = vm.playheadMs
 
             project.layers
@@ -1094,8 +1095,9 @@ private fun PreviewArea(
                                         alpha = (anim.alpha * layer.opacity).coerceIn(0f, 1f),
                                         scaleX = anim.scale,
                                         scaleY = anim.scale,
+                                        translationX = anim.dx * frameWidthPx / 2f,
                                         translationY = -anim.dy * frameHeightPx / 2f,
-                                        rotationZ = -layer.rotation,
+                                        rotationZ = -(layer.rotation + anim.rotation),
                                     )
                                     .clickable { onEditLayer(layer.id) },
                             )
@@ -1129,8 +1131,9 @@ private fun PreviewArea(
                                     alpha = (anim.alpha * t.opacity).coerceIn(0f, 1f),
                                     scaleX = anim.scale,
                                     scaleY = anim.scale,
+                                    translationX = anim.dx * frameWidthPx / 2f,
                                     translationY = -anim.dy * frameHeightPx / 2f,
-                                    rotationZ = -t.rotation,
+                                    rotationZ = -(t.rotation + anim.rotation),
                                 )
                                 .clickable { onEditText(t.id) },
                         )
