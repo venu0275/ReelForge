@@ -57,6 +57,82 @@ object ProjectOps {
         })
     }
 
+    /** Shortest clip an edge drag can leave, in source time. */
+    const val MIN_CLIP_MS = 300L
+
+    /** Longest time a photo can be stretched to by dragging its edge. */
+    const val MAX_PHOTO_MS = 60_000L
+
+    private fun replaceClip(project: Project, updated: Clip): Project =
+        project.copy(clips = project.clips.map { if (it.id == updated.id) clampFades(updated) else it })
+
+    /**
+     * Drags a clip's start edge by [deltaMs] of timeline time. Positive values cut footage off the
+     * start; negative values bring earlier footage back.
+     */
+    fun trimStart(project: Project, id: String, deltaMs: Long): Project {
+        val clip = project.clips.firstOrNull { it.id == id } ?: return project
+        if (clip.type == ClipType.IMAGE) return resizePhoto(project, clip, -deltaMs)
+        val highest = clip.trimEndMs - MIN_CLIP_MS
+        if (highest < 0) return project
+        val moved = clip.trimStartMs + (deltaMs * clip.speed).toLong()
+        return replaceClip(project, clip.copy(trimStartMs = moved.coerceIn(0, highest)))
+    }
+
+    /**
+     * Drags a clip's end edge by [deltaMs] of timeline time. Positive values bring back later
+     * footage (or lengthen a photo); negative values shorten the clip.
+     */
+    fun trimEnd(project: Project, id: String, deltaMs: Long): Project {
+        val clip = project.clips.firstOrNull { it.id == id } ?: return project
+        if (clip.type == ClipType.IMAGE) return resizePhoto(project, clip, deltaMs)
+        val lowest = clip.trimStartMs + MIN_CLIP_MS
+        if (lowest > clip.sourceDurationMs) return project
+        val moved = clip.trimEndMs + (deltaMs * clip.speed).toLong()
+        return replaceClip(project, clip.copy(trimEndMs = moved.coerceIn(lowest, clip.sourceDurationMs)))
+    }
+
+    private fun resizePhoto(project: Project, clip: Clip, growMs: Long): Project {
+        val length = (clip.trimEndMs - clip.trimStartMs + growMs).coerceIn(MIN_CLIP_MS, MAX_PHOTO_MS)
+        return replaceClip(
+            project,
+            clip.copy(trimStartMs = 0, trimEndMs = length, sourceDurationMs = length),
+        )
+    }
+
+    /**
+     * Swaps a clip's media but keeps its edits (filter, speed, fades and so on). The new clip
+     * starts from the beginning of the new media and keeps the old length where it fits.
+     */
+    fun replaceMedia(
+        project: Project,
+        id: String,
+        uri: String,
+        type: ClipType,
+        mediaDurationMs: Long,
+        hasAudio: Boolean,
+    ): Project {
+        val clip = project.clips.firstOrNull { it.id == id } ?: return project
+        val oldLength = clip.trimEndMs - clip.trimStartMs
+        val length = if (type == ClipType.IMAGE) {
+            // Keep the same time on screen.
+            clip.durationMs.coerceIn(MIN_CLIP_MS, MAX_PHOTO_MS)
+        } else {
+            oldLength.coerceAtMost(mediaDurationMs).coerceAtLeast(1)
+        }
+        return replaceClip(
+            project,
+            clip.copy(
+                uri = uri,
+                type = type,
+                sourceDurationMs = if (type == ClipType.IMAGE) length else mediaDurationMs,
+                trimStartMs = 0,
+                trimEndMs = length,
+                hasAudio = hasAudio,
+            ),
+        )
+    }
+
     /** Keeps each fade no longer than half the clip. */
     fun clampFades(clip: Clip): Clip {
         val half = (clip.durationMs / 2).coerceAtLeast(0)

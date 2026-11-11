@@ -7,7 +7,13 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 
 - Projects: create, reopen, delete; saved automatically. Aspect ratios 16:9, 9:16, 1:1, 4:5.
 - Import videos and photos from the gallery onto a single main track.
-- Timeline: select, reorder, duplicate, delete, split at the playhead, trim.
+- Timeline that scrolls under a fixed playhead: drag to scrub, pinch to zoom, time ruler,
+  frame strips on every clip, drag a selected clip's edges to trim, jump to start / end.
+- Text, image layers, sounds and music show as bars on the timeline: tap to edit, long-press
+  and drag to move in time.
+- Menu that follows the selection: things to add when nothing is selected, the clip's own
+  actions (split, trim, replace, speed, filter, ...) when a clip is selected.
+- Select, reorder, duplicate, delete, split at the playhead, replace a clip's media.
 - Undo / redo for every edit.
 - Per clip: speed (0.25x–4x), volume (0–200%) and mute, rotate, mirror, zoom, fit or fill
   the frame, opacity, 8 colour filters, brightness / contrast / saturation, fade in / fade out,

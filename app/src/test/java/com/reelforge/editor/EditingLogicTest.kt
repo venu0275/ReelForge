@@ -211,6 +211,92 @@ class ProjectOpsTest {
     }
 }
 
+// ------------------------------------------------------- timeline edge drags
+
+class EdgeTrimTest {
+
+    @Test fun `dragging the start edge right cuts footage off the start`() {
+        val out = ProjectOps.trimStart(project(video("a", 10_000)), "a", 2_000)
+        assertEquals(2_000, out.clips[0].trimStartMs)
+        assertEquals(8_000, out.clips[0].durationMs)
+    }
+
+    @Test fun `dragging the start edge left brings footage back but not before zero`() {
+        val p = project(video("a", 10_000).copy(trimStartMs = 3_000))
+        assertEquals(1_000, ProjectOps.trimStart(p, "a", -2_000).clips[0].trimStartMs)
+        assertEquals(0, ProjectOps.trimStart(p, "a", -9_000).clips[0].trimStartMs)
+    }
+
+    @Test fun `dragging the end edge shortens and lengthens within the source`() {
+        val p = project(video("a", 10_000).copy(trimEndMs = 6_000))
+        assertEquals(4_000, ProjectOps.trimEnd(p, "a", -2_000).clips[0].trimEndMs)
+        assertEquals(8_000, ProjectOps.trimEnd(p, "a", 2_000).clips[0].trimEndMs)
+        assertEquals(10_000, ProjectOps.trimEnd(p, "a", 60_000).clips[0].trimEndMs)
+    }
+
+    @Test fun `an edge drag never makes a clip shorter than the minimum`() {
+        val p = project(video("a", 10_000))
+        assertEquals(10_000 - ProjectOps.MIN_CLIP_MS, ProjectOps.trimStart(p, "a", 60_000).clips[0].trimStartMs)
+        assertEquals(ProjectOps.MIN_CLIP_MS, ProjectOps.trimEnd(p, "a", -60_000).clips[0].trimEndMs)
+    }
+
+    @Test fun `edge drags account for clip speed`() {
+        val p = project(video("a", 10_000, speed = 2f)) // 5 s on the timeline
+        val out = ProjectOps.trimStart(p, "a", 1_000)
+        assertEquals(2_000, out.clips[0].trimStartMs)
+        assertEquals(4_000, out.clips[0].durationMs)
+    }
+
+    @Test fun `photos stretch and shrink from either edge within limits`() {
+        val p = project(image("a", 3_000))
+        assertEquals(5_000, ProjectOps.trimEnd(p, "a", 2_000).clips[0].durationMs)
+        assertEquals(2_000, ProjectOps.trimStart(p, "a", 1_000).clips[0].durationMs)
+        assertEquals(ProjectOps.MIN_CLIP_MS, ProjectOps.trimEnd(p, "a", -99_000).clips[0].durationMs)
+        assertEquals(ProjectOps.MAX_PHOTO_MS, ProjectOps.trimEnd(p, "a", 999_000).clips[0].durationMs)
+    }
+
+    @Test fun `trimming clamps fades and leaves other clips alone`() {
+        val p = project(video("a", 10_000).copy(fadeInMs = 2_000, fadeOutMs = 2_000), video("b", 4_000))
+        val out = ProjectOps.trimEnd(p, "a", -9_000)
+        assertEquals(1_000, out.clips[0].durationMs)
+        assertEquals(500, out.clips[0].fadeInMs)
+        assertEquals(500, out.clips[0].fadeOutMs)
+        assertEquals(p.clips[1], out.clips[1])
+    }
+
+    @Test fun `edge drags on unknown or tiny clips change nothing`() {
+        val p = project(video("a", 200))
+        assertSame(p, ProjectOps.trimStart(p, "missing", 500))
+        assertSame(p, ProjectOps.trimEnd(p, "missing", 500))
+        assertSame(p, ProjectOps.trimStart(p, "a", 100))
+        assertSame(p, ProjectOps.trimEnd(p, "a", -100))
+    }
+
+    @Test fun `replace keeps the edits and fits the new media`() {
+        val styled = video("a", 10_000).copy(
+            trimStartMs = 2_000, trimEndMs = 6_000, filter = FilterPreset.SEPIA, speed = 2f, fadeInMs = 300,
+        )
+        val p = project(styled, video("b", 4_000))
+        val longer = ProjectOps.replaceMedia(p, "a", "file:///new.mp4", ClipType.VIDEO, 30_000, true).clips[0]
+        assertEquals("file:///new.mp4", longer.uri)
+        assertEquals(0, longer.trimStartMs)
+        assertEquals(4_000, longer.trimEndMs)
+        assertEquals(FilterPreset.SEPIA, longer.filter)
+        assertEquals(2f, longer.speed, 0f)
+        assertEquals(30_000, longer.sourceDurationMs)
+
+        val shorter = ProjectOps.replaceMedia(p, "a", "file:///short.mp4", ClipType.VIDEO, 1_500, false).clips[0]
+        assertEquals(1_500, shorter.trimEndMs)
+        assertFalse(shorter.hasAudio)
+
+        val photo = ProjectOps.replaceMedia(p, "a", "file:///pic.jpg", ClipType.IMAGE, 3_000, false).clips[0]
+        assertEquals(ClipType.IMAGE, photo.type)
+        assertEquals(styled.durationMs, photo.durationMs)
+
+        assertSame(p, ProjectOps.replaceMedia(p, "missing", "x", ClipType.VIDEO, 1_000, true))
+    }
+}
+
 // --------------------------------------------------------------------- undo redo
 
 class HistoryTest {

@@ -6,9 +6,11 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.media.MediaMetadataRetriever
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -50,6 +52,7 @@ import com.reelforge.editor.model.newId
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,6 +60,8 @@ import java.io.File
 
 /** One finger stroke; points are fractions (0..1) of the frame width and height. */
 class DrawStroke(val color: Int, val points: List<Offset>)
+
+private const val SCRUB_INTERVAL_MS = 90L
 
 sealed interface ExportState {
     data object Idle : ExportState
@@ -91,6 +96,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Timeline thumbnails keyed by [thumbKey]; full-size stills for image clips keyed by uri. */
     val thumbs = mutableStateMapOf<String, ImageBitmap>()
     val previews = mutableStateMapOf<String, ImageBitmap>()
+
+    /** Frames shown along video clips on the timeline, keyed by [frameKey]. */
+    val frames = mutableStateMapOf<String, ImageBitmap>()
+    private val frameQueue = Channel<Pair<String, Long>>(Channel.UNLIMITED)
+    private var scrubJob: Job? = null
+    private var lastScrubSeekAt = 0L
 
     val player: ExoPlayer = ExoPlayer.Builder(app).build()
     private val musicPlayer: ExoPlayer = ExoPlayer.Builder(app).build()
@@ -133,6 +144,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             }
         })
         refreshProjects()
+        startFrameLoader()
     }
 
     // ---------------------------------------------------------------- projects
@@ -156,7 +168,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         history.clear()
         canUndo = false
         canRedo = false
-        selectedClipId = p.clips.firstOrNull()?.id
+        selectedClipId = null
         playheadMs = 0
         playlistSignature = ""
         effectSignature = ""
@@ -209,7 +221,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         project = next
         canUndo = history.canUndo
         canRedo = history.canRedo
-        if (next.clips.none { it.id == selectedClipId }) selectedClipId = next.clips.firstOrNull()?.id
+        if (next.clips.none { it.id == selectedClipId }) selectedClipId = null
         playheadMs = playheadMs.coerceIn(0, next.durationMs)
         syncPlayer()
         saveJob?.cancel()
@@ -256,7 +268,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             if (clips.size < uris.size) message = "Some files could not be read"
             if (clips.isNotEmpty()) {
                 mutate { it.copy(clips = it.clips + clips) }
-                if (selectedClipId == null) selectedClipId = clips.first().id
             }
         }
     }
@@ -266,11 +277,39 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteClip(id: String) {
-        val p = project ?: return
-        val index = p.clips.indexOfFirst { it.id == id }
-        if (index < 0) return
-        mutate { it.copy(clips = it.clips.filterNot { c -> c.id == id }) }
-        selectedClipId = project?.clips?.getOrNull(index.coerceAtMost((project?.clips?.size ?: 1) - 1))?.id
+        mutate { ProjectOps.delete(it, id) }
+        if (selectedClipId == id) selectedClipId = null
+    }
+
+    /** Tapping a clip on the timeline selects it; tapping it again clears the selection. */
+    fun toggleClipSelection(id: String) {
+        selectedClipId = if (selectedClipId == id) null else id
+    }
+
+    /** Edge drags on the timeline. [deltaMs] is timeline time; see [ProjectOps.trimStart]. */
+    fun trimClipStart(id: String, deltaMs: Long) = mutate { ProjectOps.trimStart(it, id, deltaMs) }
+
+    fun trimClipEnd(id: String, deltaMs: Long) = mutate { ProjectOps.trimEnd(it, id, deltaMs) }
+
+    /** Swaps the clip's video or photo for another one, keeping its edits. */
+    fun replaceClip(id: String, uri: Uri) {
+        viewModelScope.launch {
+            val info = withContext(Dispatchers.IO) {
+                runCatching {
+                    ctx.contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                MediaUtils.probe(ctx, uri)
+            }
+            if (info == null) {
+                message = "That file could not be read"
+                return@launch
+            }
+            mutate {
+                ProjectOps.replaceMedia(it, id, uri.toString(), info.type, info.durationMs, info.hasAudio)
+            }
+        }
     }
 
     fun duplicateClip(id: String) = mutate { ProjectOps.duplicate(it, id) }
@@ -729,6 +768,35 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (player.isPlaying) startMusic()
     }
 
+    fun pause() {
+        player.pause()
+    }
+
+    fun jumpToStart() = seekTo(0)
+
+    fun jumpToEnd() = seekTo(project?.durationMs ?: 0)
+
+    /**
+     * Follows the timeline while the user drags it. The playhead moves at once; the player is
+     * asked for a new frame at most every [SCRUB_INTERVAL_MS] so dragging stays smooth.
+     */
+    fun scrubTo(globalMs: Long) {
+        val p = project ?: return
+        playheadMs = globalMs.coerceIn(0, p.durationMs)
+        val now = SystemClock.elapsedRealtime()
+        scrubJob?.cancel()
+        if (now - lastScrubSeekAt >= SCRUB_INTERVAL_MS) {
+            lastScrubSeekAt = now
+            seekTo(playheadMs)
+        } else {
+            scrubJob = viewModelScope.launch {
+                delay(SCRUB_INTERVAL_MS)
+                lastScrubSeekAt = SystemClock.elapsedRealtime()
+                seekTo(playheadMs)
+            }
+        }
+    }
+
     fun selectClip(id: String) {
         val p = project ?: return
         selectedClipId = id
@@ -753,6 +821,47 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // -------------------------------------------------------------- thumbnails
 
     fun thumbKey(clip: Clip): String = "${clip.uri}@${clip.trimStartMs}"
+
+    /** Key into [frames] for the timeline frame of [uri] nearest to [sourceMs] (one per second). */
+    fun frameKey(uri: String, sourceMs: Long): String = "$uri#${sourceMs / 1000}"
+
+    /** Asks for a timeline frame; it appears in [frames] when ready. Safe to call repeatedly. */
+    fun requestFrame(uri: String, sourceMs: Long) {
+        val second = sourceMs / 1000
+        if (requested.add("f:$uri#$second")) frameQueue.trySend(uri to second)
+    }
+
+    /** Loads timeline frames one at a time, reusing the open video while the uri stays the same. */
+    private fun startFrameLoader() {
+        viewModelScope.launch(Dispatchers.IO) {
+            var openUri: String? = null
+            var retriever: MediaMetadataRetriever? = null
+            try {
+                for ((uri, second) in frameQueue) {
+                    try {
+                        if (uri != openUri) {
+                            runCatching { retriever?.release() }
+                            retriever = MediaMetadataRetriever().also { it.setDataSource(ctx, Uri.parse(uri)) }
+                            openUri = uri
+                        }
+                        val bitmap = retriever?.getScaledFrameAtTime(
+                            second * 1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 160,
+                        )
+                        if (bitmap != null) {
+                            val image = bitmap.asImageBitmap()
+                            withContext(Dispatchers.Main) { frames["$uri#$second"] = image }
+                        }
+                    } catch (e: Exception) {
+                        runCatching { retriever?.release() }
+                        retriever = null
+                        openUri = null
+                    }
+                }
+            } finally {
+                runCatching { retriever?.release() }
+            }
+        }
+    }
 
     fun requestThumb(clip: Clip) {
         val key = thumbKey(clip)

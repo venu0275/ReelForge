@@ -15,6 +15,7 @@ import android.util.Log
 import android.view.KeyEvent
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -181,41 +182,51 @@ class ScreenshotTest {
         waitForText("Trip to the hills")
         save("01_home_portrait")
 
-        // 2. Editor, portrait, second clip selected.
+        // 2. Editor, portrait, nothing selected: main menu.
         rule.runOnUiThread {
             vm.openProject(project)
-            vm.selectClip(project.clips[1].id)
             vm.seekTo(7_000)
         }
-        waitForText("Export")
-        Thread.sleep(3_000) // thumbnails load in the background
+        waitForText("Add to your video")
+        Thread.sleep(4_000) // timeline frames load in the background
         save("02_editor_portrait")
 
-        // 3. A tool open in portrait (bottom sheet).
+        // 3. A clip selected: its own actions and trim handles.
+        rule.runOnUiThread { vm.toggleClipSelection(project.clips[1].id) }
+        waitForText("Split")
+        save("03_clip_selected_portrait")
+
+        // 4. A tool open in portrait (bottom sheet).
         tap("Adjust", scroll = true)
         waitForText("Brightness")
-        save("03_tool_open_portrait")
+        save("04_tool_open_portrait")
         // A real Back key press goes to the sheet's own window and closes only the sheet.
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         Thread.sleep(1_500)
-        waitForText("Export")
+        waitForText("Split")
 
-        // 4. Editor, landscape.
+        // 5. Landscape with the clip still selected.
         rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-        waitForText("Export")
-        save("04_editor_landscape")
+        waitForText("Split")
+        Thread.sleep(2_000)
+        save("05_clip_selected_landscape")
 
-        // 5. A tool open in landscape (side pane).
+        // 6. A tool open in landscape (side pane).
         tap("Adjust", scroll = true)
         waitForText("Brightness")
-        save("05_tool_open_landscape")
-        tap("Close")
+        save("06_tool_open_landscape")
+        rule.onNodeWithContentDescription("Close tool").performClick()
 
-        // 6. Text editor in landscape.
+        // 7. Landscape main menu.
+        rule.runOnUiThread { vm.selectedClipId = null }
+        waitForText("Add to your video")
+        save("07_editor_landscape")
+
+        // 8. Text editor in landscape.
         tap("Text", scroll = true)
         waitForText("Add text at playhead")
         tap("Edit")
         waitForText("Colour")
-        save("06_text_editor_landscape")
+        save("08_text_editor_landscape")
     }
 }

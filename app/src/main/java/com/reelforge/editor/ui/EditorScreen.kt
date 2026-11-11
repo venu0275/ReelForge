@@ -10,40 +10,54 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -51,21 +65,40 @@ import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.engine.overlayAnim
 import com.reelforge.editor.model.Background
+import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
-import java.io.File
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.roundToInt
 
-enum class Panel { TRIM, SPEED, VOLUME, FILTER, ADJUST, FADE, TEXT, LAYER, AUDIO, MUSIC, BACKGROUND, DRAW, EXPORT }
+enum class Panel(val title: String) {
+    TRIM("Trim"),
+    SPEED("Speed"),
+    VOLUME("Volume"),
+    FILTER("Filter"),
+    ADJUST("Adjust"),
+    FADE("Fade"),
+    TEXT("Text"),
+    LAYER("Layers"),
+    AUDIO("Voice and sounds"),
+    MUSIC("Music"),
+    BACKGROUND("Backdrop"),
+    DRAW("Draw"),
+    EXPORT("Export"),
+}
 
+/**
+ * The editor. The timeline scrolls under a fixed playhead, and the menu shows only what applies:
+ * things to add when nothing is selected, or the actions for the selected clip.
+ */
 @Composable
 fun EditorScreen(vm: EditorViewModel) {
     val project = vm.project ?: return
     var panel by remember { mutableStateOf<Panel?>(null) }
-
-    BackHandler { vm.closeProject() }
 
     LaunchedEffect(Unit) {
         while (true) {
@@ -107,6 +140,13 @@ fun EditorScreen(vm: EditorViewModel) {
         val target = fontTarget
         if (uri != null && target != null) vm.importFont(uri, target)
     }
+    var replaceTarget by remember { mutableStateOf<String?>(null) }
+    val pickReplacement = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val target = replaceTarget
+        if (uri != null && target != null) vm.replaceClip(target, uri)
+    }
     val record: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
@@ -117,46 +157,34 @@ fun EditorScreen(vm: EditorViewModel) {
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
         )
     }
+    val replace: (String) -> Unit = { clipId ->
+        replaceTarget = clipId
+        pickReplacement.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+        )
+    }
+    val editText: (String) -> Unit = { id ->
+        editingTextId = id
+        panel = Panel.TEXT
+    }
+    val editLayer: (String) -> Unit = { id ->
+        editingLayerId = id
+        panel = Panel.LAYER
+    }
 
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-    val topBar: @Composable () -> Unit = {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = { vm.closeProject() }) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                project.name,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            TextButton(onClick = { vm.undo() }, enabled = vm.canUndo) { Text("Undo") }
-            TextButton(onClick = { vm.redo() }, enabled = vm.canRedo) { Text("Redo") }
-            Button(
-                onClick = { panel = Panel.EXPORT },
-                enabled = project.clips.isNotEmpty(),
-                modifier = Modifier.padding(end = 8.dp),
-            ) { Text("Export") }
+    // Back steps out one level at a time: tool, then selection, then the project.
+    BackHandler {
+        when {
+            panel != null -> panel = null
+            vm.selectedClipId != null -> vm.selectedClipId = null
+            else -> vm.closeProject()
         }
     }
 
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
     val preview: @Composable (Modifier) -> Unit = { modifier ->
-        PreviewArea(
-            vm, project, modifier,
-            onEditText = { id ->
-                editingTextId = id
-                panel = Panel.TEXT
-            },
-            onEditLayer = { id ->
-                editingLayerId = id
-                panel = Panel.LAYER
-            },
-        )
+        PreviewArea(vm, project, modifier, onEditText = editText, onEditLayer = editLayer)
     }
 
     val messageBar: @Composable () -> Unit = {
@@ -171,6 +199,31 @@ fun EditorScreen(vm: EditorViewModel) {
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+    }
+
+    val timeline: @Composable (Modifier) -> Unit = { modifier ->
+        Timeline(
+            vm, project, modifier,
+            addMedia = addMedia,
+            onEditText = editText,
+            onEditLayer = editLayer,
+            onOpenAudio = { panel = Panel.AUDIO },
+            onOpenMusic = { panel = Panel.MUSIC },
+        )
+    }
+
+    val menu: @Composable (Modifier, Boolean) -> Unit = { modifier, showExport ->
+        EditorMenu(
+            vm, project, modifier,
+            showExport = showExport,
+            addMedia = addMedia,
+            replace = replace,
+            openPanel = { which ->
+                if (which == Panel.TEXT) editingTextId = null
+                if (which == Panel.LAYER) editingLayerId = null
+                panel = which
+            },
+        )
     }
 
     // The controls of one tool; shown in a bottom sheet (portrait) or the side pane (landscape).
@@ -224,61 +277,108 @@ fun EditorScreen(vm: EditorViewModel) {
         .displayCutoutPadding()
 
     if (landscape) {
-        // Landscape: video on the left, timeline + tools (or the open tool) on the right.
-        Row(root) {
-            Column(Modifier.weight(1.25f).fillMaxHeight()) {
-                topBar()
-                preview(Modifier.weight(1f))
-                messageBar()
-                Transport(vm, project)
-            }
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.surface)
-            ) {
-                Timeline(vm, project, addMedia)
-                if (open != null && sidePanel) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(start = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("Tool", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                        TextButton(onClick = { panel = null }) { Text("Close") }
+        Column(root) {
+            Row(Modifier.weight(1f)) {
+                // Left rail: leave, undo, redo, play.
+                Column(
+                    Modifier.width(56.dp).fillMaxHeight().padding(vertical = 4.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    IconButton(onClick = { vm.closeProject() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to projects")
                     }
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 16.dp)
-                    ) {
-                        panelBody(open)
+                    GlyphButton("↶", "Undo", vm.canUndo) { vm.undo() }
+                    GlyphButton("↷", "Redo", vm.canRedo) { vm.redo() }
+                    Spacer(Modifier.weight(1f))
+                    PlayButton(vm, project)
+                }
+                preview(Modifier.weight(1f).fillMaxHeight())
+                Column(
+                    Modifier
+                        .width(300.dp)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.surface)
+                ) {
+                    if (open != null && sidePanel) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { panel = null }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close tool")
+                            }
+                            Text(open.title, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Column(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp)
+                        ) {
+                            panelBody(open)
+                        }
+                    } else {
+                        menu(Modifier.fillMaxSize(), true)
                     }
-                } else {
-                    Tools(vm, project, addMedia, wrap = true) { panel = it }
                 }
             }
+            messageBar()
+            Row {
+                Column(
+                    Modifier.width(56.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    JumpButtons(vm, project, vertical = true)
+                }
+                timeline(Modifier.weight(1f))
+            }
         }
-        if (sidePanel) BackHandler { panel = null }
     } else {
-        // Portrait: video on top, timeline and tools below.
         Column(root) {
-            topBar()
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { vm.closeProject() }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to projects")
+                }
+                Text(
+                    project.name,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                GlyphButton("↶", "Undo", vm.canUndo) { vm.undo() }
+                GlyphButton("↷", "Redo", vm.canRedo) { vm.redo() }
+                Button(
+                    onClick = { panel = Panel.EXPORT },
+                    enabled = project.clips.isNotEmpty(),
+                    modifier = Modifier.padding(end = 8.dp),
+                ) { Text("Export") }
+            }
             preview(Modifier.weight(1f))
             messageBar()
-            Transport(vm, project)
-            Timeline(vm, project, addMedia)
-            Tools(vm, project, addMedia, wrap = false) { panel = it }
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                JumpButtons(vm, project, vertical = false)
+                Spacer(Modifier.weight(1f))
+                PlayButton(vm, project)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${MediaUtils.formatTime(vm.playheadMs)} / ${MediaUtils.formatTime(project.durationMs)}",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            timeline(Modifier.fillMaxWidth())
+            menu(Modifier.fillMaxWidth().heightIn(max = 190.dp), false)
         }
     }
 
     if (open == Panel.EXPORT) {
         ExportDialog(vm, project) { panel = null }
     } else if (open == Panel.DRAW) {
-        BackHandler { panel = null }
         DrawScreen(
             project = project,
             onCancel = { panel = null },
@@ -297,6 +397,576 @@ fun EditorScreen(vm: EditorViewModel) {
                     .padding(bottom = 24.dp)
             ) {
                 panelBody(open)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- small controls
+
+@Composable
+private fun GlyphButton(glyph: String, description: String, enabled: Boolean, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.semantics { contentDescription = description },
+    ) {
+        Text(glyph, fontSize = 24.sp)
+    }
+}
+
+@Composable
+private fun PlayButton(vm: EditorViewModel, project: Project) {
+    FilledIconButton(
+        onClick = { vm.togglePlay() },
+        enabled = project.clips.isNotEmpty(),
+        modifier = Modifier.semantics { contentDescription = if (vm.isPlaying) "Pause" else "Play" },
+    ) {
+        if (vm.isPlaying) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Box(Modifier.size(4.dp, 14.dp).background(LocalContentColor.current))
+                Box(Modifier.size(4.dp, 14.dp).background(LocalContentColor.current))
+            }
+        } else {
+            Icon(Icons.Default.PlayArrow, contentDescription = null)
+        }
+    }
+}
+
+/** Jump to the start / end of the video. */
+@Composable
+private fun JumpButtons(vm: EditorViewModel, project: Project, vertical: Boolean) {
+    val enabled = project.clips.isNotEmpty()
+    val buttons: @Composable () -> Unit = {
+        GlyphButton("⇤", "Go to start", enabled) { vm.jumpToStart() }
+        GlyphButton("⇥", "Go to end", enabled) { vm.jumpToEnd() }
+    }
+    if (vertical) Column { buttons() } else Row { buttons() }
+}
+
+// ------------------------------------------------------------------------- menu
+
+/**
+ * Shows what can be added when nothing is selected, or the actions for the selected clip.
+ */
+@Composable
+private fun EditorMenu(
+    vm: EditorViewModel,
+    project: Project,
+    modifier: Modifier,
+    showExport: Boolean,
+    addMedia: () -> Unit,
+    replace: (String) -> Unit,
+    openPanel: (Panel) -> Unit,
+) {
+    val clip = vm.selectedClip
+    val hasClips = project.clips.isNotEmpty()
+
+    Column(modifier) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 4.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (clip != null) {
+                IconButton(onClick = { vm.selectedClipId = null }) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to main menu")
+                }
+                Text(
+                    (if (clip.type == ClipType.VIDEO) "Video clip" else "Photo") +
+                        " · " + MediaUtils.formatTime(clip.durationMs),
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                IconButton(onClick = { vm.deleteClip(clip.id) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete clip")
+                }
+            } else {
+                Text(
+                    if (hasClips) "Add to your video" else "Start by adding media",
+                    Modifier.weight(1f).padding(start = 12.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                if (showExport) {
+                    Button(onClick = { openPanel(Panel.EXPORT) }, enabled = hasClips) { Text("Export") }
+                }
+            }
+        }
+
+        FlowRow(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp)
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (clip == null) {
+                MenuTile("Media", accent = true) { addMedia() }
+                MenuTile("Text", enabled = hasClips) { openPanel(Panel.TEXT) }
+                MenuTile("Layer", enabled = hasClips) { openPanel(Panel.LAYER) }
+                MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
+                MenuTile("Voice", enabled = hasClips) { openPanel(Panel.AUDIO) }
+                MenuTile("Music") { openPanel(Panel.MUSIC) }
+                MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
+            } else {
+                val id = clip.id
+                val isVideo = clip.type == ClipType.VIDEO
+                MenuTile("Split", accent = true) { vm.splitAtPlayhead() }
+                MenuTile("Trim") { openPanel(Panel.TRIM) }
+                MenuTile("Replace") { replace(id) }
+                if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
+                if (isVideo) MenuTile("Volume") { openPanel(Panel.VOLUME) }
+                MenuTile("Filter") { openPanel(Panel.FILTER) }
+                MenuTile("Adjust") { openPanel(Panel.ADJUST) }
+                MenuTile("Fade") { openPanel(Panel.FADE) }
+                MenuTile("Rotate") { vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) } }
+                MenuTile("Mirror") { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
+                MenuTile(if (clip.fill) "Fit" else "Fill") { vm.updateClip(id) { it.copy(fill = !it.fill) } }
+                if (isVideo) MenuTile("Freeze") { vm.freezeFrame() }
+                MenuTile("Copy") { vm.duplicateClip(id) }
+                MenuTile("Move left") { vm.moveClip(id, -1) }
+                MenuTile("Move right") { vm.moveClip(id, 1) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuTile(
+    label: String,
+    enabled: Boolean = true,
+    accent: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
+    ) {
+        Text(
+            label,
+            modifier = Modifier.widthIn(min = 84.dp).padding(horizontal = 12.dp, vertical = 14.dp),
+            style = MaterialTheme.typography.labelLarge,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+// --------------------------------------------------------------------- timeline
+
+private val RULER_HEIGHT = 22.dp
+private val TRACK_HEIGHT = 56.dp
+private val ROW_HEIGHT = 24.dp
+private val TILE_WIDTH = 64.dp
+
+private class Bar(val id: String, val label: String, val startMs: Long, val endMs: Long)
+
+/**
+ * The timeline. Content scrolls under a playhead fixed at the centre: dragging scrubs the video,
+ * pinching zooms, tapping a clip selects it and dragging a selected clip's edges trims it.
+ * Text, layers, sounds and music appear as bars on their own rows.
+ */
+@Composable
+private fun Timeline(
+    vm: EditorViewModel,
+    project: Project,
+    modifier: Modifier,
+    addMedia: () -> Unit,
+    onEditText: (String) -> Unit,
+    onEditLayer: (String) -> Unit,
+    onOpenAudio: () -> Unit,
+    onOpenMusic: () -> Unit,
+) {
+    val density = LocalDensity.current
+    val scroll = rememberScrollState()
+    var dpPerSecond by rememberSaveable { mutableFloatStateOf(48f) }
+
+    val total = project.durationMs
+    // Keep the scrolling content within what a layout can measure.
+    val widest = if (total > 0) 60_000f / (total / 1000f) else 240f
+    val scale = dpPerSecond.coerceIn(4f, maxOf(4f, minOf(240f, widest)))
+    val pxPerMs = with(density) { scale.dp.toPx() } / 1000f
+    val contentPx = total * pxPerMs
+    val contentWidth = with(density) { contentPx.toDp() }
+    val latestPxPerMs by rememberUpdatedState(pxPerMs)
+
+    val dragged by scroll.interactionSource.collectIsDraggedAsState()
+    var userScrolling by remember { mutableStateOf(false) }
+    var zoomAnchorMs by remember { mutableStateOf<Long?>(null) }
+
+    // Dragging the timeline pauses playback and scrubs.
+    LaunchedEffect(dragged) {
+        if (dragged) {
+            userScrolling = true
+            vm.pause()
+        }
+    }
+    LaunchedEffect(scroll.isScrollInProgress) {
+        if (!scroll.isScrollInProgress && userScrolling) {
+            userScrolling = false
+            scroll.scrollTo((vm.playheadMs * latestPxPerMs).roundToInt())
+        }
+    }
+    LaunchedEffect(userScrolling) {
+        if (userScrolling) {
+            snapshotFlow { scroll.value }.collect { px ->
+                if (zoomAnchorMs == null) vm.scrubTo((px / latestPxPerMs).toLong())
+            }
+        }
+    }
+    // Playback, seeks and zooming move the content so the playhead time stays under the line.
+    LaunchedEffect(vm.playheadMs, pxPerMs, contentPx, zoomAnchorMs, scroll.maxValue) {
+        val anchor = zoomAnchorMs
+        if (anchor != null) {
+            scroll.scrollTo((anchor * pxPerMs).roundToInt())
+        } else if (!userScrolling) {
+            scroll.scrollTo((vm.playheadMs * pxPerMs).roundToInt())
+        }
+    }
+
+    val textBars = project.texts.map { Bar(it.id, it.text.replace("\n", " "), it.startMs, it.endMs) }
+    val layerBars = project.layers.mapIndexed { i, l -> Bar(l.id, "Layer ${i + 1}", l.startMs, l.endMs) }
+    val audioBars = project.audio.map { Bar(it.id, it.title, it.startMs, it.startMs + it.durationMs) }
+    val rows = listOf(textBars, layerBars, audioBars).count { it.isNotEmpty() } +
+        (if (project.music != null) 1 else 0)
+    val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp
+
+    BoxWithConstraints(
+        modifier
+            .height(height)
+            .background(MaterialTheme.colorScheme.surface)
+            .pointerInput(Unit) {
+                // Two fingers zoom the timeline; one finger is left to the scroll below.
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val fingers = event.changes.count { it.pressed }
+                        if (fingers >= 2) {
+                            if (zoomAnchorMs == null) zoomAnchorMs = vm.playheadMs
+                            val zoom = event.calculateZoom()
+                            if (zoom != 1f) dpPerSecond = (dpPerSecond * zoom).coerceIn(4f, 240f)
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                    zoomAnchorMs = null
+                }
+            }
+    ) {
+        val half = maxWidth / 2
+        val viewportPx = with(density) { maxWidth.toPx() }
+        val tilePx = with(density) { TILE_WIDTH.toPx() }
+        // Only clips and ticks near the screen are drawn; this changes once per tile scrolled.
+        val window by remember(tilePx) { derivedStateOf { (scroll.value / tilePx).toInt() } }
+        val visibleFrom = window * tilePx - viewportPx
+        val visibleTo = window * tilePx + viewportPx
+
+        Row(Modifier.fillMaxHeight().horizontalScroll(scroll)) {
+            Spacer(Modifier.width(half))
+            Column(Modifier.width(contentWidth)) {
+                Ruler(total, pxPerMs, visibleFrom, visibleTo, Modifier.width(contentWidth).height(RULER_HEIGHT))
+
+                Row(Modifier.height(TRACK_HEIGHT)) {
+                    var startPx = 0f
+                    project.clips.forEach { clip ->
+                        val clipStartPx = startPx
+                        startPx += clip.durationMs * pxPerMs
+                        key(clip.id) {
+                            ClipBlock(
+                                vm, clip, clipStartPx, pxPerMs, tilePx, visibleFrom, visibleTo,
+                                selected = clip.id == vm.selectedClipId,
+                            )
+                        }
+                    }
+                }
+
+                if (textBars.isNotEmpty()) {
+                    BarRow(textBars, pxPerMs, Color(0xFF7C4DFF), onEditText) { id, deltaMs ->
+                        vm.updateText(id) { it.shifted(deltaMs) }
+                    }
+                }
+                if (layerBars.isNotEmpty()) {
+                    BarRow(layerBars, pxPerMs, Color(0xFF009688), onEditLayer) { id, deltaMs ->
+                        vm.updateLayer(id) {
+                            val start = (it.startMs + deltaMs).coerceAtLeast(0)
+                            it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
+                        }
+                    }
+                }
+                if (audioBars.isNotEmpty()) {
+                    BarRow(audioBars, pxPerMs, Color(0xFF43A047), { onOpenAudio() }) { id, deltaMs ->
+                        vm.updateAudioClip(id) { it.copy(startMs = (it.startMs + deltaMs).coerceAtLeast(0)) }
+                    }
+                }
+                project.music?.let { music ->
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(ROW_HEIGHT)
+                            .padding(vertical = 2.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFFEF6C00))
+                            .clickable(onClick = onOpenMusic)
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        Text("♪ ${music.title}", fontSize = 11.sp, maxLines = 1, color = Color.White)
+                    }
+                }
+            }
+            // Add-media button sits right after the last clip.
+            Column {
+                Spacer(Modifier.height(RULER_HEIGHT))
+                Box(
+                    Modifier
+                        .padding(start = 6.dp)
+                        .size(TRACK_HEIGHT)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable(onClick = addMedia),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add media")
+                }
+            }
+            Spacer(Modifier.width(half))
+        }
+
+        // Fixed playhead with the current time; total length at the right.
+        Box(
+            Modifier
+                .align(Alignment.TopCenter)
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(MaterialTheme.colorScheme.primary)
+        )
+        Text(
+            MediaUtils.formatTime(vm.playheadMs),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.primary)
+                .padding(horizontal = 8.dp, vertical = 1.dp),
+            color = MaterialTheme.colorScheme.onPrimary,
+            fontSize = 11.sp,
+        )
+        Text(
+            MediaUtils.formatTime(total),
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 6.dp, top = 1.dp)
+                .clip(RoundedCornerShape(50))
+                .background(Color.White)
+                .padding(horizontal = 8.dp, vertical = 1.dp),
+            color = Color.Black,
+            fontSize = 11.sp,
+        )
+        if (project.clips.isEmpty()) {
+            Text(
+                "Tap + to add videos or photos",
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun com.reelforge.editor.model.TextItem.shifted(deltaMs: Long): com.reelforge.editor.model.TextItem {
+    val start = (startMs + deltaMs).coerceAtLeast(0)
+    return copy(startMs = start, endMs = start + (endMs - startMs))
+}
+
+/** Time marks along the top of the timeline. */
+@Composable
+private fun Ruler(totalMs: Long, pxPerMs: Float, visibleFrom: Float, visibleTo: Float, modifier: Modifier) {
+    val measurer = rememberTextMeasurer()
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val style = TextStyle(color = color, fontSize = 10.sp)
+    val minGapPx = with(LocalDensity.current) { 72.dp.toPx() }
+    Canvas(modifier) {
+        if (totalMs <= 0 || pxPerMs <= 0f) return@Canvas
+        val stepMs = RULER_STEPS.firstOrNull { it * pxPerMs >= minGapPx } ?: RULER_STEPS.last()
+        val firstMs = (maxOf(0f, visibleFrom) / pxPerMs).toLong() / stepMs * stepMs
+        val lastMs = minOf(totalMs.toFloat(), visibleTo / pxPerMs).toLong()
+        var t = firstMs
+        while (t <= lastMs) {
+            val x = t * pxPerMs
+            drawLine(color, Offset(x, size.height * 0.55f), Offset(x, size.height), strokeWidth = 2f)
+            val label = if (stepMs < 1000) MediaUtils.formatTime(t) else "%d:%02d".format(t / 60_000, (t / 1000) % 60)
+            drawText(measurer.measure(label, style), topLeft = Offset(x + 6f, 0f))
+            // A dot halfway between labels.
+            val mid = (t + stepMs / 2) * pxPerMs
+            if (mid < size.width) drawCircle(color, radius = 2.5f, center = Offset(mid, size.height * 0.75f))
+            t += stepMs
+        }
+    }
+}
+
+private val RULER_STEPS = listOf(
+    100L, 200L, 500L, 1_000L, 2_000L, 5_000L, 10_000L, 15_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L,
+)
+
+/** One clip on the main track: a strip of frames, a selection outline and trim handles. */
+@Composable
+private fun ClipBlock(
+    vm: EditorViewModel,
+    clip: Clip,
+    startPx: Float,
+    pxPerMs: Float,
+    tilePx: Float,
+    visibleFrom: Float,
+    visibleTo: Float,
+    selected: Boolean,
+) {
+    val density = LocalDensity.current
+    val widthPx = clip.durationMs * pxPerMs
+    val isVideo = clip.type == ClipType.VIDEO
+    val firstTile = maxOf(0, floor((visibleFrom - startPx) / tilePx).toInt())
+    val lastTile = minOf(ceil(widthPx / tilePx).toInt() - 1, floor((visibleTo - startPx) / tilePx).toInt())
+    // Each tile shows the source frame at its left edge.
+    val tiles = if (lastTile >= firstTile) {
+        (firstTile..lastTile).map { i ->
+            i to if (isVideo) clip.trimStartMs + (i * tilePx / pxPerMs * clip.speed).toLong() else 0L
+        }
+    } else emptyList()
+
+    val stillKey = vm.thumbKey(clip)
+    LaunchedEffect(stillKey) { vm.requestThumb(clip) }
+    SideEffect { if (isVideo) tiles.forEach { vm.requestFrame(clip.uri, it.second) } }
+
+    val shape = RoundedCornerShape(6.dp)
+    val outline = MaterialTheme.colorScheme.primary
+    Box(
+        Modifier
+            .width(with(density) { widthPx.toDp() })
+            .fillMaxHeight()
+            .zIndex(if (selected) 1f else 0f)
+    ) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(horizontal = 1.dp)
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .drawBehind {
+                    tiles.forEach { (i, sourceMs) ->
+                        val frame = if (isVideo) vm.frames[vm.frameKey(clip.uri, sourceMs)] else null
+                        val image = frame ?: vm.thumbs[stillKey]
+                        if (image != null) drawTile(image, i * tilePx, tilePx)
+                    }
+                }
+                .then(if (selected) Modifier.border(2.dp, outline, shape) else Modifier)
+                .clickable { vm.toggleClipSelection(clip.id) }
+                .semantics { contentDescription = if (isVideo) "Video clip" else "Photo clip" }
+        )
+        if (selected && widthPx > with(density) { 64.dp.toPx() }) {
+            TrimHandle(atStart = true) { dragPx -> vm.trimClipStart(clip.id, (dragPx / pxPerMs).toLong()) }
+            TrimHandle(atStart = false) { dragPx -> vm.trimClipEnd(clip.id, (dragPx / pxPerMs).toLong()) }
+        }
+    }
+}
+
+/** Draws [image] centre-cropped into a tile starting at [x]. */
+private fun DrawScope.drawTile(image: ImageBitmap, x: Float, width: Float) {
+    val height = size.height
+    if (width <= 0f || height <= 0f) return
+    val wanted = width / height
+    val actual = image.width.toFloat() / image.height
+    val srcWidth = if (actual > wanted) (image.height * wanted).toInt() else image.width
+    val srcHeight = if (actual > wanted) image.height else (image.width / wanted).toInt()
+    drawImage(
+        image,
+        srcOffset = IntOffset((image.width - srcWidth) / 2, (image.height - srcHeight) / 2),
+        srcSize = IntSize(srcWidth.coerceAtLeast(1), srcHeight.coerceAtLeast(1)),
+        dstOffset = IntOffset(x.roundToInt(), 0),
+        dstSize = IntSize(ceil(width).toInt(), height.roundToInt()),
+    )
+}
+
+/** A grab bar on a selected clip's edge. The trim is applied when the finger lifts. */
+@Composable
+private fun BoxScope.TrimHandle(atStart: Boolean, onCommit: (dragPx: Float) -> Unit) {
+    var drag by remember { mutableFloatStateOf(0f) }
+    val commit by rememberUpdatedState(onCommit)
+    Box(
+        Modifier
+            .align(if (atStart) Alignment.CenterStart else Alignment.CenterEnd)
+            .offset { IntOffset(drag.roundToInt(), 0) }
+            .width(20.dp)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(6.dp))
+            .background(MaterialTheme.colorScheme.primary)
+            .semantics { contentDescription = if (atStart) "Trim start" else "Trim end" }
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        commit(drag)
+                        drag = 0f
+                    },
+                    onDragCancel = { drag = 0f },
+                ) { change, amount ->
+                    change.consume()
+                    drag += amount
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(3.dp, 20.dp).clip(CircleShape).background(Color.White))
+    }
+}
+
+/**
+ * A row of bars (text, layers or sounds). Tap a bar to open it; long-press and drag to move it
+ * in time.
+ */
+@Composable
+private fun BarRow(
+    bars: List<Bar>,
+    pxPerMs: Float,
+    color: Color,
+    onTap: (String) -> Unit,
+    onMove: (id: String, deltaMs: Long) -> Unit,
+) {
+    val density = LocalDensity.current
+    val move by rememberUpdatedState(onMove)
+    val scale by rememberUpdatedState(pxPerMs)
+    Box(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
+        bars.forEach { bar ->
+            key(bar.id) {
+                var drag by remember { mutableFloatStateOf(0f) }
+                val x = with(density) { (bar.startMs * pxPerMs).toDp() }
+                val width = with(density) { ((bar.endMs - bar.startMs) * pxPerMs).toDp() }
+                Box(
+                    Modifier
+                        .offset { IntOffset(x.roundToPx() + drag.roundToInt(), 0) }
+                        .width(maxOf(width, 14.dp))
+                        .fillMaxHeight()
+                        .padding(vertical = 2.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(color.copy(alpha = if (drag != 0f) 0.6f else 0.9f))
+                        .clickable { onTap(bar.id) }
+                        .pointerInput(bar.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragEnd = {
+                                    move(bar.id, (drag / scale).toLong())
+                                    drag = 0f
+                                },
+                                onDragCancel = { drag = 0f },
+                            ) { change, amount ->
+                                change.consume()
+                                drag += amount.x
+                            }
+                        }
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(bar.label, fontSize = 11.sp, maxLines = 1, color = Color.White)
+                }
             }
         }
     }
@@ -477,183 +1147,6 @@ private fun glide(
     if (!moving) return BiasAlignment(x, -y)
     val p = (tMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
     return BiasAlignment(x + (x2 - x) * p, -(y + (y2 - y) * p))
-}
-
-// ---------------------------------------------------------------- transport
-
-@Composable
-private fun Transport(vm: EditorViewModel, project: Project) {
-    val total = project.durationMs
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        FilledIconButton(onClick = { vm.togglePlay() }, enabled = project.clips.isNotEmpty()) {
-            if (vm.isPlaying) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(Modifier.size(4.dp, 14.dp).background(LocalContentColor.current))
-                    Box(Modifier.size(4.dp, 14.dp).background(LocalContentColor.current))
-                }
-            } else {
-                Icon(Icons.Default.PlayArrow, contentDescription = "Play")
-            }
-        }
-        Slider(
-            value = vm.playheadMs.toFloat(),
-            onValueChange = { vm.seekTo(it.toLong()) },
-            valueRange = 0f..maxOf(total, 1L).toFloat(),
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-        )
-        Text(
-            "${MediaUtils.formatTime(vm.playheadMs)} / ${MediaUtils.formatTime(total)}",
-            style = MaterialTheme.typography.labelSmall,
-        )
-    }
-}
-
-// ----------------------------------------------------------------- timeline
-
-@Composable
-private fun Timeline(vm: EditorViewModel, project: Project, addMedia: () -> Unit) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth().height(72.dp),
-        contentPadding = PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        items(project.clips, key = { it.id }) { item ->
-            val key = vm.thumbKey(item)
-            LaunchedEffect(key) { vm.requestThumb(item) }
-            val selected = item.id == vm.selectedClipId
-            val width = (item.durationMs / 1000f * 28f).coerceIn(56f, 200f).dp
-            Box(
-                Modifier
-                    .width(width)
-                    .height(56.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .border(
-                        width = if (selected) 2.dp else 0.5.dp,
-                        color = if (selected) MaterialTheme.colorScheme.primary else Color.DarkGray,
-                        shape = RoundedCornerShape(6.dp),
-                    )
-                    .clickable { vm.selectClip(item.id) }
-            ) {
-                vm.thumbs[key]?.let { thumb ->
-                    Image(
-                        bitmap = thumb,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-                Text(
-                    MediaUtils.formatTime(item.durationMs),
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .background(Color.Black.copy(alpha = 0.55f))
-                        .padding(horizontal = 3.dp),
-                    fontSize = 10.sp,
-                    color = Color.White,
-                )
-            }
-        }
-        item {
-            Box(
-                Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable(onClick = addMedia),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add media")
-            }
-        }
-    }
-}
-
-// -------------------------------------------------------------------- tools
-
-@Composable
-private fun Tools(
-    vm: EditorViewModel,
-    project: Project,
-    addMedia: () -> Unit,
-    wrap: Boolean,
-    openPanel: (Panel) -> Unit,
-) {
-    val clip = vm.selectedClip
-    val hasClip = clip != null
-    val isVideo = clip?.type == ClipType.VIDEO
-    val id = clip?.id.orEmpty()
-
-    val buttons: @Composable () -> Unit = {
-        ToolButton("Media", true, addMedia)
-        ToolButton("Split", project.clips.isNotEmpty()) { vm.splitAtPlayhead() }
-        ToolButton("Trim", hasClip) { openPanel(Panel.TRIM) }
-        ToolButton("Speed", isVideo) { openPanel(Panel.SPEED) }
-        ToolButton("Volume", isVideo) { openPanel(Panel.VOLUME) }
-        ToolButton("Filter", hasClip) { openPanel(Panel.FILTER) }
-        ToolButton("Adjust", hasClip) { openPanel(Panel.ADJUST) }
-        ToolButton("Fade", hasClip) { openPanel(Panel.FADE) }
-        ToolButton("Rotate", hasClip) {
-            vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) }
-        }
-        ToolButton("Mirror", hasClip) { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
-        ToolButton(if (clip?.fill == true) "Fit" else "Fill", hasClip) {
-            vm.updateClip(id) { it.copy(fill = !it.fill) }
-        }
-        ToolButton("Text", project.clips.isNotEmpty()) { openPanel(Panel.TEXT) }
-        ToolButton("Backdrop", project.clips.isNotEmpty()) { openPanel(Panel.BACKGROUND) }
-        ToolButton("Layer", project.clips.isNotEmpty()) { openPanel(Panel.LAYER) }
-        ToolButton("Draw", project.clips.isNotEmpty()) { openPanel(Panel.DRAW) }
-        ToolButton("Voice", project.clips.isNotEmpty()) { openPanel(Panel.AUDIO) }
-        ToolButton("Music", true) { openPanel(Panel.MUSIC) }
-        ToolButton("Freeze", isVideo) { vm.freezeFrame() }
-        ToolButton("Copy", hasClip) { vm.duplicateClip(id) }
-        ToolButton("◀ Move", hasClip) { vm.moveClip(id, -1) }
-        ToolButton("Move ▶", hasClip) { vm.moveClip(id, 1) }
-        ToolButton("Delete", hasClip) { vm.deleteClip(id) }
-        ToolButton("Delete all clips", project.clips.isNotEmpty()) { vm.deleteAllClips() }
-    }
-
-    if (wrap) {
-        // Landscape side pane: buttons wrap onto several rows and scroll vertically.
-        FlowRow(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) { buttons() }
-    } else {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) { buttons() }
-    }
-}
-
-@Composable
-private fun ToolButton(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            style = MaterialTheme.typography.labelLarge,
-        )
-    }
 }
 
 // ------------------------------------------------------------------- export

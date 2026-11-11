@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -27,7 +28,7 @@ class EditorUiTest {
         }
     }
 
-    /** Taps the text itself, whichever button or chip it sits in. */
+    /** Taps the text itself, whichever button or tile it sits in. */
     private fun tap(text: String, scroll: Boolean = false) {
         val node = rule.onNodeWithText(text, useUnmergedTree = true)
         if (scroll) node.performScrollTo()
@@ -47,28 +48,31 @@ class EditorUiTest {
         tap("New project")
         waitForText("Create")
         tap("Create")
-        waitForText("Add videos or photos to begin")
+        waitForText("Start by adding media")
 
-        // Negative: with no clips there is nothing to export or undo.
+        // Negative: with no clips there is nothing to export, undo, play or decorate.
         rule.onNodeWithText("Export").assertIsNotEnabled()
-        rule.onNodeWithText("Undo").assertIsNotEnabled()
-        rule.onNodeWithText("Redo").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Undo").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Redo").assertIsNotEnabled()
+        rule.onNodeWithContentDescription("Play").assertIsNotEnabled()
+        rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithContentDescription("Add media").assertIsDisplayed()
 
-        // Landscape keeps the project open and shows the tools in the side pane.
+        // Landscape keeps the project open and shows the menu in the side pane.
         rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
-        waitForText("Add videos or photos to begin")
+        waitForText("Start by adding media")
         rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithText("Export").assertIsNotEnabled()
 
-        // Open a tool in landscape: it appears in the side pane with a Close button.
+        // Open a tool in landscape: it replaces the menu, and its back arrow returns to the menu.
         tap("Music", scroll = true)
         waitForText("Choose audio")
-        tap("Close")
-        rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
+        rule.onNodeWithContentDescription("Close tool").performClick()
+        waitForText("Start by adding media")
 
-        // Back to portrait: same project, tools in the bottom row.
+        // Back to portrait: same project, menu under the timeline, tool opens as a sheet.
         rotate(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
-        waitForText("Add videos or photos to begin")
+        waitForText("Start by adding media")
         rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
         tap("Music", scroll = true)
         waitForText("Choose audio")
