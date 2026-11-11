@@ -19,15 +19,19 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
   timing and animation.
 - Voice-over recording and extra sound clips placed anywhere on the timeline.
 - Freeze frame; sound fades together with the picture fade.
+- Backdrop behind clips that do not fill the frame: black, a colour, or a blurred copy.
+- Fade styles: fade, slide, zoom (slide and zoom are rendered on export).
+- Voice changer (pitch presets) per clip.
+- Custom fonts (import a .ttf / .otf) and a handwriting / drawing pad.
+- Two-point motion for text, stickers and image layers.
 - Background music: any audio file, volume, loop.
 - Live preview with scrubbing.
 - Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.
 
 ## Not built yet
 
-Video layers (video picture-in-picture), chroma key, blend modes, free keyframe animation,
-crossfade / wipe / slide transitions, coloured or blurred backgrounds, reverse, speed curves,
-voice changer and equaliser, custom fonts and handwriting, auto captions, asset store.
+Video layers (video picture-in-picture), chroma key, blend modes, true crossfade / wipe
+transitions, multi-point keyframes, reverse, speed curves, equaliser, auto captions, asset store.
 
 ## Build
 

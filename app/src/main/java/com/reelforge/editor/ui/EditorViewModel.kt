@@ -2,6 +2,10 @@ package com.reelforge.editor.ui
 
 import android.app.Application
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
@@ -11,6 +15,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
@@ -32,6 +37,7 @@ import com.reelforge.editor.engine.ExportManager
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.ImageLayer
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
@@ -46,6 +52,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+
+/** One finger stroke; points are fractions (0..1) of the frame width and height. */
+class DrawStroke(val color: Int, val points: List<Offset>)
 
 sealed interface ExportState {
     data object Idle : ExportState
@@ -367,6 +376,79 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteLayer(id: String) = mutate { p -> p.copy(layers = p.layers.filterNot { it.id == id }) }
 
+    /** Renders finger-drawn strokes (points in 0..1 of the frame) to a full-frame image layer. */
+    fun addDrawing(strokes: List<DrawStroke>) {
+        val p = project ?: return
+        if (strokes.isEmpty()) return
+        val start = playheadMs
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                runCatching {
+                    val (w, h) = ExportManager.outputSize(p.aspect, 1080)
+                    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap)
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        style = Paint.Style.STROKE
+                        strokeCap = Paint.Cap.ROUND
+                        strokeJoin = Paint.Join.ROUND
+                        strokeWidth = h * 0.012f
+                    }
+                    strokes.forEach { stroke ->
+                        if (stroke.points.isEmpty()) return@forEach
+                        paint.color = stroke.color
+                        val path = android.graphics.Path()
+                        stroke.points.forEachIndexed { i, pt ->
+                            if (i == 0) path.moveTo(pt.x * w, pt.y * h) else path.lineTo(pt.x * w, pt.y * h)
+                        }
+                        if (stroke.points.size == 1) {
+                            path.lineTo(stroke.points[0].x * w + 0.5f, stroke.points[0].y * h)
+                        }
+                        canvas.drawPath(path, paint)
+                    }
+                    val dir = File(ctx.filesDir, "drawings").apply { mkdirs() }
+                    File(dir, "drawing_${System.currentTimeMillis()}.png").also { f ->
+                        f.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    }
+                }.getOrNull()
+            }
+            if (file == null) {
+                message = "Could not save the drawing"
+                return@launch
+            }
+            val end = (start + 3000).coerceAtMost(maxOf(p.durationMs, start + 500))
+            val layer = ImageLayer(
+                uri = Uri.fromFile(file).toString(), scale = 1f, startMs = start, endMs = end,
+            )
+            mutate { it.copy(layers = it.layers + layer) }
+        }
+    }
+
+    // ------------------------------------------------------------ custom fonts
+
+    /** Copies a .ttf / .otf file into app storage and uses it for one text item. */
+    fun importFont(uri: Uri, textId: String) {
+        viewModelScope.launch {
+            val path = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dir = File(ctx.filesDir, "fonts").apply { mkdirs() }
+                    val file = File(dir, "font_${System.currentTimeMillis()}.ttf")
+                    ctx.contentResolver.openInputStream(uri)?.use { input ->
+                        file.outputStream().use { input.copyTo(it) }
+                    }
+                    // Throws if the file is not a usable font.
+                    Typeface.createFromFile(file)
+                    file.absolutePath
+                }.getOrNull()
+            }
+            if (path == null) message = "That file is not a usable font (.ttf or .otf)"
+            else updateText(textId) { it.copy(fontPath = path) }
+        }
+    }
+
+    fun setBackground(background: Background, color: Int? = null) = mutate { p ->
+        p.copy(background = background, backgroundColor = color ?: p.backgroundColor)
+    }
+
     // ------------------------------------------------- voice-over + sound clips
 
     fun addAudioClip(uri: Uri) {
@@ -586,16 +668,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun applyClipParams() {
-        val clip = project?.clips?.getOrNull(player.currentMediaItemIndex) ?: return
-        player.playbackParameters = PlaybackParameters(clip.effectiveSpeed)
+        val p = project ?: return
+        val clip = p.clips.getOrNull(player.currentMediaItemIndex) ?: return
+        player.playbackParameters = PlaybackParameters(
+            clip.effectiveSpeed,
+            if (clip.type == ClipType.VIDEO) clip.pitch.coerceIn(0.5f, 2f) else 1f,
+        )
         player.volume = if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)
-        val signature = EffectFactory.previewSignature(clip)
+        val signature = EffectFactory.previewSignature(clip, p)
         if (signature != effectSignature) {
             effectSignature = signature
+            val effects = EffectFactory.preview(clip, p)
             // Only switch the player to the effects pipeline once a clip actually needs it.
-            if (effectsEverSet || signature != EffectFactory.NO_EFFECTS) {
+            if (effectsEverSet || effects.isNotEmpty()) {
                 effectsEverSet = true
-                player.setVideoEffects(EffectFactory.preview(clip))
+                player.setVideoEffects(effects)
             }
         }
     }

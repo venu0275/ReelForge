@@ -36,12 +36,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TextFont
+import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.util.MediaUtils
 import kotlin.math.roundToInt
 
@@ -174,6 +176,21 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
         "Levels above 100% apply on export; the preview plays at up to 100%.",
         style = MaterialTheme.typography.bodySmall,
     )
+    Spacer(Modifier.height(8.dp))
+    Text("Voice changer", style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(1f to "Normal", 0.7f to "Deep", 0.85f to "Low", 1.25f to "High", 1.6f to "Chipmunk")
+            .forEach { (pitch, label) ->
+                FilterChip(
+                    selected = clip.pitch == pitch,
+                    onClick = { vm.updateClip(clip.id) { it.copy(pitch = pitch) } },
+                    label = { Text(label) },
+                )
+            }
+    }
 }
 
 @Composable
@@ -234,7 +251,21 @@ fun FadePanel(vm: EditorViewModel, clip: Clip) {
     CommitSlider("Fade out", clip.fadeOutMs.toFloat(), 0f..max, { "%.1f s".format(it / 1000f) }) { v ->
         vm.updateClip(clip.id) { it.copy(fadeOutMs = v.toLong()) }
     }
-    Text("Transition to the next clip (dip to black)", style = MaterialTheme.typography.labelLarge)
+    Text("Fade style", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TransitionStyle.entries.forEach { style ->
+            FilterChip(
+                selected = clip.transition == style,
+                onClick = { vm.updateClip(clip.id) { it.copy(transition = style) } },
+                label = { Text(style.label) },
+            )
+        }
+    }
+    Text(
+        "Slide and Zoom are rendered on export; the preview shows them as a fade.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Text("Transition to the next clip", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(0L to "None", 300L to "0.3 s", 500L to "0.5 s", 1000L to "1 s").forEach { (ms, label) ->
             FilterChip(
@@ -255,7 +286,7 @@ private val TextColors = listOf(
 ).map { it.toInt() }
 
 @Composable
-fun TextPanel(vm: EditorViewModel, project: Project) {
+fun TextPanel(vm: EditorViewModel, project: Project, pickFont: (String) -> Unit) {
     var editingId by remember { mutableStateOf<String?>(null) }
     val editing = project.texts.firstOrNull { it.id == editingId }
 
@@ -353,6 +384,23 @@ fun TextPanel(vm: EditorViewModel, project: Project) {
     }
     AnimChips("Animate in", editing.animIn) { a -> vm.updateText(id) { it.copy(animIn = a) } }
     AnimChips("Animate out", editing.animOut) { a -> vm.updateText(id) { it.copy(animOut = a) } }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (editing.fontPath == null) "Custom font: none" else "Custom font: imported",
+            Modifier.weight(1f),
+        )
+        if (editing.fontPath != null) {
+            TextButton(onClick = { vm.updateText(id) { it.copy(fontPath = null) } }) { Text("Remove") }
+        }
+        TextButton(onClick = { pickFont(id) }) { Text("Import .ttf") }
+    }
+    MotionControls(editing.moving, editing.x2, editing.y2,
+        onToggle = { on ->
+            vm.updateText(id) { if (on) it.copy(moving = true, x2 = it.x, y2 = it.y) else it.copy(moving = false) }
+        },
+        onX = { v -> vm.updateText(id) { it.copy(x2 = v) } },
+        onY = { v -> vm.updateText(id) { it.copy(y2 = v) } },
+    )
     LabeledSlider("Size", editing.size, 0.03f..0.25f) { v -> vm.updateText(id) { it.copy(size = v) } }
     LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
     LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
@@ -446,7 +494,7 @@ private fun TimeRange(startMs: Long, endMs: Long, totalMs: Long, onChange: (Long
 
 /** Picture-in-picture image layers: photos, logos and watermarks on top of the video. */
 @Composable
-fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit) {
+fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit, draw: () -> Unit) {
     var editingId by remember { mutableStateOf<String?>(null) }
     val editing = project.layers.firstOrNull { it.id == editingId }
 
@@ -468,7 +516,10 @@ fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = pickImage) { Text("Add image at playhead") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = pickImage) { Text("Add image at playhead") }
+            TextButton(onClick = draw) { Text("Draw") }
+        }
         return
     }
 
@@ -490,6 +541,13 @@ fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit) {
     }
     AnimChips("Animate in", editing.animIn) { a -> vm.updateLayer(id) { it.copy(animIn = a) } }
     AnimChips("Animate out", editing.animOut) { a -> vm.updateLayer(id) { it.copy(animOut = a) } }
+    MotionControls(editing.moving, editing.x2, editing.y2,
+        onToggle = { on ->
+            vm.updateLayer(id) { if (on) it.copy(moving = true, x2 = it.x, y2 = it.y) else it.copy(moving = false) }
+        },
+        onX = { v -> vm.updateLayer(id) { it.copy(x2 = v) } },
+        onY = { v -> vm.updateLayer(id) { it.copy(y2 = v) } },
+    )
 }
 
 /** Voice-over recordings and sound clips placed on the timeline. */
@@ -529,4 +587,64 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             format = { "${(it * 100).roundToInt()}%" },
         ) { v -> vm.updateAudioClip(clip.id) { it.copy(volume = v) } }
     }
+}
+
+/** Simple two-point motion: the item glides from its position to an end position. */
+@Composable
+private fun MotionControls(
+    moving: Boolean,
+    x2: Float,
+    y2: Float,
+    onToggle: (Boolean) -> Unit,
+    onX: (Float) -> Unit,
+    onY: (Float) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Move while visible", Modifier.weight(1f))
+        Switch(checked = moving, onCheckedChange = onToggle)
+    }
+    if (moving) {
+        LabeledSlider("End position: Left ↔ Right", x2, -1f..1f, onX)
+        LabeledSlider("End position: Bottom ↔ Top", y2, -1f..1f, onY)
+    }
+}
+
+/** What fills the bars around clips that do not fill the frame. */
+@Composable
+fun BackgroundPanel(vm: EditorViewModel, project: Project) {
+    PanelTitle("Backdrop")
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Background.entries.forEach { b ->
+            FilterChip(
+                selected = project.background == b,
+                onClick = { vm.setBackground(b) },
+                label = { Text(b.label) },
+            )
+        }
+    }
+    if (project.background == Background.COLOR) {
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextColors.forEach { c ->
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(Color(c))
+                        .border(
+                            width = if (project.backgroundColor == c) 3.dp else 1.dp,
+                            color = if (project.backgroundColor == c) {
+                                MaterialTheme.colorScheme.primary
+                            } else Color.Gray,
+                            shape = CircleShape,
+                        )
+                        .clickable { vm.setBackground(Background.COLOR, c) }
+                )
+            }
+        }
+    }
+    Text(
+        "Applies to clips set to Fit. Clips set to Fill cover the whole frame.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }

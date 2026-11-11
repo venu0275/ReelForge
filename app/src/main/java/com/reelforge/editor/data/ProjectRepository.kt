@@ -3,6 +3,8 @@ package com.reelforge.editor.data
 import android.content.Context
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.Background
+import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.model.ImageLayer
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Clip
@@ -39,6 +41,8 @@ class ProjectRepository(context: Context) {
         put("name", p.name)
         put("aspect", p.aspect.name)
         put("updatedAt", p.updatedAt)
+        put("background", p.background.name)
+        put("backgroundColor", p.backgroundColor)
         put("clips", JSONArray().apply { p.clips.forEach { put(clipToJson(it)) } })
         put("texts", JSONArray().apply { p.texts.forEach { put(textToJson(it)) } })
         put("layers", JSONArray().apply {
@@ -54,6 +58,9 @@ class ProjectRepository(context: Context) {
                     put("endMs", l.endMs)
                     put("animIn", l.animIn.name)
                     put("animOut", l.animOut.name)
+                    put("moving", l.moving)
+                    put("x2", l.x2.toDouble())
+                    put("y2", l.y2.toDouble())
                 })
             }
         })
@@ -102,6 +109,8 @@ class ProjectRepository(context: Context) {
         put("zoom", c.zoom.toDouble())
         put("flipH", c.flipH)
         put("fill", c.fill)
+        put("transition", c.transition.name)
+        put("pitch", c.pitch.toDouble())
     }
 
     private fun textToJson(t: TextItem) = JSONObject().apply {
@@ -118,6 +127,10 @@ class ProjectRepository(context: Context) {
         put("outline", t.outline)
         put("animIn", t.animIn.name)
         put("animOut", t.animOut.name)
+        t.fontPath?.let { put("fontPath", it) }
+        put("moving", t.moving)
+        put("x2", t.x2.toDouble())
+        put("y2", t.y2.toDouble())
     }
 
     private fun anim(name: String): OverlayAnim =
@@ -151,6 +164,9 @@ class ProjectRepository(context: Context) {
                 zoom = c.optDouble("zoom", 1.0).toFloat(),
                 flipH = c.optBoolean("flipH", false),
                 fill = c.optBoolean("fill", false),
+                transition = runCatching { TransitionStyle.valueOf(c.optString("transition")) }
+                    .getOrDefault(TransitionStyle.FADE),
+                pitch = c.optDouble("pitch", 1.0).toFloat(),
             )
         }
         val texts = (0 until textsJson.length()).map { i ->
@@ -170,6 +186,10 @@ class ProjectRepository(context: Context) {
                 outline = t.optBoolean("outline", false),
                 animIn = anim(t.optString("animIn")),
                 animOut = anim(t.optString("animOut")),
+                fontPath = t.optString("fontPath").ifBlank { null },
+                moving = t.optBoolean("moving", false),
+                x2 = t.optDouble("x2", 0.0).toFloat(),
+                y2 = t.optDouble("y2", 0.0).toFloat(),
             )
         }
         val music = o.optJSONObject("music")?.let { m ->
@@ -195,6 +215,9 @@ class ProjectRepository(context: Context) {
                 endMs = l.optLong("endMs", 3000),
                 animIn = anim(l.optString("animIn")),
                 animOut = anim(l.optString("animOut")),
+                moving = l.optBoolean("moving", false),
+                x2 = l.optDouble("x2", 0.0).toFloat(),
+                y2 = l.optDouble("y2", 0.0).toFloat(),
             )
         }
         val audioJson = o.optJSONArray("audio") ?: JSONArray()
@@ -219,6 +242,9 @@ class ProjectRepository(context: Context) {
             music = music,
             layers = layers,
             audio = audio,
+            background = runCatching { Background.valueOf(o.optString("background")) }
+                .getOrDefault(Background.BLACK),
+            backgroundColor = o.optInt("backgroundColor", -1),
             updatedAt = o.optLong("updatedAt", 0),
         )
     }

@@ -52,12 +52,20 @@ data class Clip(
     val zoom: Float = 1f,         // 1..3, centre zoom
     val flipH: Boolean = false,   // mirror
     val fill: Boolean = false,    // true = crop to fill the frame, false = fit with bars
+    val transition: TransitionStyle = TransitionStyle.FADE,
+    val pitch: Float = 1f,        // voice changer: <1 deeper, >1 higher
 ) {
     val effectiveSpeed: Float get() = if (type == ClipType.IMAGE) 1f else speed
 
     /** Duration on the timeline (after trim and speed). */
     val durationMs: Long get() = ((trimEndMs - trimStartMs) / effectiveSpeed).toLong()
 }
+
+/** What fills the bars around a clip that does not fill the frame. */
+enum class Background(val label: String) { BLACK("Black"), COLOR("Colour"), BLUR("Blur") }
+
+/** How a clip's fade-in / fade-out time is animated. */
+enum class TransitionStyle(val label: String) { FADE("Fade"), SLIDE("Slide"), ZOOM("Zoom") }
 
 /** Entry / exit animation for text, stickers and image layers. */
 enum class OverlayAnim(val label: String) { NONE("None"), FADE("Fade"), SLIDE("Slide"), POP("Pop") }
@@ -78,6 +86,10 @@ data class TextItem(
     val outline: Boolean = false,
     val animIn: OverlayAnim = OverlayAnim.NONE,
     val animOut: OverlayAnim = OverlayAnim.NONE,
+    val fontPath: String? = null, // imported .ttf / .otf file
+    val moving: Boolean = false,  // glide from (x, y) to (x2, y2) while visible
+    val x2: Float = 0f,
+    val y2: Float = 0f,
 )
 
 /** A picture (photo, logo, watermark) drawn on top of the main track. */
@@ -92,6 +104,9 @@ data class ImageLayer(
     val endMs: Long = 3000,
     val animIn: OverlayAnim = OverlayAnim.NONE,
     val animOut: OverlayAnim = OverlayAnim.NONE,
+    val moving: Boolean = false,
+    val x2: Float = 0f,
+    val y2: Float = 0f,
 )
 
 /** A voice-over or sound effect placed at a position on the timeline. */
@@ -121,6 +136,8 @@ data class Project(
     val music: MusicTrack? = null,
     val layers: List<ImageLayer> = emptyList(),
     val audio: List<AudioClip> = emptyList(),
+    val background: Background = Background.BLACK,
+    val backgroundColor: Int = 0xFFFFFFFF.toInt(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {
     val durationMs: Long get() = clips.sumOf { it.durationMs }

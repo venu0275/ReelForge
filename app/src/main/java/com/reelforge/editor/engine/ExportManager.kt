@@ -31,6 +31,7 @@ import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.util.MediaUtils
 import kotlin.math.min
 
@@ -88,6 +89,8 @@ object ExportManager {
         val opacity: Float,
         val animIn: OverlayAnim,
         val animOut: OverlayAnim,
+        val x2: Float,
+        val y2: Float,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -102,11 +105,13 @@ object ExportManager {
             OverlaySpec(
                 Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true),
                 layer.startMs, layer.endMs, layer.x, layer.y, layer.opacity, layer.animIn, layer.animOut,
+                if (layer.moving) layer.x2 else layer.x, if (layer.moving) layer.y2 else layer.y,
             )
         } + project.texts.map { text ->
             OverlaySpec(
                 EffectFactory.renderText(text, height),
                 text.startMs, text.endMs, text.x, text.y, 1f, text.animIn, text.animOut,
+                if (text.moving) text.x2 else text.x, if (text.moving) text.y2 else text.y,
             )
         }
 
@@ -125,9 +130,11 @@ object ExportManager {
                         opacity = s.opacity,
                         animIn = s.animIn,
                         animOut = s.animOut,
+                        x2 = s.x2,
+                        y2 = s.y2,
                     )
                 }
-            buildClipItem(context, clip, width, height, overlays)
+            buildClipItem(context, project, clip, width, height, overlays)
         }
 
         val total = project.durationMs
@@ -184,6 +191,7 @@ object ExportManager {
 
     private fun buildClipItem(
         context: Context,
+        project: Project,
         clip: Clip,
         width: Int,
         height: Int,
@@ -212,7 +220,12 @@ object ExportManager {
 
         if (!isImage && clip.speed != 1f) {
             video += SpeedChangeEffect(clip.speed)
-            audio += SonicAudioProcessor().apply { setSpeed(clip.speed) }
+        }
+        if (!isImage && (clip.speed != 1f || clip.pitch != 1f)) {
+            audio += SonicAudioProcessor().apply {
+                setSpeed(clip.speed)
+                setPitch(clip.pitch.coerceIn(0.5f, 2f))
+            }
         }
         if (!isImage && !clip.muted && clip.volume != 1f) {
             audio += volumeProcessor(clip.volume)
@@ -220,14 +233,26 @@ object ExportManager {
 
         video += EffectFactory.geometry(clip)
         video += EffectFactory.color(clip)
-        video += Presentation.createForWidthAndHeight(
-            width,
-            height,
-            if (clip.fill) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT,
-        )
-        if (clip.fadeInMs > 0 || clip.fadeOutMs > 0 || clip.opacity < 1f) {
+        if (EffectFactory.usesBackground(clip, project)) {
+            video += EffectFactory.background(project, width, height)
+        } else {
+            video += Presentation.createForWidthAndHeight(
+                width,
+                height,
+                if (clip.fill) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT,
+            )
+        }
+        val durationUs = clip.durationMs * 1000
+        val inUs = clip.fadeInMs * 1000
+        val outUs = clip.fadeOutMs * 1000
+        if ((inUs > 0 || outUs > 0) && clip.transition != TransitionStyle.FADE) {
+            video += TransitionMotion(durationUs, inUs, outUs, clip.transition)
+        }
+        // A slide moves the picture instead of dimming it.
+        val dims = clip.transition != TransitionStyle.SLIDE
+        if (clip.opacity < 1f || (dims && (inUs > 0 || outUs > 0))) {
             video += FadeEffect(
-                clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000, clip.opacity
+                durationUs, if (dims) inUs else 0L, if (dims) outUs else 0L, clip.opacity
             )
         }
         val hasFade = clip.fadeInMs > 0 || clip.fadeOutMs > 0

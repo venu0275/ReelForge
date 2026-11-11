@@ -33,6 +33,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -45,13 +46,15 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.engine.overlayAnim
+import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
+import java.io.File
 
-enum class Panel { TRIM, SPEED, VOLUME, FILTER, ADJUST, FADE, TEXT, LAYER, AUDIO, MUSIC, EXPORT }
+enum class Panel { TRIM, SPEED, VOLUME, FILTER, ADJUST, FADE, TEXT, LAYER, AUDIO, MUSIC, BACKGROUND, DRAW, EXPORT }
 
 @Composable
 fun EditorScreen(vm: EditorViewModel) {
@@ -90,6 +93,13 @@ fun EditorScreen(vm: EditorViewModel) {
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) vm.startRecording() else vm.message = "Microphone permission is needed to record"
+    }
+    var fontTarget by remember { mutableStateOf<String?>(null) }
+    val pickFont = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        val target = fontTarget
+        if (uri != null && target != null) vm.importFont(uri, target)
     }
     val record: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -154,6 +164,16 @@ fun EditorScreen(vm: EditorViewModel) {
     val open = panel
     if (open == Panel.EXPORT) {
         ExportDialog(vm, project) { panel = null }
+    } else if (open == Panel.DRAW) {
+        BackHandler { panel = null }
+        DrawScreen(
+            project = project,
+            onCancel = { panel = null },
+            onDone = { strokes ->
+                vm.addDrawing(strokes)
+                panel = null
+            },
+        )
     } else if (open != null) {
         ModalBottomSheet(onDismissRequest = { panel = null }) {
             Column(
@@ -170,12 +190,21 @@ fun EditorScreen(vm: EditorViewModel) {
                     Panel.FILTER -> clip?.let { FilterPanel(vm, it) }
                     Panel.ADJUST -> clip?.let { AdjustPanel(vm, it) }
                     Panel.FADE -> clip?.let { FadePanel(vm, it) }
-                    Panel.TEXT -> TextPanel(vm, project)
-                    Panel.LAYER -> LayerPanel(vm, project) {
-                        pickLayer.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                    Panel.TEXT -> TextPanel(vm, project) { textId ->
+                        fontTarget = textId
+                        pickFont.launch(arrayOf("*/*"))
                     }
+                    Panel.BACKGROUND -> BackgroundPanel(vm, project)
+                    Panel.DRAW -> Unit
+                    Panel.LAYER -> LayerPanel(
+                        vm, project,
+                        pickImage = {
+                            pickLayer.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        draw = { panel = Panel.DRAW },
+                    )
                     Panel.AUDIO -> AudioPanel(
                         vm, project,
                         record = record,
@@ -239,7 +268,19 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
             if (current != null && current.type == ClipType.IMAGE) {
                 LaunchedEffect(current.uri) { vm.requestPreview(current) }
                 val still = vm.previews[current.uri]
-                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                val backdrop = if (!current.fill && project.background == Background.COLOR) {
+                    Color(project.backgroundColor)
+                } else Color.Black
+                Box(Modifier.fillMaxSize().background(backdrop)) {
+                    if (still != null && !current.fill && project.background == Background.BLUR) {
+                        Image(
+                            bitmap = still,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize().blur(24.dp),
+                            contentScale = ContentScale.Crop,
+                            alpha = 0.7f,
+                        )
+                    }
                     if (still != null) {
                         Image(
                             bitmap = still,
@@ -282,7 +323,12 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                                 contentDescription = null,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
-                                    .align(BiasAlignment(layer.x, -layer.y))
+                                    .align(
+                                        glide(
+                                            layer.x, layer.y, layer.x2, layer.y2, layer.moving,
+                                            now - layer.startMs, layer.endMs - layer.startMs,
+                                        )
+                                    )
                                     .height(frameHeight * layer.scale)
                                     .graphicsLayer(
                                         alpha = (anim.alpha * layer.opacity).coerceIn(0f, 1f),
@@ -301,14 +347,21 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                     key(t.id) {
                         val anim = overlayAnim(now - t.startMs, t.endMs - t.startMs, t.animIn, t.animOut)
                         val fontSize = with(density) { (frameHeight * t.size).toSp() }
-                        val family = when (t.font) {
+                        val custom = remember(t.fontPath) {
+                            t.fontPath?.let { path ->
+                                runCatching { FontFamily(Font(File(path))) }.getOrNull()
+                            }
+                        }
+                        val family = custom ?: when (t.font) {
                             TextFont.SANS -> FontFamily.SansSerif
                             TextFont.SERIF -> FontFamily.Serif
                             TextFont.MONO -> FontFamily.Monospace
                         }
                         Box(
                             Modifier
-                                .align(BiasAlignment(t.x, -t.y))
+                                .align(
+                                    glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
+                                )
                                 .graphicsLayer(
                                     alpha = anim.alpha,
                                     scaleX = anim.scale,
@@ -357,6 +410,15 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                 }
         }
     }
+}
+
+/** Position of an overlay at [tMs] of [durationMs], gliding to (x2, y2) when [moving]. */
+private fun glide(
+    x: Float, y: Float, x2: Float, y2: Float, moving: Boolean, tMs: Long, durationMs: Long,
+): BiasAlignment {
+    if (!moving) return BiasAlignment(x, -y)
+    val p = (tMs.toFloat() / durationMs.coerceAtLeast(1)).coerceIn(0f, 1f)
+    return BiasAlignment(x + (x2 - x) * p, -(y + (y2 - y) * p))
 }
 
 // ---------------------------------------------------------------- transport
@@ -490,7 +552,9 @@ private fun Tools(
             vm.updateClip(id) { it.copy(fill = !it.fill) }
         }
         ToolButton("Text", project.clips.isNotEmpty()) { openPanel(Panel.TEXT) }
+        ToolButton("Backdrop", project.clips.isNotEmpty()) { openPanel(Panel.BACKGROUND) }
         ToolButton("Layer", project.clips.isNotEmpty()) { openPanel(Panel.LAYER) }
+        ToolButton("Draw", project.clips.isNotEmpty()) { openPanel(Panel.DRAW) }
         ToolButton("Voice", project.clips.isNotEmpty()) { openPanel(Panel.AUDIO) }
         ToolButton("Music", true) { openPanel(Panel.MUSIC) }
         ToolButton("Freeze", isVideo) { vm.freezeFrame() }
