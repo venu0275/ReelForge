@@ -30,6 +30,8 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Two-point motion for text, stickers and image layers.
 - Background music: any audio file, volume, loop.
 - Live preview with scrubbing.
+- Portrait and landscape layouts: in landscape the video sits on the left and the timeline,
+  tools and the open tool's controls sit in a side pane on the right.
 - Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.
 
 ## Not built yet

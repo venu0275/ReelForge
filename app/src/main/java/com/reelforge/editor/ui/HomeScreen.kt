@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -67,10 +71,13 @@ fun HomeScreen(vm: EditorViewModel) {
                 )
             }
         } else {
-            LazyColumn(
+            // One column on a portrait phone, two or more in landscape and on tablets.
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 300.dp),
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(vm.projects, key = { it.id }) { p ->
                     Card(Modifier.fillMaxWidth().clickable { vm.openProject(p) }) {
@@ -125,7 +132,7 @@ fun HomeScreen(vm: EditorViewModel) {
             onDismissRequest = { showNew = false },
             title = { Text("New project") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
@@ -134,7 +141,10 @@ fun HomeScreen(vm: EditorViewModel) {
                     )
                     Spacer(Modifier.height(12.dp))
                     Text("Aspect ratio", style = MaterialTheme.typography.labelLarge)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         AspectRatio.entries.forEach { a ->
                             FilterChip(
                                 selected = aspect == a,

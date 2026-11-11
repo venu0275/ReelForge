@@ -1,9 +1,10 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package com.reelforge.editor.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -116,13 +118,9 @@ fun EditorScreen(vm: EditorViewModel) {
         )
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .systemBarsPadding()
-    ) {
-        // Top bar
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val topBar: @Composable () -> Unit = {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -145,9 +143,11 @@ fun EditorScreen(vm: EditorViewModel) {
                 modifier = Modifier.padding(end = 8.dp),
             ) { Text("Export") }
         }
+    }
 
+    val preview: @Composable (Modifier) -> Unit = { modifier ->
         PreviewArea(
-            vm, project, Modifier.weight(1f),
+            vm, project, modifier,
             onEditText = { id ->
                 editingTextId = id
                 panel = Panel.TEXT
@@ -157,7 +157,9 @@ fun EditorScreen(vm: EditorViewModel) {
                 panel = Panel.LAYER
             },
         )
+    }
 
+    val messageBar: @Composable () -> Unit = {
         vm.message?.let { msg ->
             Text(
                 msg,
@@ -169,13 +171,110 @@ fun EditorScreen(vm: EditorViewModel) {
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+    }
 
-        Transport(vm, project)
-        Timeline(vm, project, addMedia)
-        Tools(vm, project, addMedia) { panel = it }
+    // The controls of one tool; shown in a bottom sheet (portrait) or the side pane (landscape).
+    val panelBody: @Composable (Panel) -> Unit = { which ->
+        val clip = vm.selectedClip
+        when (which) {
+            Panel.TRIM -> clip?.let { TrimPanel(vm, it) }
+            Panel.SPEED -> clip?.let { SpeedPanel(vm, it) }
+            Panel.VOLUME -> clip?.let { VolumePanel(vm, it) }
+            Panel.FILTER -> clip?.let { FilterPanel(vm, it) }
+            Panel.ADJUST -> clip?.let { AdjustPanel(vm, it) }
+            Panel.FADE -> clip?.let { FadePanel(vm, it) }
+            Panel.TEXT -> TextPanel(
+                vm, project,
+                editingId = editingTextId,
+                onEditing = { editingTextId = it },
+                pickFont = { textId ->
+                    fontTarget = textId
+                    pickFont.launch(arrayOf("*/*"))
+                },
+            )
+            Panel.BACKGROUND -> BackgroundPanel(vm, project)
+            Panel.DRAW -> Unit
+            Panel.LAYER -> LayerPanel(
+                vm, project,
+                editingId = editingLayerId,
+                onEditing = { editingLayerId = it },
+                pickImage = {
+                    pickLayer.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                draw = { panel = Panel.DRAW },
+            )
+            Panel.AUDIO -> AudioPanel(
+                vm, project,
+                record = record,
+                pickSound = { pickSound.launch(arrayOf("audio/*")) },
+            )
+            Panel.MUSIC -> MusicPanel(vm, project) { pickAudio.launch(arrayOf("audio/*")) }
+            Panel.EXPORT -> Unit
+        }
     }
 
     val open = panel
+    val sidePanel = open != null && open != Panel.EXPORT && open != Panel.DRAW
+    val root = Modifier
+        .fillMaxSize()
+        .background(MaterialTheme.colorScheme.background)
+        .systemBarsPadding()
+        .displayCutoutPadding()
+
+    if (landscape) {
+        // Landscape: video on the left, timeline + tools (or the open tool) on the right.
+        Row(root) {
+            Column(Modifier.weight(1.25f).fillMaxHeight()) {
+                topBar()
+                preview(Modifier.weight(1f))
+                messageBar()
+                Transport(vm, project)
+            }
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.surface)
+            ) {
+                Timeline(vm, project, addMedia)
+                if (open != null && sidePanel) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(start = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Tool", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+                        TextButton(onClick = { panel = null }) { Text("Close") }
+                    }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 16.dp)
+                    ) {
+                        panelBody(open)
+                    }
+                } else {
+                    Tools(vm, project, addMedia, wrap = true) { panel = it }
+                }
+            }
+        }
+        if (sidePanel) BackHandler { panel = null }
+    } else {
+        // Portrait: video on top, timeline and tools below.
+        Column(root) {
+            topBar()
+            preview(Modifier.weight(1f))
+            messageBar()
+            Transport(vm, project)
+            Timeline(vm, project, addMedia)
+            Tools(vm, project, addMedia, wrap = false) { panel = it }
+        }
+    }
+
     if (open == Panel.EXPORT) {
         ExportDialog(vm, project) { panel = null }
     } else if (open == Panel.DRAW) {
@@ -188,7 +287,7 @@ fun EditorScreen(vm: EditorViewModel) {
                 panel = null
             },
         )
-    } else if (open != null) {
+    } else if (open != null && !landscape) {
         ModalBottomSheet(onDismissRequest = { panel = null }) {
             Column(
                 Modifier
@@ -197,44 +296,7 @@ fun EditorScreen(vm: EditorViewModel) {
                     .padding(horizontal = 16.dp)
                     .padding(bottom = 24.dp)
             ) {
-                val clip = vm.selectedClip
-                when (open) {
-                    Panel.TRIM -> clip?.let { TrimPanel(vm, it) }
-                    Panel.SPEED -> clip?.let { SpeedPanel(vm, it) }
-                    Panel.VOLUME -> clip?.let { VolumePanel(vm, it) }
-                    Panel.FILTER -> clip?.let { FilterPanel(vm, it) }
-                    Panel.ADJUST -> clip?.let { AdjustPanel(vm, it) }
-                    Panel.FADE -> clip?.let { FadePanel(vm, it) }
-                    Panel.TEXT -> TextPanel(
-                        vm, project,
-                        editingId = editingTextId,
-                        onEditing = { editingTextId = it },
-                        pickFont = { textId ->
-                            fontTarget = textId
-                            pickFont.launch(arrayOf("*/*"))
-                        },
-                    )
-                    Panel.BACKGROUND -> BackgroundPanel(vm, project)
-                    Panel.DRAW -> Unit
-                    Panel.LAYER -> LayerPanel(
-                        vm, project,
-                        editingId = editingLayerId,
-                        onEditing = { editingLayerId = it },
-                        pickImage = {
-                            pickLayer.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        },
-                        draw = { panel = Panel.DRAW },
-                    )
-                    Panel.AUDIO -> AudioPanel(
-                        vm, project,
-                        record = record,
-                        pickSound = { pickSound.launch(arrayOf("audio/*")) },
-                    )
-                    Panel.MUSIC -> MusicPanel(vm, project) { pickAudio.launch(arrayOf("audio/*")) }
-                    Panel.EXPORT -> Unit
-                }
+                panelBody(open)
             }
         }
     }
@@ -518,6 +580,7 @@ private fun Tools(
     vm: EditorViewModel,
     project: Project,
     addMedia: () -> Unit,
+    wrap: Boolean,
     openPanel: (Panel) -> Unit,
 ) {
     val clip = vm.selectedClip
@@ -525,13 +588,7 @@ private fun Tools(
     val isVideo = clip?.type == ClipType.VIDEO
     val id = clip?.id.orEmpty()
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
+    val buttons: @Composable () -> Unit = {
         ToolButton("Media", true, addMedia)
         ToolButton("Split", project.clips.isNotEmpty()) { vm.splitAtPlayhead() }
         ToolButton("Trim", hasClip) { openPanel(Panel.TRIM) }
@@ -559,6 +616,26 @@ private fun Tools(
         ToolButton("Move ▶", hasClip) { vm.moveClip(id, 1) }
         ToolButton("Delete", hasClip) { vm.deleteClip(id) }
         ToolButton("Delete all clips", project.clips.isNotEmpty()) { vm.deleteAllClips() }
+    }
+
+    if (wrap) {
+        // Landscape side pane: buttons wrap onto several rows and scroll vertically.
+        FlowRow(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) { buttons() }
+    } else {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) { buttons() }
     }
 }
 
@@ -597,7 +674,7 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         },
         title = { Text("Export video") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 when (state) {
                     ExportState.Idle -> {
                         Text("Resolution")
