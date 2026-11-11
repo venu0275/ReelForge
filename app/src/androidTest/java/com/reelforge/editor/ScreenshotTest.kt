@@ -12,7 +12,6 @@ import android.graphics.Shader
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
-import android.view.KeyEvent
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -111,6 +110,7 @@ class ScreenshotTest {
     }
 
     private fun save(name: String) {
+        closeSystemDialogs()
         Thread.sleep(1_500)
         rule.waitForIdle()
         val shot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
@@ -132,7 +132,17 @@ class ScreenshotTest {
         node.performClick()
     }
 
+    /** The CI emulator is slow and sometimes shows a "System UI isn't responding" dialog. */
+    private fun closeSystemDialogs() {
+        runCatching {
+            InstrumentationRegistry.getInstrumentation().uiAutomation
+                .executeShellCommand("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
+                .close()
+        }
+    }
+
     private fun waitForText(text: String) {
+        closeSystemDialogs()
         rule.waitUntil(20_000) {
             rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
@@ -210,8 +220,8 @@ class ScreenshotTest {
         tap("Adjust", scroll = true)
         waitForText("Brightness")
         save("04_tool_open_portrait")
-        // A real Back key press goes to the sheet's own window and closes only the sheet.
-        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        // Back closes the open tool first (then the selection, then the project).
+        rule.activity.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
         Thread.sleep(1_500)
         waitForText("Split")
 
