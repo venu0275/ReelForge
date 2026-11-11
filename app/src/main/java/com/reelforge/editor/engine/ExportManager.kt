@@ -41,6 +41,7 @@ object ExportManager {
 
     private const val IMAGE_FRAME_RATE = 30
     private const val SILENCE_MS = 10_000L
+    private const val MAX_OVERLAYS_PER_EFFECT = 15
 
     /** Output frame size for an aspect ratio, where [shortSide] is e.g. 720 or 1080. */
     fun outputSize(aspect: AspectRatio, shortSide: Int): Pair<Int, Int> {
@@ -263,8 +264,9 @@ object ExportManager {
         if (!isImage && !clip.muted && clip.hasAudio && hasFade) {
             audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
         }
-        if (overlays.isNotEmpty()) {
-            video += OverlayEffect(ImmutableList.copyOf(overlays))
+        // Media3 draws at most 15 overlays per OverlayEffect, so larger sets are chained.
+        overlays.chunked(MAX_OVERLAYS_PER_EFFECT).forEach { group ->
+            video += OverlayEffect(ImmutableList.copyOf(group))
         }
 
         return EditedMediaItem.Builder(mediaItem).apply {

@@ -133,10 +133,15 @@ class ExportDeviceTest {
         val r = MediaMetadataRetriever()
         try {
             r.setDataSource(file.absolutePath)
+            // Portrait videos are stored sideways with a rotation flag, which players apply.
+            val rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val storedWidth = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)!!.toInt()
+            val storedHeight = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)!!.toInt()
+            val sideways = rotation == 90 || rotation == 270
             return Info(
                 durationMs = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong(),
-                width = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)!!.toInt(),
-                height = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)!!.toInt(),
+                width = if (sideways) storedHeight else storedWidth,
+                height = if (sideways) storedWidth else storedHeight,
                 hasAudio = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes",
             )
         } finally {
@@ -276,6 +281,19 @@ class ExportDeviceTest {
         )
         val info = inspect(exportOk(project).file!!)
         assertNear("duration", 3_000, info.durationMs, 600)
+    }
+
+    @Test
+    fun fortyOverlaysOnOneClip_export() {
+        val uri = photo("many_overlays", 640, 360, Color.rgb(30, 30, 30))
+        val texts = (0 until 40).map { i ->
+            TextItem(
+                text = "#$i", size = 0.05f, x = -0.9f + (i % 8) * 0.25f, y = 0.8f - (i / 8) * 0.35f,
+                startMs = 0, endMs = 1_000,
+            )
+        }
+        val project = Project(name = "many", clips = listOf(imageClip(uri, 1_000)), texts = texts)
+        assertNear("duration", 1_000, inspect(exportOk(project).file!!).durationMs, 500)
     }
 
     @Test
