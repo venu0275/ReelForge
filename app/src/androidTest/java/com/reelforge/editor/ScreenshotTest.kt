@@ -12,6 +12,7 @@ import android.graphics.Shader
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
+import android.view.KeyEvent
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -194,8 +195,10 @@ class ScreenshotTest {
         tap("Adjust", scroll = true)
         waitForText("Brightness")
         save("03_tool_open_portrait")
-        rule.activity.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        // A real Back key press goes to the sheet's own window and closes only the sheet.
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         Thread.sleep(1_500)
+        waitForText("Export")
 
         // 4. Editor, landscape.
         rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
