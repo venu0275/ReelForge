@@ -542,6 +542,36 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun layeredExport_worksEveryTimeWhenRepeated() {
+        val blueFile = solidVideo("repeat_blue", blue, 1_500)
+        val greenFile = solidVideo("repeat_green", green, 1_500, whiteCentre = true)
+        val photo = solid("repeat_red", red)
+        val failures = mutableListOf<String>()
+        repeat(8) { round ->
+            // Alternate between a photo-first and a video-first main track, with layers that
+            // start at 0 and later, since those are the cases that take different paths.
+            val main = if (round % 2 == 0) listOf(imageClip(photo, 1_500))
+            else listOf(videoClip(blueFile), imageClip(photo, 500))
+            val project = Project(
+                name = "repeat$round",
+                clips = main,
+                videoLayers = listOf(
+                    layerOf(blueFile).copy(startMs = if (round % 3 == 0) 0 else 400, scale = 0.4f, x = -1f, y = 1f),
+                    layerOf(greenFile).copy(startMs = 0, scale = 0.5f, x = 1f, y = -1f, chromaKey = round % 2 == 1),
+                ),
+            )
+            val outcome = export(project, timeoutSec = 120)
+            if (outcome.error != null) {
+                Log.e("ReelForgeTest", "REPEAT round $round failed", outcome.error)
+                failures += "round $round: ${outcome.error}".take(160)
+            } else {
+                log("REPEAT round $round ok in ${outcome.millis} ms")
+            }
+        }
+        assertTrue("layered exports that failed: $failures", failures.isEmpty())
+    }
+
+    @Test
     fun extremeSpeeds_export() {
         val source = videoClip(baseVideo(3_000))
         val fast = source.copy(speed = 16f)                                   // 3 s → about 0.19 s
