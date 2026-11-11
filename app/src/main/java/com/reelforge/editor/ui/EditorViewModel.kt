@@ -67,6 +67,7 @@ import java.io.File
 class DrawStroke(val color: Int, val points: List<Offset>)
 
 private const val SCRUB_INTERVAL_MS = 90L
+private const val MAX_LAYERED_EXPORT_ATTEMPTS = 3
 
 sealed interface ExportState {
     data object Idle : ExportState
@@ -1068,6 +1069,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         player.stop() // free hardware decoders for the export
         layerPlayers.values.forEach { it.stop() }
         export = ExportState.Running(0)
+        runExport(p, shortSide, quality, fps, hevc, attempt = 1)
+    }
+
+    /**
+     * One export attempt. Exports with video layers occasionally fail at start-up inside Media3,
+     * so those are retried automatically before an error is shown.
+     */
+    private fun runExport(p: Project, shortSide: Int, quality: Int, fps: Int, hevc: Boolean, attempt: Int) {
         val output = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
 
         val listener = object : Transformer.Listener {
@@ -1093,10 +1102,23 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 exportException: ExportException,
             ) {
                 output.delete()
-                export = ExportState.Failed(
-                    "${exportException.errorCodeName}: ${exportException.message ?: "export failed"}"
-                )
-                finishExport()
+                transformer = null
+                val retry = p.videoLayers.isNotEmpty() && attempt < MAX_LAYERED_EXPORT_ATTEMPTS &&
+                    export is ExportState.Running
+                if (retry) {
+                    export = ExportState.Running(0)
+                    viewModelScope.launch {
+                        delay(500) // let the failed attempt release its encoders and decoders
+                        if (export is ExportState.Running) {
+                            runExport(p, shortSide, quality, fps, hevc, attempt + 1)
+                        }
+                    }
+                } else {
+                    export = ExportState.Failed(
+                        "${exportException.errorCodeName}: ${exportException.message ?: "export failed"}"
+                    )
+                    finishExport()
+                }
             }
         }
 
@@ -1113,9 +1135,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 transformer = t
                 t.start(composition, output.absolutePath)
                 val holder = ProgressHolder()
-                while (export is ExportState.Running) {
-                    val active = transformer ?: break
-                    if (active.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                while (export is ExportState.Running && transformer === t) {
+                    if (t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
                         export = ExportState.Running(holder.progress)
                     }
                     delay(300)
