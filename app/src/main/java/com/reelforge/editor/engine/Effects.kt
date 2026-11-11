@@ -31,6 +31,7 @@ import androidx.media3.effect.RgbAdjustment
 import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.RgbMatrix
 import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.effect.VideoCompositorSettings
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.FilterPreset
@@ -385,6 +386,135 @@ private class BackgroundFitProgram(
               }
             }
         """
+    }
+}
+
+/**
+ * Makes one colour see-through (green screen). Pixels whose colour tone is within [tolerance] of
+ * [keyColor] become transparent, with a short soft edge.
+ */
+@OptIn(UnstableApi::class)
+class ChromaKeyEffect(private val keyColor: Int, private val tolerance: Float) : GlEffect {
+    override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
+        ChromaKeyProgram(keyColor, tolerance)
+}
+
+@OptIn(UnstableApi::class)
+private class ChromaKeyProgram(keyColor: Int, private val tolerance: Float) :
+    BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ false, /* texturePoolCapacity= */ 1) {
+
+    private val program: GlProgram = try {
+        GlProgram(VERTEX_SHADER, FRAGMENT_SHADER)
+    } catch (e: GlUtil.GlException) {
+        throw VideoFrameProcessingException(e)
+    }
+    private val key = floatArrayOf(
+        ((keyColor shr 16) and 0xFF) / 255f,
+        ((keyColor shr 8) and 0xFF) / 255f,
+        (keyColor and 0xFF) / 255f,
+    )
+
+    init {
+        program.setBufferAttribute(
+            "aFramePosition",
+            GlUtil.getNormalizedCoordinateBounds(),
+            GlUtil.HOMOGENEOUS_COORDINATE_VECTOR_SIZE,
+        )
+    }
+
+    override fun configure(inputWidth: Int, inputHeight: Int): Size = Size(inputWidth, inputHeight)
+
+    override fun drawFrame(inputTexId: Int, presentationTimeUs: Long) {
+        try {
+            program.use()
+            program.setSamplerTexIdUniform("uTexSampler", inputTexId, /* texUnitIndex= */ 0)
+            program.setFloatsUniform("uKey", key)
+            program.setFloatUniform("uTolerance", tolerance.coerceIn(0.02f, 0.6f))
+            program.bindAttributesAndUniforms()
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        } catch (e: GlUtil.GlException) {
+            throw VideoFrameProcessingException(e, presentationTimeUs)
+        }
+    }
+
+    override fun release() {
+        super.release()
+        try {
+            program.delete()
+        } catch (e: GlUtil.GlException) {
+            throw VideoFrameProcessingException(e)
+        }
+    }
+
+    private companion object {
+        const val VERTEX_SHADER = """
+            attribute vec4 aFramePosition;
+            varying vec2 vTex;
+            void main() {
+              gl_Position = aFramePosition;
+              vTex = aFramePosition.xy * 0.5 + 0.5;
+            }
+        """
+
+        // Compares colour tone (chroma) only, so shadows on the screen are keyed out too.
+        const val FRAGMENT_SHADER = """
+            precision mediump float;
+            uniform sampler2D uTexSampler;
+            uniform vec3 uKey;
+            uniform float uTolerance;
+            varying vec2 vTex;
+            vec2 tone(vec3 c) {
+              return vec2(-0.169 * c.r - 0.331 * c.g + 0.5 * c.b, 0.5 * c.r - 0.419 * c.g - 0.081 * c.b);
+            }
+            void main() {
+              vec4 c = texture2D(uTexSampler, vTex);
+              float d = distance(tone(c.rgb), tone(uKey));
+              float keep = smoothstep(uTolerance, uTolerance + 0.08, d);
+              gl_FragColor = vec4(c.rgb * keep, c.a * keep);
+            }
+        """
+    }
+}
+
+/** Where and when one video layer is drawn on export (times in composition microseconds). */
+class LayerPlacement(
+    val startUs: Long,
+    val endUs: Long,
+    val x: Float,
+    val y: Float,
+    val opacity: Float,
+    val rotation: Float,
+)
+
+/**
+ * Stacks the video layers over the main track. Input 0 is the main track and fills the frame;
+ * input N is video layer N, shown only during its own time range.
+ */
+@OptIn(UnstableApi::class)
+class LayerCompositorSettings(
+    private val width: Int,
+    private val height: Int,
+    private val layers: List<LayerPlacement>,
+) : VideoCompositorSettings {
+    private val base: OverlaySettings = OverlaySettings.Builder().build()
+    private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
+    private val shown: List<OverlaySettings> = layers.map {
+        OverlaySettings.Builder()
+            .setBackgroundFrameAnchor(it.x.coerceIn(-1f, 1f), it.y.coerceIn(-1f, 1f))
+            .setOverlayFrameAnchor(it.x.coerceIn(-1f, 1f), it.y.coerceIn(-1f, 1f))
+            .setAlphaScale(it.opacity.coerceIn(0f, 1f))
+            .setRotationDegrees(it.rotation)
+            .build()
+    }
+
+    override fun getOutputSize(inputSizes: List<Size>): Size = Size(width, height)
+
+    override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
+        if (inputId == 0) return base
+        val layer = layers.getOrNull(inputId - 1) ?: return hidden
+        return if (presentationTimeUs >= layer.startUs && presentationTimeUs < layer.endUs) {
+            shown[inputId - 1]
+        } else hidden
     }
 }
 

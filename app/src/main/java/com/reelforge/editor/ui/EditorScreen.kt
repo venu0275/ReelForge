@@ -5,6 +5,7 @@ package com.reelforge.editor.ui
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.view.TextureView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -125,6 +126,9 @@ fun EditorScreen(vm: EditorViewModel) {
     val pickLayer = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) vm.addImageLayer(uri) }
+    val pickVideoLayer = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) vm.addVideoLayer(uri) }
     val pickSound = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.addAudioClip(uri) }
@@ -256,6 +260,11 @@ fun EditorScreen(vm: EditorViewModel) {
                 pickImage = {
                     pickLayer.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                },
+                pickVideo = {
+                    pickVideoLayer.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
                     )
                 },
                 draw = { panel = Panel.DRAW },
@@ -633,7 +642,10 @@ private fun Timeline(
     val textBars = project.texts.map { Bar(it.id, it.text.replace("\n", " "), it.startMs, it.endMs) }
     val layerBars = project.layers.mapIndexed { i, l -> Bar(l.id, "Layer ${i + 1}", l.startMs, l.endMs) }
     val audioBars = project.audio.map { Bar(it.id, it.title, it.startMs, it.startMs + it.durationMs) }
-    val rows = listOf(textBars, layerBars, audioBars).count { it.isNotEmpty() } +
+    val videoBars = project.videoLayers.mapIndexed { i, v ->
+        Bar(v.id, "Video ${i + 1}", v.startMs, v.startMs + v.durationMs)
+    }
+    val rows = listOf(textBars, layerBars, audioBars, videoBars).count { it.isNotEmpty() } +
         (if (project.music != null) 1 else 0)
     val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp
 
@@ -700,6 +712,13 @@ private fun Timeline(
                         vm.updateText(id) {
                             val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
                             it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
+                        }
+                    }
+                }
+                if (videoBars.isNotEmpty()) {
+                    BarRow(videoBars, pxPerMs, Color(0xFF1E88E5), onEditLayer) { id, deltaMs ->
+                        vm.updateVideoLayer(id) {
+                            it.copy(startMs = dropAt(id, it.startMs, it.durationMs, deltaMs))
                         }
                     }
                 }
@@ -1092,6 +1111,35 @@ private fun PreviewArea(
             val frameHeightPx = with(density) { frameHeight.toPx() }
             val frameWidthPx = with(density) { maxWidth.toPx() }
             val now = vm.playheadMs
+
+            // Video layers play in their own small players, stacked over the main picture.
+            project.videoLayers.forEach { layer ->
+                key(layer.id) {
+                    val layerPlayer = remember(layer.id) { vm.layerPlayer(layer) }
+                    LaunchedEffect(layer.id) { vm.resyncLayers() }
+                    val local = now - layer.startMs
+                    val active = local >= 0 && local < layer.durationMs
+                    val layerHeight = frameHeight * layer.scale
+                    AndroidView(
+                        factory = { context ->
+                            TextureView(context).apply {
+                                isOpaque = false
+                                layerPlayer.setVideoTextureView(this)
+                            }
+                        },
+                        onRelease = { layerPlayer.clearVideoTextureView(it) },
+                        modifier = Modifier
+                            .align(BiasAlignment(layer.x, -layer.y))
+                            .height(layerHeight)
+                            .width(layerHeight * layer.aspect)
+                            .graphicsLayer(
+                                alpha = if (active) layer.opacity.coerceIn(0f, 1f) else 0f,
+                                rotationZ = -layer.rotation,
+                            )
+                            .clickable(enabled = active) { onEditLayer(layer.id) },
+                    )
+                }
+            }
 
             project.layers
                 .filter { now >= it.startMs && now < it.endMs }

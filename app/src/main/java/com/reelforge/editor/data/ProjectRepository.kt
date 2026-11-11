@@ -5,6 +5,7 @@ import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.TransitionStyle
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.model.ImageLayer
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Clip
@@ -72,6 +73,30 @@ object ProjectJson {
                     put("moving", l.moving)
                     put("x2", l.x2.toDouble())
                     put("y2", l.y2.toDouble())
+                })
+            }
+        })
+        put("videoLayers", JSONArray().apply {
+            p.videoLayers.forEach { v ->
+                put(JSONObject().apply {
+                    put("id", v.id)
+                    put("uri", v.uri)
+                    put("sourceDurationMs", v.sourceDurationMs)
+                    put("trimStartMs", v.trimStartMs)
+                    put("trimEndMs", v.trimEndMs)
+                    put("startMs", v.startMs)
+                    put("aspect", v.aspect.toDouble())
+                    put("scale", v.scale.toDouble())
+                    put("x", v.x.toDouble())
+                    put("y", v.y.toDouble())
+                    put("opacity", v.opacity.toDouble())
+                    put("rotation", v.rotation.toDouble())
+                    put("volume", v.volume.toDouble())
+                    put("muted", v.muted)
+                    put("hasAudio", v.hasAudio)
+                    put("chromaKey", v.chromaKey)
+                    put("keyColor", v.keyColor)
+                    put("keyTolerance", v.keyTolerance.toDouble())
                 })
             }
         })
@@ -253,6 +278,30 @@ object ProjectJson {
                 y2 = l.optDouble("y2", 0.0).toFloat(),
             )
         }
+        val videoJson = o.optJSONArray("videoLayers") ?: JSONArray()
+        val videoLayers = (0 until videoJson.length()).map { i ->
+            val v = videoJson.getJSONObject(i)
+            VideoLayer(
+                id = v.getString("id"),
+                uri = v.getString("uri"),
+                sourceDurationMs = v.getLong("sourceDurationMs"),
+                trimStartMs = v.optLong("trimStartMs", 0),
+                trimEndMs = v.optLong("trimEndMs", v.getLong("sourceDurationMs")),
+                startMs = v.optLong("startMs", 0),
+                aspect = v.optDouble("aspect", 16.0 / 9.0).toFloat(),
+                scale = v.optDouble("scale", 0.4).toFloat(),
+                x = v.optDouble("x", 0.8).toFloat(),
+                y = v.optDouble("y", 0.8).toFloat(),
+                opacity = v.optDouble("opacity", 1.0).toFloat(),
+                rotation = v.optDouble("rotation", 0.0).toFloat(),
+                volume = v.optDouble("volume", 1.0).toFloat(),
+                muted = v.optBoolean("muted", false),
+                hasAudio = v.optBoolean("hasAudio", true),
+                chromaKey = v.optBoolean("chromaKey", false),
+                keyColor = v.optInt("keyColor", 0xFF00FF00.toInt()),
+                keyTolerance = v.optDouble("keyTolerance", 0.18).toFloat(),
+            )
+        }
         val audioJson = o.optJSONArray("audio") ?: JSONArray()
         val audio = (0 until audioJson.length()).map { i ->
             val a = audioJson.getJSONObject(i)
@@ -277,6 +326,7 @@ object ProjectJson {
             music = music,
             layers = layers,
             audio = audio,
+            videoLayers = videoLayers,
             background = runCatching { Background.valueOf(o.optString("background")) }
                 .getOrDefault(Background.BLACK),
             backgroundColor = o.optInt("backgroundColor", -1),

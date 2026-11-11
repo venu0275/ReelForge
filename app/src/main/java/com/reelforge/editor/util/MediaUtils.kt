@@ -62,6 +62,33 @@ object MediaUtils {
         return uri.lastPathSegment ?: "Audio"
     }
 
+    /** Width / height of a video as it is displayed (rotation applied), or null if unreadable. */
+    fun videoAspect(context: Context, uri: Uri): Float? {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(context, uri)
+            val w = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toFloatOrNull()
+            val h = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toFloatOrNull()
+            val rotation = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            if (w == null || h == null || w <= 0f || h <= 0f) null
+            else if (rotation == 90 || rotation == 270) h / w else w / h
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { r.release() }
+        }
+    }
+
+    /** A tiny black picture used to fill the time before and after a video layer on export. */
+    fun blankImage(context: Context): File {
+        val file = File(context.cacheDir, "blank_layer.png")
+        if (file.length() > 0) return file
+        val bitmap = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(0xFF000000.toInt())
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return file
+    }
+
     fun videoFrame(context: Context, uri: Uri, timeMs: Long, size: Int): Bitmap? {
         val r = MediaMetadataRetriever()
         return try {

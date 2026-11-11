@@ -34,6 +34,7 @@ import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.TransitionStyle
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.util.MediaUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -385,6 +386,143 @@ class ExportDeviceTest {
         repo.delete(project.id)
         assertTrue(repo.list().none { it.id == project.id })
         repo.delete("does-not-exist") // must not throw
+    }
+
+    // ----------------------------------------------------------------- video layers
+
+    /** A plain single-colour picture, optionally with a white block in the middle. */
+    private fun solid(name: String, color: Int, whiteCentre: Boolean = false): Uri {
+        val bitmap = Bitmap.createBitmap(640, 360, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(color)
+        if (whiteCentre) {
+            canvas.drawRect(224f, 126f, 416f, 234f, Paint().apply { this.color = Color.WHITE })
+        }
+        val file = File(context.cacheDir, "$name.png")
+        file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        return Uri.fromFile(file)
+    }
+
+    private fun solidVideo(name: String, color: Int, ms: Long, whiteCentre: Boolean = false): File =
+        exportOk(Project(name = name, clips = listOf(imageClip(solid(name, color, whiteCentre), ms)))).file!!
+
+    private fun layerOf(file: File): VideoLayer {
+        val uri = Uri.fromFile(file)
+        val info = MediaUtils.probe(context, uri)!!
+        return VideoLayer(
+            uri = uri.toString(),
+            sourceDurationMs = info.durationMs,
+            aspect = MediaUtils.videoAspect(context, uri)!!,
+            hasAudio = info.hasAudio,
+        )
+    }
+
+    /** The colour of the exported picture at a moment and place (x, y as fractions of the frame). */
+    private fun pixel(file: File, timeMs: Long, x: Float, y: Float): Int {
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(file.absolutePath)
+            val frame = r.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)!!
+            return frame.getPixel((frame.width * x).toInt(), (frame.height * y).toInt())
+        } finally {
+            r.release()
+        }
+    }
+
+    private fun assertColour(label: String, expected: Int, actual: Int, tolerance: Int = 70) {
+        val off = maxOf(
+            abs(Color.red(expected) - Color.red(actual)),
+            abs(Color.green(expected) - Color.green(actual)),
+            abs(Color.blue(expected) - Color.blue(actual)),
+        )
+        assertTrue(
+            "$label: expected about #%06X but the picture shows #%06X".format(
+                expected and 0xFFFFFF, actual and 0xFFFFFF
+            ),
+            off <= tolerance,
+        )
+    }
+
+    private val red = Color.rgb(210, 40, 40)
+    private val blue = Color.rgb(40, 60, 210)
+    private val green = Color.rgb(0, 255, 0)
+
+    @Test
+    fun videoLayer_showsAtItsPlaceAndOnlyDuringItsTime() {
+        val layer = layerOf(solidVideo("pip_blue", blue, 2_000)).copy(
+            startMs = 500, trimStartMs = 0, trimEndMs = 1_000, scale = 0.5f, x = 1f, y = 1f,
+        )
+        val project = Project(
+            name = "pip",
+            clips = listOf(imageClip(solid("pip_red", red), 2_000)),
+            videoLayers = listOf(layer),
+        )
+        val file = exportOk(project).file!!
+        val info = inspect(file)
+        assertEquals(640 to 360, info.width to info.height)
+        assertNear("a layer must not change the video length", 2_000, info.durationMs, 500)
+
+        // While the layer plays: blue in the top-right quarter, the main picture elsewhere.
+        assertColour("layer, top right at 1.0 s", blue, pixel(file, 1_000, 0.85f, 0.15f))
+        assertColour("main picture, bottom left at 1.0 s", red, pixel(file, 1_000, 0.15f, 0.85f))
+        assertColour("main picture, top left at 1.0 s", red, pixel(file, 1_000, 0.15f, 0.15f))
+        // Before and after the layer: the main picture everywhere.
+        assertColour("before the layer starts", red, pixel(file, 150, 0.85f, 0.15f))
+        assertColour("after the layer ends", red, pixel(file, 1_850, 0.85f, 0.15f))
+    }
+
+    @Test
+    fun chromaKey_removesTheGreenScreenAndKeepsTheSubject() {
+        val greenScreen = layerOf(solidVideo("key_green", green, 2_000, whiteCentre = true)).copy(
+            startMs = 0, scale = 1f, x = 0f, y = 0f,
+        )
+        val base = Project(name = "key", clips = listOf(imageClip(solid("key_red", red), 2_000)))
+
+        // Without chroma key the layer covers everything.
+        val plain = exportOk(base.copy(videoLayers = listOf(greenScreen))).file!!
+        assertColour("green screen without keying", green, pixel(plain, 1_000, 0.1f, 0.1f), tolerance = 90)
+
+        // With chroma key the green is gone and the white subject stays.
+        val keyed = exportOk(base.copy(videoLayers = listOf(greenScreen.copy(chromaKey = true)))).file!!
+        assertColour("main picture shows through the keyed corner", red, pixel(keyed, 1_000, 0.1f, 0.1f))
+        assertColour("main picture shows through the keyed edge", red, pixel(keyed, 1_000, 0.9f, 0.85f))
+        assertColour("the subject is kept", Color.WHITE, pixel(keyed, 1_000, 0.5f, 0.5f))
+    }
+
+    @Test
+    fun threeVideoLayersWithTextMusicAndOpacity_export() {
+        val clipFile = solidVideo("multi_layer", blue, 1_500)
+        val layers = listOf(
+            layerOf(clipFile).copy(startMs = 0, scale = 0.3f, x = -1f, y = 1f, opacity = 0.6f, rotation = 15f),
+            layerOf(clipFile).copy(startMs = 700, scale = 0.3f, x = 1f, y = -1f, volume = 0.4f),
+            layerOf(clipFile).copy(startMs = 1_400, scale = 0.25f, x = 0f, y = 0f, muted = true),
+        )
+        val uri = solid("multi_base", red)
+        val project = Project(
+            name = "multi",
+            clips = listOf(imageClip(uri, 1_500), imageClip(uri, 1_500).copy(fadeInMs = 300)),
+            videoLayers = layers,
+            texts = listOf(TextItem(text = "On top", startMs = 0, endMs = 3_000, animIn = OverlayAnim.FADE)),
+            layers = listOf(ImageLayer(uri = solid("multi_logo", Color.WHITE).toString(), scale = 0.2f, startMs = 500, endMs = 2_500)),
+            music = MusicTrack(Uri.fromFile(clipFile).toString(), "m", 1_500, loop = true),
+        )
+        val info = inspect(exportOk(project).file!!)
+        assertNear("duration", 3_000, info.durationMs, 700)
+        assertTrue(info.hasAudio)
+    }
+
+    @Test
+    fun videoLayerOutsideTheVideo_isIgnored_andAMissingOneReportsAnError() {
+        val base = Project(name = "edge", clips = listOf(imageClip(solid("edge_red", red), 1_500)))
+        val late = layerOf(solidVideo("edge_blue", blue, 1_000)).copy(startMs = 9_000)
+        val ignored = exportOk(base.copy(videoLayers = listOf(late))).file!!
+        assertNear("duration", 1_500, inspect(ignored).durationMs, 500)
+        assertColour("late layer never shows", red, pixel(ignored, 700, 0.85f, 0.15f))
+
+        val missing = VideoLayer(uri = "file:///no/such/layer.mp4", sourceDurationMs = 2_000)
+        val outcome = export(base.copy(videoLayers = listOf(missing)), timeoutSec = 60)
+        assertNull(outcome.file)
+        assertTrue("expected an export error but got ${outcome.error}", outcome.error is ExportException)
     }
 
     @Test

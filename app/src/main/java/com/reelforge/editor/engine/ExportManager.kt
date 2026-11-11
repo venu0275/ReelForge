@@ -34,6 +34,7 @@ import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TransitionStyle
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.util.MediaUtils
 import kotlin.math.max
 import kotlin.math.min
@@ -46,6 +47,12 @@ object ExportManager {
     private const val MAX_MUSIC_REPEATS = 400
     private const val SILENCE_MS = 10_000L
     private const val MAX_OVERLAYS_PER_EFFECT = 15
+
+    /** Each video layer needs its own decoder, so phones can only handle a few at once. */
+    const val MAX_VIDEO_LAYERS = 3
+
+    /** Gaps shorter than about one frame are not worth a blank filler. */
+    private const val MIN_BLANK_MS = 40L
 
     /** Output frame size for an aspect ratio, where [shortSide] is e.g. 720 or 1080. */
     fun outputSize(aspect: AspectRatio, shortSide: Int): Pair<Int, Int> {
@@ -150,10 +157,19 @@ object ExportManager {
             )
         }
 
+        val total = project.durationMs
+        // Video layers that actually fall inside the video.
+        val videoLayers = project.videoLayers
+            .filter { it.durationMs >= 100 && it.startMs < total - 100 }
+            .take(MAX_VIDEO_LAYERS)
+        val layered = videoLayers.isNotEmpty()
+
         val items = project.clips.mapIndexed { index, clip ->
             val clipStart = project.clipStartMs(index)
             val clipEnd = clipStart + clip.durationMs
-            val overlays = specs
+            // With video layers, text and pictures are drawn after the layers (see below) so they
+            // stay on top; otherwise they are drawn on each clip.
+            val overlays = (if (layered) emptyList() else specs)
                 .filter { it.endMs > clipStart && it.startMs < clipEnd }
                 .map { s ->
                     TimedBitmapOverlay(
@@ -173,8 +189,16 @@ object ExportManager {
             buildClipItem(context, project, clip, width, height, overlays, fps)
         }
 
-        val total = project.durationMs
         val sequences = mutableListOf(EditedMediaItemSequence(items))
+        val placements = mutableListOf<LayerPlacement>()
+        if (layered) {
+            val blank = Uri.fromFile(MediaUtils.blankImage(context))
+            videoLayers.forEach { layer ->
+                val (sequence, placement) = buildVideoLayerSequence(layer, total, blank, height, fps)
+                sequences += sequence
+                placements += placement
+            }
+        }
         project.music?.let { music ->
             buildMusicSequence(music, total)?.let { sequences += it }
         }
@@ -185,9 +209,92 @@ object ExportManager {
             }
         }
 
-        return Composition.Builder(sequences)
-            .experimentalSetForceAudioTrack(true)
+        val builder = Composition.Builder(sequences).experimentalSetForceAudioTrack(true)
+        if (layered) {
+            builder.setVideoCompositorSettings(LayerCompositorSettings(width, height, placements))
+            val onTop = specs.map { s ->
+                TimedBitmapOverlay(
+                    bitmap = s.bitmap,
+                    startUs = s.startMs * 1000,
+                    endUs = s.endMs * 1000,
+                    x = s.x,
+                    y = s.y,
+                    opacity = s.opacity,
+                    animIn = s.animIn,
+                    animOut = s.animOut,
+                    x2 = s.x2,
+                    y2 = s.y2,
+                    rotation = s.rotation,
+                )
+            }
+            if (onTop.isNotEmpty()) {
+                val effects: List<Effect> = onTop.chunked(MAX_OVERLAYS_PER_EFFECT).map {
+                    OverlayEffect(ImmutableList.copyOf<TextureOverlay>(it))
+                }
+                builder.setEffects(Effects(emptyList(), effects))
+            }
+        }
+        return builder.build()
+    }
+
+    /**
+     * One video layer as its own track: a blank picture up to its start, the video itself, then
+     * a blank picture to the end, so the track always spans the whole video. The blanks are never
+     * seen: the compositor only shows this track during the layer's own time range.
+     */
+    private fun buildVideoLayerSequence(
+        layer: VideoLayer,
+        totalMs: Long,
+        blank: Uri,
+        outHeight: Int,
+        fps: Int,
+    ): Pair<EditedMediaItemSequence, LayerPlacement> {
+        val lead = if (layer.startMs >= MIN_BLANK_MS) layer.startMs else 0L
+        val playMs = min(layer.durationMs, totalMs - lead)
+        val tail = totalMs - lead - playMs
+        val layerHeight = ((layer.scale * outHeight).toInt().coerceAtLeast(16) / 2) * 2
+
+        fun blankItem(ms: Long): EditedMediaItem {
+            val media = MediaItem.Builder().setUri(blank)
+                .setMimeType(MimeTypes.IMAGE_PNG)
+                .setImageDurationMs(ms)
+                .build()
+            return EditedMediaItem.Builder(media).setDurationUs(ms * 1000).setFrameRate(fps).build()
+        }
+
+        val items = mutableListOf<EditedMediaItem>()
+        if (lead > 0) items += blankItem(lead)
+
+        val media = MediaItem.Builder().setUri(Uri.parse(layer.uri))
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(layer.trimStartMs)
+                    .setEndPositionMs(layer.trimStartMs + playMs)
+                    .build()
+            )
             .build()
+        val video = mutableListOf<Effect>(
+            FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat()),
+            Presentation.createForHeight(layerHeight),
+        )
+        if (layer.chromaKey) video += ChromaKeyEffect(layer.keyColor, layer.keyTolerance)
+        val audio = if (layer.volume != 1f) listOf(volumeProcessor(layer.volume)) else emptyList()
+        items += EditedMediaItem.Builder(media)
+            .setRemoveAudio(layer.muted || !layer.hasAudio)
+            .setEffects(Effects(audio, video))
+            .build()
+
+        if (tail >= MIN_BLANK_MS) items += blankItem(tail)
+
+        val placement = LayerPlacement(
+            startUs = lead * 1000,
+            endUs = (lead + playMs) * 1000,
+            x = layer.x,
+            y = layer.y,
+            opacity = layer.opacity,
+            rotation = layer.rotation,
+        )
+        return EditedMediaItemSequence(items) to placement
     }
 
     /** A voice-over / sound clip: silence up to its start, then the audio itself. */

@@ -46,6 +46,7 @@ import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TransitionStyle
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.util.MediaUtils
 import kotlin.math.roundToInt
 
@@ -660,14 +661,34 @@ fun LayerPanel(
     editingId: String?,
     onEditing: (String?) -> Unit,
     pickImage: () -> Unit,
+    pickVideo: () -> Unit,
     draw: () -> Unit,
 ) {
+    val editingVideo = project.videoLayers.firstOrNull { it.id == editingId }
+    if (editingVideo != null) {
+        VideoLayerEditor(vm, project, editingVideo) { onEditing(null) }
+        return
+    }
     val editing = project.layers.firstOrNull { it.id == editingId }
 
     if (editing == null) {
-        PanelTitle("Image layers")
-        if (project.layers.isEmpty()) {
-            Text("Put a photo, logo or watermark on top of your video.")
+        PanelTitle("Layers")
+        if (project.layers.isEmpty() && project.videoLayers.isEmpty()) {
+            Text("Put a video, photo, logo or watermark on top of your video.")
+        }
+        project.videoLayers.forEachIndexed { i, layer ->
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Video ${i + 1}" + if (layer.chromaKey) " · green screen" else "")
+                    Text(
+                        "${MediaUtils.formatTime(layer.startMs)} – " +
+                            MediaUtils.formatTime(layer.startMs + layer.durationMs),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                TextButton(onClick = { onEditing(layer.id) }) { Text("Edit") }
+                TextButton(onClick = { vm.deleteVideoLayer(layer.id) }) { Text("Delete") }
+            }
         }
         project.layers.forEachIndexed { i, layer ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -684,6 +705,7 @@ fun LayerPanel(
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = pickVideo) { Text("Add video") }
             Button(onClick = pickImage) { Text("Add image") }
             TextButton(onClick = draw) { Text("Draw") }
             if (project.layers.isNotEmpty()) {
@@ -861,6 +883,83 @@ private fun FontStore(vm: EditorViewModel, currentPath: String?, textId: String)
     if (vm.installedFonts.isNotEmpty()) {
         Text(
             "${vm.installedFonts.size} downloaded. Fonts marked ↓ download when tapped.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+/** Settings for one picture-in-picture video layer, including green-screen removal. */
+@Composable
+private fun VideoLayerEditor(vm: EditorViewModel, project: Project, layer: VideoLayer, onDone: () -> Unit) {
+    val id = layer.id
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Edit video layer", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        TextButton(onClick = {
+            onDone()
+            vm.deleteVideoLayer(id)
+        }) { Text("Delete") }
+        TextButton(onClick = onDone) { Text("Done") }
+    }
+    LabeledSlider("Size", layer.scale, 0.1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(scale = v) } }
+    LabeledSlider("Opacity", layer.opacity, 0f..1f) { v -> vm.updateVideoLayer(id) { it.copy(opacity = v) } }
+    LabeledSlider("Rotation", layer.rotation, -180f..180f) { v ->
+        vm.updateVideoLayer(id) { it.copy(rotation = v) }
+    }
+    LabeledSlider("Left ↔ Right", layer.x, -1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(x = v) } }
+    LabeledSlider("Bottom ↔ Top", layer.y, -1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(y = v) } }
+
+    CommitSlider(
+        label = "Starts at",
+        value = layer.startMs.toFloat(),
+        range = 0f..maxOf(project.durationMs - 100, 1L).toFloat(),
+        format = { MediaUtils.formatTime(it.toLong()) },
+    ) { v -> vm.updateVideoLayer(id) { it.copy(startMs = v.toLong()) } }
+
+    var range by remember(id, layer.trimStartMs, layer.trimEndMs) {
+        mutableStateOf(layer.trimStartMs.toFloat()..layer.trimEndMs.toFloat())
+    }
+    Text(
+        "Use ${MediaUtils.formatTime(range.start.toLong())} – ${MediaUtils.formatTime(range.endInclusive.toLong())}" +
+            " of this video",
+        style = MaterialTheme.typography.labelLarge,
+    )
+    RangeSlider(
+        value = range,
+        onValueChange = { r -> if (r.endInclusive - r.start >= 300f) range = r },
+        valueRange = 0f..maxOf(layer.sourceDurationMs.toFloat(), 300f),
+        onValueChangeFinished = {
+            vm.updateVideoLayer(id) {
+                it.copy(trimStartMs = range.start.toLong(), trimEndMs = range.endInclusive.toLong())
+            }
+        },
+    )
+
+    if (layer.hasAudio) {
+        CommitSlider("Volume", layer.volume, 0f..2f, { "${(it * 100).roundToInt()}%" }) { v ->
+            vm.updateVideoLayer(id) { it.copy(volume = v) }
+        }
+        SwitchRow("Mute", layer.muted) { m -> vm.updateVideoLayer(id) { it.copy(muted = m) } }
+    }
+
+    SwitchRow("Remove green screen (chroma key)", layer.chromaKey) { on ->
+        vm.updateVideoLayer(id) { it.copy(chromaKey = on) }
+    }
+    if (layer.chromaKey) {
+        Text("Colour to remove", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(0xFF00FF00.toInt() to "Green", 0xFF0000FF.toInt() to "Blue").forEach { (color, label) ->
+                FilterChip(
+                    selected = layer.keyColor == color,
+                    onClick = { vm.updateVideoLayer(id) { it.copy(keyColor = color) } },
+                    label = { Text(label) },
+                )
+            }
+        }
+        LabeledSlider("Strength", layer.keyTolerance, 0.05f..0.5f) { v ->
+            vm.updateVideoLayer(id) { it.copy(keyTolerance = v) }
+        }
+        Text(
+            "Raise the strength if some of the screen colour is left; lower it if the subject starts to disappear.",
             style = MaterialTheme.typography.bodySmall,
         )
     }

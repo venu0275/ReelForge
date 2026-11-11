@@ -37,6 +37,7 @@ import com.reelforge.editor.data.AssetCatalog
 import com.reelforge.editor.data.AssetDownloader
 import com.reelforge.editor.data.FontAsset
 import com.reelforge.editor.data.ProjectRepository
+import com.reelforge.editor.engine.ChromaKeyEffect
 import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.ExportManager
 import com.reelforge.editor.engine.fadeAlpha
@@ -51,6 +52,7 @@ import com.reelforge.editor.model.History
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.model.TextItem
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.model.newId
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.Dispatchers
@@ -139,6 +141,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     musicPlayer.pause()
                     stopVoice()
+                    project?.let { syncLayers(it, false) }
                 }
             }
 
@@ -184,6 +187,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         player.pause()
         player.clearMediaItems()
         stopVoice()
+        releaseLayerPlayers()
         musicPlayer.stop()
         musicPlayer.clearMediaItems()
         val p = project
@@ -227,6 +231,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (next.clips.none { it.id == selectedClipId }) selectedClipId = null
         playheadMs = playheadMs.coerceIn(0, next.durationMs)
         syncPlayer()
+        syncLayers(next, player.isPlaying)
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(400)
@@ -540,6 +545,97 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(background = background, backgroundColor = color ?: p.backgroundColor)
     }
 
+    // ------------------------------------------------------------ video layers
+
+    private val layerPlayers = mutableMapOf<String, ExoPlayer>()
+    private val layerKeySignatures = mutableMapOf<String, String>()
+
+    /** Adds a video on top of the main track at the playhead (picture-in-picture). */
+    fun addVideoLayer(uri: Uri) {
+        val p = project ?: return
+        if (p.videoLayers.size >= ExportManager.MAX_VIDEO_LAYERS) {
+            message = "Up to ${ExportManager.MAX_VIDEO_LAYERS} video layers can play at once"
+            return
+        }
+        val start = playheadMs
+        viewModelScope.launch {
+            val layer = withContext(Dispatchers.IO) {
+                runCatching {
+                    ctx.contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                val info = MediaUtils.probe(ctx, uri)
+                val aspect = MediaUtils.videoAspect(ctx, uri)
+                if (info == null || info.type != ClipType.VIDEO || aspect == null) null
+                else VideoLayer(
+                    uri = uri.toString(),
+                    sourceDurationMs = info.durationMs,
+                    startMs = start,
+                    aspect = aspect,
+                    hasAudio = info.hasAudio,
+                )
+            }
+            if (layer == null) message = "That video could not be read"
+            else mutate { it.copy(videoLayers = it.videoLayers + layer) }
+        }
+    }
+
+    fun updateVideoLayer(id: String, block: (VideoLayer) -> VideoLayer) = mutate { p ->
+        p.copy(videoLayers = p.videoLayers.map { if (it.id == id) block(it) else it })
+    }
+
+    fun deleteVideoLayer(id: String) =
+        mutate { p -> p.copy(videoLayers = p.videoLayers.filterNot { it.id == id }) }
+
+    /** The preview player for one video layer; created the first time the layer is shown. */
+    fun layerPlayer(layer: VideoLayer): ExoPlayer = layerPlayers.getOrPut(layer.id) {
+        ExoPlayer.Builder(ctx).build().also {
+            it.setMediaItem(MediaItem.fromUri(Uri.parse(layer.uri)))
+            it.prepare()
+        }
+    }
+
+    /** Lines the layer players up with the playhead. Call after a layer's player is created. */
+    fun resyncLayers() {
+        project?.let { syncLayers(it, player.isPlaying) }
+    }
+
+    private fun syncLayers(p: Project, playing: Boolean) {
+        val ids = p.videoLayers.map { it.id }.toSet()
+        layerPlayers.keys.filter { it !in ids }.forEach { id ->
+            layerPlayers.remove(id)?.release()
+            layerKeySignatures.remove(id)
+        }
+        p.videoLayers.forEach { layer ->
+            val layerPlayer = layerPlayers[layer.id] ?: return@forEach
+            val signature = if (layer.chromaKey) "${layer.keyColor}|${layer.keyTolerance}" else ""
+            if (signature != (layerKeySignatures[layer.id] ?: "")) {
+                layerKeySignatures[layer.id] = signature
+                layerPlayer.setVideoEffects(
+                    if (layer.chromaKey) listOf(ChromaKeyEffect(layer.keyColor, layer.keyTolerance))
+                    else emptyList()
+                )
+            }
+            layerPlayer.volume = if (layer.muted) 0f else layer.volume.coerceIn(0f, 1f)
+            val local = playheadMs - layer.startMs
+            if (local < 0 || local >= layer.durationMs) {
+                if (layerPlayer.playWhenReady) layerPlayer.playWhenReady = false
+                return@forEach
+            }
+            val wanted = layer.trimStartMs + local
+            val drift = kotlin.math.abs(layerPlayer.currentPosition - wanted)
+            if (drift > (if (playing) 250 else 40)) layerPlayer.seekTo(wanted)
+            if (layerPlayer.playWhenReady != playing) layerPlayer.playWhenReady = playing
+        }
+    }
+
+    private fun releaseLayerPlayers() {
+        layerPlayers.values.forEach { it.release() }
+        layerPlayers.clear()
+        layerKeySignatures.clear()
+    }
+
     // ------------------------------------------------- voice-over + sound clips
 
     fun addAudioClip(uri: Uri) {
@@ -827,6 +923,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val (index, local) = p.locate(target) ?: return
         player.seekTo(index, (local * p.clips[index].effectiveSpeed).toLong())
         applyClipParams()
+        syncLayers(p, player.isPlaying)
         if (player.isPlaying) startMusic()
     }
 
@@ -885,6 +982,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 fadeAlpha(playheadMs, end, music.fadeInMs, music.fadeOutMs)
         }
         syncVoice(p)
+        syncLayers(p, true)
     }
 
     // -------------------------------------------------------------- thumbnails
@@ -968,6 +1066,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (isRecording) stopRecording()
         player.pause()
         player.stop() // free hardware decoders for the export
+        layerPlayers.values.forEach { it.stop() }
         export = ExportState.Running(0)
         val output = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
 
@@ -1042,6 +1141,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         transformer = null
         playlistSignature = ""
         effectSignature = ""
+        layerPlayers.values.forEach { it.prepare() }
         syncPlayer()
     }
 
@@ -1051,5 +1151,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         player.release()
         musicPlayer.release()
         voicePlayer.release()
+        releaseLayerPlayers()
     }
 }

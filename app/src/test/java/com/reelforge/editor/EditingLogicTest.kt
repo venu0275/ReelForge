@@ -20,6 +20,7 @@ import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.TransitionStyle
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.util.MediaUtils
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -598,7 +599,15 @@ class ProjectJsonTest {
                 animOut = OverlayAnim.FADE, moving = true, x2 = 1f, y2 = 1f,
             )
         ),
-        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f)),
+        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f, 400, 600)),
+        videoLayers = listOf(
+            VideoLayer(
+                id = "pip", uri = "content://video/9", sourceDurationMs = 9_000, trimStartMs = 1_000,
+                trimEndMs = 4_000, startMs = 2_500, aspect = 0.5625f, scale = 0.3f, x = -0.7f, y = 0.6f,
+                opacity = 0.9f, rotation = 12f, volume = 0.5f, muted = true, hasAudio = false,
+                chromaKey = true, keyColor = 0xFF0000FF.toInt(), keyTolerance = 0.3f,
+            )
+        ),
         background = Background.BLUR,
         backgroundColor = 0xFF336699.toInt(),
         updatedAt = 1_700_000_000_000,
@@ -629,6 +638,7 @@ class ProjectJsonTest {
         assertNull(p.texts[0].fontPath)
         assertTrue(p.layers.isEmpty())
         assertTrue(p.audio.isEmpty())
+        assertTrue(p.videoLayers.isEmpty())
         assertNull(p.music)
         assertEquals(Background.BLACK, p.background)
     }
@@ -657,6 +667,12 @@ class ProjectJsonTest {
         assertThrows(Exception::class.java) {
             ProjectJson.decode("{\"id\":\"x\",\"name\":\"X\",\"clips\":[{\"id\":\"c\"}]}")
         }
+    }
+
+    @Test fun `a video layer lasts as long as its trimmed range`() {
+        val layer = VideoLayer(uri = "u", sourceDurationMs = 9_000, trimStartMs = 1_000, trimEndMs = 4_000)
+        assertEquals(3_000, layer.durationMs)
+        assertEquals(9_000, VideoLayer(uri = "u", sourceDurationMs = 9_000).durationMs)
     }
 
     @Test fun `different projects produce different files`() {

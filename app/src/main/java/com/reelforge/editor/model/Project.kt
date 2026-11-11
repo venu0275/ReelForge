@@ -147,6 +147,33 @@ data class ImageLayer(
     val y2: Float = 0f,
 )
 
+/**
+ * A video drawn on top of the main track (picture-in-picture). It plays its trimmed range once,
+ * starting at [startMs] on the timeline. With [chromaKey] on, the key colour becomes see-through.
+ */
+data class VideoLayer(
+    val id: String = newId(),
+    val uri: String,
+    val sourceDurationMs: Long,
+    val trimStartMs: Long = 0,
+    val trimEndMs: Long = sourceDurationMs,
+    val startMs: Long = 0,
+    val aspect: Float = 16f / 9f,   // width / height of the video as displayed
+    val scale: Float = 0.4f,        // height as a fraction of frame height
+    val x: Float = 0.8f,
+    val y: Float = 0.8f,
+    val opacity: Float = 1f,
+    val rotation: Float = 0f,
+    val volume: Float = 1f,
+    val muted: Boolean = false,
+    val hasAudio: Boolean = true,
+    val chromaKey: Boolean = false,
+    val keyColor: Int = 0xFF00FF00.toInt(),
+    val keyTolerance: Float = 0.18f,
+) {
+    val durationMs: Long get() = trimEndMs - trimStartMs
+}
+
 /** A voice-over or sound effect placed at a position on the timeline. */
 data class AudioClip(
     val id: String = newId(),
@@ -178,6 +205,7 @@ data class Project(
     val music: MusicTrack? = null,
     val layers: List<ImageLayer> = emptyList(),
     val audio: List<AudioClip> = emptyList(),
+    val videoLayers: List<VideoLayer> = emptyList(),
     val background: Background = Background.BLACK,
     val backgroundColor: Int = 0xFFFFFFFF.toInt(),
     val updatedAt: Long = System.currentTimeMillis(),
