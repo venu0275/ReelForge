@@ -1,6 +1,7 @@
 package com.reelforge.editor.engine
 
 import android.content.Context
+import android.media.MediaCodecList
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.annotation.OptIn
@@ -12,6 +13,7 @@ import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.FrameDropEffect
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.SpeedChangeEffect
@@ -33,13 +35,15 @@ import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.util.MediaUtils
+import kotlin.math.max
 import kotlin.math.min
 
 /** Turns a [Project] into a Media3 Transformer [Composition] and renders it to an MP4. */
 @OptIn(UnstableApi::class)
 object ExportManager {
 
-    private const val IMAGE_FRAME_RATE = 30
+    const val DEFAULT_FRAME_RATE = 30
+    private const val MAX_MUSIC_REPEATS = 400
     private const val SILENCE_MS = 10_000L
     private const val MAX_OVERLAYS_PER_EFFECT = 15
 
@@ -53,23 +57,45 @@ object ExportManager {
         }
     }
 
-    /** Target video bitrate for a frame size; [quality] is 0 (small file), 1 or 2 (best). */
-    fun bitrate(width: Int, height: Int, quality: Int): Int {
+    /**
+     * Target video bitrate. [quality] is 0 (small file), 1 or 2 (best). 60 fps needs more bits;
+     * H.265 needs fewer for the same picture.
+     */
+    fun bitrate(width: Int, height: Int, quality: Int, fps: Int = 30, hevc: Boolean = false): Int {
         val bitsPerPixel = when (quality) {
             0 -> 0.07
             2 -> 0.20
             else -> 0.12
         }
-        return (width.toLong() * height * IMAGE_FRAME_RATE * bitsPerPixel).toInt()
+        val rate = if (fps > 30) 1.5 else 1.0
+        val codec = if (hevc) 0.65 else 1.0
+        return (width.toLong() * height * 30 * bitsPerPixel * rate * codec).toInt()
+    }
+
+    /** Whether this phone has an encoder for that format, size and frame rate. */
+    fun canEncode(hevc: Boolean, width: Int, height: Int, fps: Int): Boolean {
+        val mime = if (hevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
+        // Portrait video is encoded sideways, so check the landscape orientation.
+        val long = max(width, height)
+        val short = min(width, height)
+        return runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+                info.isEncoder &&
+                    info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+                    info.getCapabilitiesForType(mime).videoCapabilities
+                        .areSizeAndRateSupported(long, short, fps.toDouble())
+            }
+        }.getOrDefault(false)
     }
 
     fun createTransformer(
         context: Context,
         listener: Transformer.Listener,
         videoBitrate: Int,
+        hevc: Boolean = false,
     ): Transformer =
         Transformer.Builder(context)
-            .setVideoMimeType(MimeTypes.VIDEO_H264)
+            .setVideoMimeType(if (hevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(
                 DefaultEncoderFactory.Builder(context)
@@ -96,7 +122,12 @@ object ExportManager {
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
-    fun buildComposition(context: Context, project: Project, shortSide: Int): Composition {
+    fun buildComposition(
+        context: Context,
+        project: Project,
+        shortSide: Int,
+        fps: Int = DEFAULT_FRAME_RATE,
+    ): Composition {
         val (width, height) = outputSize(project.aspect, shortSide)
 
         // Image layers sit below text and stickers.
@@ -139,7 +170,7 @@ object ExportManager {
                         rotation = s.rotation,
                     )
                 }
-            buildClipItem(context, project, clip, width, height, overlays)
+            buildClipItem(context, project, clip, width, height, overlays, fps)
         }
 
         val total = project.durationMs
@@ -189,7 +220,7 @@ object ExportManager {
             .build()
         items += EditedMediaItem.Builder(media)
             .setRemoveVideo(true)
-            .setEffects(Effects(listOf(volumeProcessor(clip.volume)), emptyList()))
+            .setEffects(Effects(audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs), emptyList()))
             .build()
         return EditedMediaItemSequence(items)
     }
@@ -201,6 +232,7 @@ object ExportManager {
         width: Int,
         height: Int,
         overlays: List<TextureOverlay>,
+        fps: Int,
     ): EditedMediaItem {
         val isImage = clip.type == ClipType.IMAGE
         val uri = Uri.parse(clip.uri)
@@ -225,6 +257,10 @@ object ExportManager {
 
         if (!isImage && clip.speed != 1f) {
             video += SpeedChangeEffect(clip.speed)
+        }
+        if (!isImage) {
+            // Caps the frame rate, which also keeps fast-forwarded clips light to encode.
+            video += FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat())
         }
         if (!isImage && (clip.speed != 1f || clip.pitch != 1f)) {
             audio += SonicAudioProcessor().apply {
@@ -272,31 +308,61 @@ object ExportManager {
         return EditedMediaItem.Builder(mediaItem).apply {
             if (isImage) {
                 setDurationUs(clip.durationMs * 1000)
-                setFrameRate(IMAGE_FRAME_RATE)
+                setFrameRate(fps)
             }
             setRemoveAudio(isImage || clip.muted || !clip.hasAudio)
             setEffects(Effects(audio, video))
         }.build()
     }
 
+    /**
+     * Background music laid end to end until it covers the video (when looping), with the last
+     * piece cut to fit. The fade-in goes on the first piece and the fade-out on the last.
+     */
     private fun buildMusicSequence(music: MusicTrack, videoDurationMs: Long): EditedMediaItemSequence? {
         if (videoDurationMs <= 0) return null
-        val longerThanVideo = music.durationMs <= 0 || music.durationMs >= videoDurationMs
-        val mediaItem = MediaItem.Builder().setUri(Uri.parse(music.uri)).apply {
-            if (longerThanVideo) {
-                setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setEndPositionMs(videoDurationMs)
-                        .build()
-                )
-            }
-        }.build()
-        val item = EditedMediaItem.Builder(mediaItem)
-            .setRemoveVideo(true)
-            .setEffects(Effects(listOf(volumeProcessor(music.volume)), emptyList()))
-            .build()
-        val loop = music.loop && !longerThanVideo
-        return EditedMediaItemSequence(listOf(item), loop)
+        val known = music.durationMs > 0
+        val length = if (known) music.durationMs else videoDurationMs
+        val pieces = mutableListOf<Long>()
+        var remaining = videoDurationMs
+        while (remaining > 0 && pieces.size < MAX_MUSIC_REPEATS) {
+            val piece = min(length, remaining)
+            pieces += piece
+            remaining -= piece
+            if (!music.loop) break
+        }
+        val uri = Uri.parse(music.uri)
+        val items = pieces.mapIndexed { i, piece ->
+            val media = MediaItem.Builder().setUri(uri).apply {
+                if (!known || piece < length) {
+                    setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder().setEndPositionMs(piece).build()
+                    )
+                }
+            }.build()
+            val fadeIn = if (i == 0) music.fadeInMs else 0L
+            val fadeOut = if (i == pieces.lastIndex) music.fadeOutMs else 0L
+            EditedMediaItem.Builder(media)
+                .setRemoveVideo(true)
+                .setEffects(Effects(audioChain(music.volume, piece, fadeIn, fadeOut), emptyList()))
+                .build()
+        }
+        return EditedMediaItemSequence(items)
+    }
+
+    /** Volume, plus a fade when one is asked for. Fades are kept inside the piece. */
+    private fun audioChain(volume: Float, lengthMs: Long, fadeInMs: Long, fadeOutMs: Long): List<AudioProcessor> {
+        val chain = mutableListOf(volumeProcessor(volume))
+        var fadeIn = fadeInMs.coerceIn(0, lengthMs)
+        var fadeOut = fadeOutMs.coerceIn(0, lengthMs)
+        if (fadeIn + fadeOut > lengthMs) {
+            fadeIn = fadeIn.coerceAtMost(lengthMs / 2)
+            fadeOut = fadeOut.coerceAtMost(lengthMs / 2)
+        }
+        if (fadeIn > 0 || fadeOut > 0) {
+            chain += AudioFadeProcessor(lengthMs * 1000, fadeIn * 1000, fadeOut * 1000)
+        }
+        return chain
     }
 
     /** Scales audio volume while keeping the channel layout. */

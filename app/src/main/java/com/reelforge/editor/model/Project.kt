@@ -11,6 +11,9 @@ enum class AspectRatio(val w: Int, val h: Int, val label: String) {
     PORTRAIT(9, 16, "9:16"),
     SQUARE(1, 1, "1:1"),
     FOUR_FIVE(4, 5, "4:5"),
+    THREE_FOUR(3, 4, "3:4"),
+    FOUR_THREE(4, 3, "4:3"),
+    CINEMA(47, 20, "2.35:1"),
 }
 
 enum class FilterPreset(val label: String) {
@@ -152,6 +155,8 @@ data class AudioClip(
     val startMs: Long,
     val durationMs: Long,
     val volume: Float = 1f,
+    val fadeInMs: Long = 0,
+    val fadeOutMs: Long = 0,
 )
 
 data class MusicTrack(
@@ -160,6 +165,8 @@ data class MusicTrack(
     val durationMs: Long,
     val volume: Float = 0.6f,
     val loop: Boolean = true,
+    val fadeInMs: Long = 0,
+    val fadeOutMs: Long = 0,
 )
 
 data class Project(

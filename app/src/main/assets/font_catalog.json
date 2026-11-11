@@ -1,0 +1,277 @@
+{
+ "fonts": [
+  {
+   "id": "lobster",
+   "name": "Lobster",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf"
+  },
+  {
+   "id": "pacifico",
+   "name": "Pacifico",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf"
+  },
+  {
+   "id": "bebasneue",
+   "name": "Bebas Neue",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf"
+  },
+  {
+   "id": "anton",
+   "name": "Anton",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf"
+  },
+  {
+   "id": "bangers",
+   "name": "Bangers",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bangers/Bangers-Regular.ttf"
+  },
+  {
+   "id": "righteous",
+   "name": "Righteous",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/righteous/Righteous-Regular.ttf"
+  },
+  {
+   "id": "abrilfatface",
+   "name": "Abril Fatface",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/abrilfatface/AbrilFatface-Regular.ttf"
+  },
+  {
+   "id": "archivoblack",
+   "name": "Archivo Black",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf"
+  },
+  {
+   "id": "pressstart2p",
+   "name": "Press Start 2P",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pressstart2p/PressStart2P-Regular.ttf"
+  },
+  {
+   "id": "specialelite",
+   "name": "Special Elite",
+   "group": "Stylish",
+   "licence": "Apache-2.0",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/specialelite/SpecialElite-Regular.ttf"
+  },
+  {
+   "id": "orbitron",
+   "name": "Orbitron",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/orbitron/Orbitron%5Bwght%5D.ttf"
+  },
+  {
+   "id": "cinzel",
+   "name": "Cinzel",
+   "group": "Stylish",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/Cinzel%5Bwght%5D.ttf"
+  },
+  {
+   "id": "dancingscript",
+   "name": "Dancing Script",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/DancingScript%5Bwght%5D.ttf"
+  },
+  {
+   "id": "greatvibes",
+   "name": "Great Vibes",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf"
+  },
+  {
+   "id": "sacramento",
+   "name": "Sacramento",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sacramento/Sacramento-Regular.ttf"
+  },
+  {
+   "id": "satisfy",
+   "name": "Satisfy",
+   "group": "Handwriting",
+   "licence": "Apache-2.0",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/satisfy/Satisfy-Regular.ttf"
+  },
+  {
+   "id": "caveat",
+   "name": "Caveat",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/Caveat%5Bwght%5D.ttf"
+  },
+  {
+   "id": "permanentmarker",
+   "name": "Permanent Marker",
+   "group": "Handwriting",
+   "licence": "Apache-2.0",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/permanentmarker/PermanentMarker-Regular.ttf"
+  },
+  {
+   "id": "indieflower",
+   "name": "Indie Flower",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/indieflower/IndieFlower-Regular.ttf"
+  },
+  {
+   "id": "shadowsintolight",
+   "name": "Shadows Into Light",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/shadowsintolight/ShadowsIntoLight.ttf"
+  },
+  {
+   "id": "amaticsc",
+   "name": "Amatic SC",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/amaticsc/AmaticSC-Bold.ttf"
+  },
+  {
+   "id": "kalam",
+   "name": "Kalam",
+   "group": "Handwriting",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/kalam/Kalam-Regular.ttf"
+  },
+  {
+   "id": "montserrat",
+   "name": "Montserrat",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf"
+  },
+  {
+   "id": "poppins",
+   "name": "Poppins",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf"
+  },
+  {
+   "id": "oswald",
+   "name": "Oswald",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/Oswald%5Bwght%5D.ttf"
+  },
+  {
+   "id": "raleway",
+   "name": "Raleway",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/raleway/Raleway%5Bwght%5D.ttf"
+  },
+  {
+   "id": "nunito",
+   "name": "Nunito",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf"
+  },
+  {
+   "id": "comfortaa",
+   "name": "Comfortaa",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/comfortaa/Comfortaa%5Bwght%5D.ttf"
+  },
+  {
+   "id": "playfairdisplay",
+   "name": "Playfair Display",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf"
+  },
+  {
+   "id": "lora",
+   "name": "Lora",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/lora/Lora%5Bwght%5D.ttf"
+  },
+  {
+   "id": "baloo2",
+   "name": "Baloo 2",
+   "group": "Clean",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloo2/Baloo2%5Bwght%5D.ttf"
+  },
+  {
+   "id": "notosansdevanagari",
+   "name": "Hindi (Devanagari)",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosanstelugu",
+   "name": "Telugu",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstelugu/NotoSansTelugu%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosanstamil",
+   "name": "Tamil",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstamil/NotoSansTamil%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosanskannada",
+   "name": "Kannada",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskannada/NotoSansKannada%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosansmalayalam",
+   "name": "Malayalam",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmalayalam/NotoSansMalayalam%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosansbengali",
+   "name": "Bengali",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosansgujarati",
+   "name": "Gujarati",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgujarati/NotoSansGujarati%5Bwdth%2Cwght%5D.ttf"
+  },
+  {
+   "id": "notosansgurmukhi",
+   "name": "Punjabi (Gurmukhi)",
+   "group": "Indian languages",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgurmukhi/NotoSansGurmukhi%5Bwdth%2Cwght%5D.ttf"
+  }
+ ]
+}

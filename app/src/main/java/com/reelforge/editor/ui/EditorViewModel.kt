@@ -33,6 +33,9 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.reelforge.editor.data.AssetCatalog
+import com.reelforge.editor.data.AssetDownloader
+import com.reelforge.editor.data.FontAsset
 import com.reelforge.editor.data.ProjectRepository
 import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.ExportManager
@@ -455,6 +458,62 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // -------------------------------------------------------------- font store
+
+    /** Fonts that can be downloaded on demand (see assets/font_catalog.json). */
+    val storeFonts: List<FontAsset> = AssetCatalog.fonts(app)
+
+    /** Ids of store fonts that are on this phone. */
+    var installedFonts by mutableStateOf(emptySet<String>())
+        private set
+
+    /** Download progress (0..100) per font id while a download is running. */
+    val fontProgress = mutableStateMapOf<String, Int>()
+
+    init {
+        refreshInstalledFonts()
+    }
+
+    fun fontPath(asset: FontAsset): String = AssetCatalog.fontFile(ctx, asset).absolutePath
+
+    private fun refreshInstalledFonts() {
+        installedFonts = storeFonts.filter { AssetCatalog.fontFile(ctx, it).length() > 0 }.map { it.id }.toSet()
+    }
+
+    /** Downloads a store font if needed, then applies it to [textId] (when given). */
+    fun useStoreFont(asset: FontAsset, textId: String?) {
+        val file = AssetCatalog.fontFile(ctx, asset)
+        if (file.length() > 0) {
+            if (textId != null) updateText(textId) { it.copy(fontPath = file.absolutePath) }
+            return
+        }
+        if (fontProgress.containsKey(asset.id)) return
+        fontProgress[asset.id] = 0
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    AssetDownloader.download(asset.url, file) { percent ->
+                        viewModelScope.launch { if (fontProgress.containsKey(asset.id)) fontProgress[asset.id] = percent }
+                    }
+                    // Throws if what arrived is not a usable font.
+                    Typeface.createFromFile(file)
+                }.onFailure { file.delete() }.isSuccess
+            }
+            fontProgress.remove(asset.id)
+            refreshInstalledFonts()
+            if (!ok) {
+                message = "Could not download ${asset.name}. Check the internet connection."
+            } else if (textId != null) {
+                updateText(textId) { it.copy(fontPath = file.absolutePath) }
+            }
+        }
+    }
+
+    fun removeStoreFont(asset: FontAsset) {
+        AssetCatalog.fontFile(ctx, asset).delete()
+        refreshInstalledFonts()
+    }
+
     // ------------------------------------------------------------ custom fonts
 
     /** Copies a .ttf / .otf file into app storage and uses it for one text item. */
@@ -586,7 +645,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             voicePlayer.seekTo(playheadMs - clip.startMs)
             voicePlayer.play()
         }
-        voicePlayer.volume = clip.volume.coerceIn(0f, 1f)
+        val length = minOf(clip.durationMs, p.durationMs - clip.startMs)
+        voicePlayer.volume = clip.volume.coerceIn(0f, 1f) *
+            fadeAlpha(playheadMs - clip.startMs, length, clip.fadeInMs, clip.fadeOutMs)
     }
 
     // ------------------------------------------------------------ freeze frame
@@ -693,8 +754,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private fun applyClipParams() {
         val p = project ?: return
         val clip = p.clips.getOrNull(player.currentMediaItemIndex) ?: return
+        // The preview player tops out at 8x; faster clips still export at their full speed.
         player.playbackParameters = PlaybackParameters(
-            clip.effectiveSpeed,
+            clip.effectiveSpeed.coerceIn(0.1f, 8f),
             if (clip.type == ClipType.VIDEO) clip.pitch.coerceIn(0.5f, 2f) else 1f,
         )
         player.volume = if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)
@@ -815,6 +877,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // Sound follows the picture fade.
         val gain = fadeAlpha(local, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
         player.volume = (if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)) * gain
+        p.music?.let { music ->
+            // Music fades in at the start and out where it (or the video) ends.
+            val end = if (music.loop || music.durationMs <= 0) p.durationMs
+            else minOf(music.durationMs, p.durationMs)
+            musicPlayer.volume = music.volume.coerceIn(0f, 1f) *
+                fadeAlpha(playheadMs, end, music.fadeInMs, music.fadeOutMs)
+        }
         syncVoice(p)
     }
 
@@ -893,7 +962,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ export
 
-    fun startExport(shortSide: Int, quality: Int) {
+    fun startExport(shortSide: Int, quality: Int, fps: Int = 30, hevc: Boolean = false) {
         val p = project ?: return
         if (p.clips.isEmpty() || export is ExportState.Running) return
         if (isRecording) stopRecording()
@@ -935,12 +1004,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val composition = withContext(Dispatchers.IO) {
-                    ExportManager.buildComposition(ctx, p, shortSide)
+                    ExportManager.buildComposition(ctx, p, shortSide, fps)
                 }
                 if (export !is ExportState.Running) return@launch // cancelled while preparing
                 val (outWidth, outHeight) = ExportManager.outputSize(p.aspect, shortSide)
                 val t = ExportManager.createTransformer(
-                    ctx, listener, ExportManager.bitrate(outWidth, outHeight, quality)
+                    ctx, listener, ExportManager.bitrate(outWidth, outHeight, quality, fps, hevc), hevc,
                 )
                 transformer = t
                 t.start(composition, output.absolutePath)

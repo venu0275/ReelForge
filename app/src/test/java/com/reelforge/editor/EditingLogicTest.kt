@@ -297,6 +297,92 @@ class EdgeTrimTest {
     }
 }
 
+// ----------------------------------------------------------- snapping, catalog
+
+class SnapAndCatalogTest {
+
+    @Test fun `snap pulls a value onto a nearby point only`() {
+        val points = listOf(0L, 4_000L, 7_000L)
+        assertEquals(4_000, ProjectOps.snap(3_900, points, 150))
+        assertEquals(4_000, ProjectOps.snap(4_120, points, 150))
+        assertEquals(3_700, ProjectOps.snap(3_700, points, 150))
+        assertEquals(5_500, ProjectOps.snap(5_500, emptyList(), 150))
+        assertEquals(3_900, ProjectOps.snap(3_900, points, 0))
+    }
+
+    @Test fun `a dropped item snaps by its start, else by its end, and never before zero`() {
+        val points = listOf(0L, 4_000L, 7_000L)
+        assertEquals(4_000, ProjectOps.snapStart(3_950, 2_000, points, 150))
+        // Start is far from everything, but the end (5 050 + 2 000) is near 7 000.
+        assertEquals(5_000, ProjectOps.snapStart(5_050, 2_000, points, 150))
+        assertEquals(1_500, ProjectOps.snapStart(1_500, 500, points, 150))
+        assertEquals(0, ProjectOps.snapStart(-800, 500, points, 150))
+    }
+
+    @Test fun `snap points cover clip edges and other items but not the moved one`() {
+        val p = project(video("a", 4_000), video("b", 3_000)).copy(
+            texts = listOf(
+                TextItem(id = "t1", text = "x", startMs = 500, endMs = 1_500),
+                TextItem(id = "t2", text = "y", startMs = 2_000, endMs = 2_600),
+            ),
+            audio = listOf(AudioClip("v", "u", "Voice", 5_000, 1_000)),
+        )
+        val points = ProjectOps.snapPoints(p, excludeId = "t1")
+        assertTrue(points.containsAll(listOf(0L, 4_000L, 7_000L, 2_000L, 2_600L, 5_000L, 6_000L)))
+        assertFalse(points.contains(500L))
+        assertFalse(points.contains(1_500L))
+        assertEquals(points.sorted(), points)
+    }
+
+    @Test fun `every aspect ratio is close to its label`() {
+        val expected = mapOf(
+            AspectRatio.LANDSCAPE to 16f / 9, AspectRatio.PORTRAIT to 9f / 16, AspectRatio.SQUARE to 1f,
+            AspectRatio.FOUR_FIVE to 4f / 5, AspectRatio.THREE_FOUR to 3f / 4,
+            AspectRatio.FOUR_THREE to 4f / 3, AspectRatio.CINEMA to 2.35f,
+        )
+        assertEquals(AspectRatio.entries.toSet(), expected.keys)
+        for ((aspect, ratio) in expected) {
+            val (w, h) = ExportManager.outputSize(aspect, 1080)
+            assertEquals("$aspect", ratio, w.toFloat() / h, 0.01f)
+        }
+    }
+
+    @Test fun `bitrate allows for frame rate and format`() {
+        val base = ExportManager.bitrate(1920, 1080, 1)
+        assertTrue(ExportManager.bitrate(1920, 1080, 1, fps = 60) > base)
+        assertTrue(ExportManager.bitrate(1920, 1080, 1, hevc = true) < base)
+        // 4K at the best quality must still fit in an Int.
+        assertTrue(ExportManager.bitrate(3840, 2160, 2, fps = 60) > 0)
+    }
+
+    @Test fun `font catalog parses and rejects broken input`() {
+        val fonts = com.reelforge.editor.data.AssetCatalog.parseFonts(
+            """{"fonts":[{"id":"a","name":"A","group":"G","licence":"OFL-1.1","url":"https://x/a.ttf"},
+               {"id":"b","name":"B","url":"https://x/b.ttf"}]}"""
+        )
+        assertEquals(2, fonts.size)
+        assertEquals("G", fonts[0].group)
+        assertEquals("Other", fonts[1].group)
+        assertThrows(Exception::class.java) { com.reelforge.editor.data.AssetCatalog.parseFonts("{}") }
+        assertThrows(Exception::class.java) {
+            com.reelforge.editor.data.AssetCatalog.parseFonts("""{"fonts":[{"name":"no id"}]}""")
+        }
+    }
+
+    @Test fun `the shipped font catalog is well formed`() {
+        val file = listOf("src/main/assets/font_catalog.json", "app/src/main/assets/font_catalog.json")
+            .map { java.io.File(it) }.first { it.exists() }
+        val fonts = com.reelforge.editor.data.AssetCatalog.parseFonts(file.readText())
+        assertTrue(fonts.size >= 20)
+        assertEquals("ids must be unique", fonts.size, fonts.map { it.id }.toSet().size)
+        for (font in fonts) {
+            assertTrue(font.id, font.id.matches(Regex("[a-z0-9]+")))
+            assertTrue(font.url, font.url.startsWith("https://") && font.url.endsWith(".ttf"))
+            assertTrue(font.id, font.name.isNotBlank() && font.licence.isNotBlank())
+        }
+    }
+}
+
 // --------------------------------------------------------------------- undo redo
 
 class HistoryTest {

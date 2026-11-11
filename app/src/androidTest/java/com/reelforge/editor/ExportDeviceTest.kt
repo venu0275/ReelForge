@@ -16,6 +16,8 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.reelforge.editor.data.AssetCatalog
+import com.reelforge.editor.data.AssetDownloader
 import com.reelforge.editor.data.ProjectRepository
 import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.ExportManager
@@ -383,6 +385,116 @@ class ExportDeviceTest {
         repo.delete(project.id)
         assertTrue(repo.list().none { it.id == project.id })
         repo.delete("does-not-exist") // must not throw
+    }
+
+    @Test
+    fun extremeSpeeds_export() {
+        val source = videoClip(baseVideo(3_000))
+        val fast = source.copy(speed = 16f)                                   // 3 s → about 0.19 s
+        val slow = source.copy(trimStartMs = 0, trimEndMs = 300, speed = 0.1f) // 0.3 s → 3 s
+        val project = Project(name = "speeds", clips = listOf(slow, fast, source.copy(speed = 8f)))
+        val info = inspect(exportOk(project).file!!)
+        assertNear("duration", project.durationMs, info.durationMs, 1_000)
+    }
+
+    @Test
+    fun sixtyFpsAndH265_exportWhenThePhoneSupportsThem() {
+        val uri = photo("fps", 640, 360, Color.rgb(90, 60, 150))
+        val project = Project(
+            name = "fps",
+            clips = listOf(imageClip(uri, 1_000)),
+            texts = listOf(TextItem(text = "60", endMs = 1_000, animIn = OverlayAnim.SPIN)),
+        )
+        val (w, h) = ExportManager.outputSize(project.aspect, 360)
+        for (hevc in listOf(false, true)) {
+            if (!ExportManager.canEncode(hevc, w, h, 60)) {
+                log("SKIP 60 fps hevc=$hevc: this device has no encoder for it")
+                continue
+            }
+            val output = File(context.cacheDir, "fps_${hevc}_${System.nanoTime()}.mp4")
+            val composition = ExportManager.buildComposition(context, project, 360, fps = 60)
+            val latch = CountDownLatch(1)
+            var error: Exception? = null
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val listener = object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, exportResult: ExportResult) = latch.countDown()
+                    override fun onError(c: Composition, r: ExportResult, e: ExportException) {
+                        error = e
+                        latch.countDown()
+                    }
+                }
+                ExportManager.createTransformer(
+                    context, listener, ExportManager.bitrate(w, h, 1, 60, hevc), hevc,
+                ).start(composition, output.absolutePath)
+            }
+            assertTrue("export timed out", latch.await(180, TimeUnit.SECONDS))
+            assertNull("hevc=$hevc: $error", error)
+            assertNear("duration hevc=$hevc", 1_000, inspect(output).durationMs, 500)
+            log("60 fps export hevc=$hevc ok, ${output.length() / 1024} KB")
+        }
+    }
+
+    @Test
+    fun musicAndSoundFades_export() {
+        val audio = baseVideo(1_500)
+        val uri = photo("fade_bg", 640, 360, Color.rgb(20, 80, 120))
+        val project = Project(
+            name = "fades",
+            clips = listOf(imageClip(uri, 4_000)),
+            music = MusicTrack(
+                Uri.fromFile(audio).toString(), "loop", 1_500, loop = true, fadeInMs = 800, fadeOutMs = 3_000,
+            ),
+            audio = listOf(
+                AudioClip(
+                    uri = Uri.fromFile(audio).toString(), title = "s", startMs = 1_000, durationMs = 1_500,
+                    fadeInMs = 2_000, fadeOutMs = 2_000,
+                ),
+            ),
+        )
+        val info = inspect(exportOk(project).file!!)
+        assertNear("duration", 4_000, info.durationMs, 700)
+        assertTrue(info.hasAudio)
+    }
+
+    @Test
+    fun fontStore_everyCatalogFontDownloadsAndLoads() {
+        val fonts = AssetCatalog.fonts(context)
+        assertTrue("catalog is empty", fonts.size >= 20)
+        val broken = mutableListOf<String>()
+        for (font in fonts) {
+            val file = File(context.cacheDir, "fonttest_${font.id}.ttf")
+            try {
+                AssetDownloader.download(font.url, file)
+                android.graphics.Typeface.createFromFile(file)
+                val bitmap = EffectFactory.renderText(TextItem(text = font.name, fontPath = file.absolutePath), 720)
+                assertTrue(bitmap.width > 2)
+                log("FONT ok ${font.id} ${file.length() / 1024} KB")
+            } catch (e: Exception) {
+                broken += "${font.id}: ${e.message}"
+                log("FONT BROKEN ${font.id}: ${e.message}")
+            } finally {
+                file.delete()
+            }
+        }
+        assertTrue("fonts that failed to download or load: $broken", broken.isEmpty())
+    }
+
+    @Test
+    fun download_failsCleanlyForBadAddresses() {
+        val target = File(context.cacheDir, "bad_download.ttf")
+        for (url in listOf(
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/nosuchfont/Nope-Regular.ttf",
+            "https://no-such-host.invalid/file.ttf",
+        )) {
+            try {
+                AssetDownloader.download(url, target)
+                fail("download of $url should have failed")
+            } catch (expected: Exception) {
+                // ok
+            }
+            assertFalse("a failed download must not leave a file", target.exists())
+            assertFalse(File(target.parentFile, target.name + ".part").exists())
+        }
     }
 
     // ------------------------------------------------------------- negative cases

@@ -137,7 +137,7 @@ fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        listOf(0.25f, 0.5f, 0.75f, 1f, 1.5f, 2f, 4f).forEach { s ->
+        listOf(0.1f, 0.25f, 0.5f, 0.75f, 1f, 1.5f, 2f, 4f, 8f, 16f).forEach { s ->
             FilterChip(
                 selected = clip.speed == s,
                 onClick = { vm.updateClip(clip.id) { it.copy(speed = s).clampFades() } },
@@ -149,6 +149,12 @@ fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
         "Clip length: ${MediaUtils.formatTime(clip.durationMs)}",
         style = MaterialTheme.typography.bodySmall,
     )
+    if (clip.speed > 8f) {
+        Text(
+            "The preview plays at up to 8x; the exported video uses the full speed.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
 }
 
 @Composable
@@ -462,6 +468,7 @@ fun TextPanel(
                     label = { Text(if (editing.fontPath == null) "Import font file" else "Imported font") },
                 )
             }
+            FontStore(vm, editing.fontPath, id)
             Text("Alignment", style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextAlignH.entries.forEach { a ->
@@ -600,6 +607,12 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
         range = 0f..1f,
         format = { "${(it * 100).roundToInt()}%" },
     ) { v -> vm.updateMusic { it.copy(volume = v) } }
+    CommitSlider("Fade in", music.fadeInMs.toFloat(), 0f..5000f, { "%.1f s".format(it / 1000f) }) { v ->
+        vm.updateMusic { it.copy(fadeInMs = v.toLong()) }
+    }
+    CommitSlider("Fade out", music.fadeOutMs.toFloat(), 0f..5000f, { "%.1f s".format(it / 1000f) }) { v ->
+        vm.updateMusic { it.copy(fadeOutMs = v.toLong()) }
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Loop to fill the video", Modifier.weight(1f))
         Switch(checked = music.loop, onCheckedChange = { l -> vm.updateMusic { it.copy(loop = l) } })
@@ -756,6 +769,12 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             range = 0f..2f,
             format = { "${(it * 100).roundToInt()}%" },
         ) { v -> vm.updateAudioClip(clip.id) { it.copy(volume = v) } }
+        CommitSlider("Fade in", clip.fadeInMs.toFloat(), 0f..3000f, { "%.1f s".format(it / 1000f) }) { v ->
+            vm.updateAudioClip(clip.id) { it.copy(fadeInMs = v.toLong()) }
+        }
+        CommitSlider("Fade out", clip.fadeOutMs.toFloat(), 0f..3000f, { "%.1f s".format(it / 1000f) }) { v ->
+            vm.updateAudioClip(clip.id) { it.copy(fadeOutMs = v.toLong()) }
+        }
     }
     if (project.audio.isNotEmpty()) {
         TextButton(onClick = { vm.deleteAllAudio() }) { Text("Delete all sounds") }
@@ -803,4 +822,46 @@ fun BackgroundPanel(vm: EditorViewModel, project: Project) {
         "Applies to clips set to Fit. Clips set to Fill cover the whole frame.",
         style = MaterialTheme.typography.bodySmall,
     )
+}
+
+/**
+ * More fonts, downloaded the first time each one is picked and kept on the phone afterwards.
+ * Tapping a font applies it to the text being edited.
+ */
+@Composable
+private fun FontStore(vm: EditorViewModel, currentPath: String?, textId: String) {
+    if (vm.storeFonts.isEmpty()) return
+    Spacer(Modifier.height(8.dp))
+    Text("More fonts (free download)", style = MaterialTheme.typography.labelLarge)
+    vm.storeFonts.groupBy { it.group }.forEach { (group, fonts) ->
+        Text(group, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            fonts.forEach { font ->
+                val installed = font.id in vm.installedFonts
+                val progress = vm.fontProgress[font.id]
+                FilterChip(
+                    selected = installed && currentPath == vm.fontPath(font),
+                    onClick = { vm.useStoreFont(font, textId) },
+                    label = {
+                        Text(
+                            when {
+                                progress != null -> "${font.name} $progress%"
+                                installed -> font.name
+                                else -> "↓ ${font.name}"
+                            }
+                        )
+                    },
+                )
+            }
+        }
+    }
+    if (vm.installedFonts.isNotEmpty()) {
+        Text(
+            "${vm.installedFonts.size} downloaded. Fonts marked ↓ download when tapped.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
 }

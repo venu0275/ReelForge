@@ -36,6 +36,11 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Two-point motion for text, stickers and image layers.
 - Background music: any audio file, volume, loop.
 - Live preview with scrubbing.
+- Speed from 0.1x to 16x; aspect ratios 16:9, 9:16, 1:1, 4:5, 3:4, 4:3 and 2.35:1.
+- Export up to 4K, 30 or 60 fps, H.264 or H.265, limited to what the phone's encoder supports.
+- Fade in / fade out for music and sound clips; timeline snapping to the playhead and edges.
+- Font store: 39 open-licence Google Fonts (including Telugu and Hindi faces) downloaded on
+  demand, so the app install stays small.
 - Portrait and landscape layouts: in landscape the video sits on the left and the timeline,
   tools and the open tool's controls sit in a side pane on the right.
 - Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.

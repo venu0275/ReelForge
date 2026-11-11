@@ -62,6 +62,7 @@ import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.reelforge.editor.engine.EffectFactory
+import com.reelforge.editor.engine.ExportManager
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.engine.overlayAnim
 import com.reelforge.editor.model.Background
@@ -69,6 +70,7 @@ import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
 import kotlin.math.ceil
@@ -664,6 +666,8 @@ private fun Timeline(
         val window by remember(tilePx) { derivedStateOf { (scroll.value / tilePx).toInt() } }
         val visibleFrom = window * tilePx - viewportPx
         val visibleTo = window * tilePx + viewportPx
+        // How close (in time) a dragged edge or bar must be to a point to snap to it.
+        val snapMs = (with(density) { 10.dp.toPx() } / pxPerMs).toLong()
 
         Row(Modifier.fillMaxHeight().horizontalScroll(scroll)) {
             Spacer(Modifier.width(half))
@@ -679,27 +683,37 @@ private fun Timeline(
                             ClipBlock(
                                 vm, clip, clipStartPx, pxPerMs, tilePx, visibleFrom, visibleTo,
                                 selected = clip.id == vm.selectedClipId,
+                                snapMs = snapMs,
                             )
                         }
                     }
                 }
 
+                // A dropped bar snaps to the playhead and to the edges of clips and other bars.
+                val dropAt: (id: String, startMs: Long, lengthMs: Long, deltaMs: Long) -> Long =
+                    { id, startMs, lengthMs, deltaMs ->
+                        val points = ProjectOps.snapPoints(project, excludeId = id) + vm.playheadMs
+                        ProjectOps.snapStart(startMs + deltaMs, lengthMs, points, snapMs)
+                    }
                 if (textBars.isNotEmpty()) {
                     BarRow(textBars, pxPerMs, Color(0xFF7C4DFF), onEditText) { id, deltaMs ->
-                        vm.updateText(id) { it.shifted(deltaMs) }
+                        vm.updateText(id) {
+                            val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
+                            it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
+                        }
                     }
                 }
                 if (layerBars.isNotEmpty()) {
                     BarRow(layerBars, pxPerMs, Color(0xFF009688), onEditLayer) { id, deltaMs ->
                         vm.updateLayer(id) {
-                            val start = (it.startMs + deltaMs).coerceAtLeast(0)
+                            val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
                             it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
                         }
                     }
                 }
                 if (audioBars.isNotEmpty()) {
                     BarRow(audioBars, pxPerMs, Color(0xFF43A047), { onOpenAudio() }) { id, deltaMs ->
-                        vm.updateAudioClip(id) { it.copy(startMs = (it.startMs + deltaMs).coerceAtLeast(0)) }
+                        vm.updateAudioClip(id) { it.copy(startMs = dropAt(id, it.startMs, it.durationMs, deltaMs)) }
                     }
                 }
                 project.music?.let { music ->
@@ -822,9 +836,15 @@ private fun ClipBlock(
     visibleFrom: Float,
     visibleTo: Float,
     selected: Boolean,
+    snapMs: Long,
 ) {
     val density = LocalDensity.current
     val widthPx = clip.durationMs * pxPerMs
+    // A dragged edge that lands near the playhead snaps onto it.
+    val startMs = (startPx / pxPerMs).toLong()
+    val snapEdge: (edgeMs: Long, deltaMs: Long) -> Long = { edgeMs, deltaMs ->
+        ProjectOps.snap(edgeMs + deltaMs, listOf(vm.playheadMs), snapMs) - edgeMs
+    }
     val isVideo = clip.type == ClipType.VIDEO
     val firstTile = maxOf(0, floor((visibleFrom - startPx) / tilePx).toInt())
     val lastTile = minOf(ceil(widthPx / tilePx).toInt() - 1, floor((visibleTo - startPx) / tilePx).toInt())
@@ -865,8 +885,12 @@ private fun ClipBlock(
                 .semantics { contentDescription = if (isVideo) "Video clip" else "Photo clip" }
         )
         if (selected && widthPx > with(density) { 64.dp.toPx() }) {
-            TrimHandle(atStart = true) { dragPx -> vm.trimClipStart(clip.id, (dragPx / pxPerMs).toLong()) }
-            TrimHandle(atStart = false) { dragPx -> vm.trimClipEnd(clip.id, (dragPx / pxPerMs).toLong()) }
+            TrimHandle(atStart = true) { dragPx ->
+                vm.trimClipStart(clip.id, snapEdge(startMs, (dragPx / pxPerMs).toLong()))
+            }
+            TrimHandle(atStart = false) { dragPx ->
+                vm.trimClipEnd(clip.id, snapEdge(startMs + clip.durationMs, (dragPx / pxPerMs).toLong()))
+            }
         }
     }
 }
@@ -1159,7 +1183,22 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
     val state = vm.export
     var shortSide by remember { mutableIntStateOf(720) }
     var quality by remember { mutableIntStateOf(1) }
-    val context = androidx.compose.ui.platform.LocalContext.current
+    var fps by remember { mutableIntStateOf(30) }
+    var hevc by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+
+    // Only offer what this phone's encoder can actually produce.
+    val sizes = remember(project.aspect, fps, hevc) {
+        listOf(480 to "480p", 720 to "720p", 1080 to "1080p", 1440 to "1440p", 2160 to "4K").filter { (side, _) ->
+            val (w, h) = ExportManager.outputSize(project.aspect, side)
+            side <= 720 || ExportManager.canEncode(hevc, w, h, fps)
+        }
+    }
+    val canHevc = remember(project.aspect) {
+        val (w, h) = ExportManager.outputSize(project.aspect, 720)
+        ExportManager.canEncode(true, w, h, 30)
+    }
+    if (sizes.none { it.first == shortSide }) shortSide = sizes.last().first
 
     AlertDialog(
         onDismissRequest = {
@@ -1174,28 +1213,23 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                 when (state) {
                     ExportState.Idle -> {
                         Text("Resolution")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(480, 720, 1080).forEach { s ->
-                                FilterChip(
-                                    selected = shortSide == s,
-                                    onClick = { shortSide = s },
-                                    label = { Text("${s}p") },
-                                )
-                            }
+                        ChipRow(sizes.map { it.second }, sizes.indexOfFirst { it.first == shortSide }) {
+                            shortSide = sizes[it].first
                         }
+                        Text("Frame rate")
+                        ChipRow(listOf("30 fps", "60 fps"), if (fps == 60) 1 else 0) { fps = if (it == 1) 60 else 30 }
                         Text("Quality")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf("Small file", "Balanced", "Best").forEachIndexed { i, label ->
-                                FilterChip(
-                                    selected = quality == i,
-                                    onClick = { quality = i },
-                                    label = { Text(label) },
-                                )
+                        ChipRow(listOf("Small file", "Balanced", "Best"), quality) { quality = it }
+                        if (canHevc) {
+                            Text("Format")
+                            ChipRow(listOf("H.264 (plays everywhere)", "H.265 (smaller file)"), if (hevc) 1 else 0) {
+                                hevc = it == 1
                             }
                         }
                         Text(
-                            "MP4 (H.264 + AAC), ${project.aspect.label}, " +
-                                MediaUtils.formatTime(project.durationMs),
+                            "MP4, ${project.aspect.label}, " + MediaUtils.formatTime(project.durationMs) +
+                                ". 60 fps is smoother only for clips filmed at 60 fps; photos and " +
+                                "animations always benefit.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -1214,7 +1248,9 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         },
         confirmButton = {
             when (state) {
-                ExportState.Idle -> TextButton(onClick = { vm.startExport(shortSide, quality) }) { Text("Export") }
+                ExportState.Idle -> TextButton(onClick = { vm.startExport(shortSide, quality, fps, hevc) }) {
+                    Text("Export")
+                }
                 is ExportState.Running -> TextButton(onClick = { vm.cancelExport() }) { Text("Cancel") }
                 is ExportState.Done -> TextButton(onClick = {
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND)
@@ -1235,4 +1271,16 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
             }
         },
     )
+}
+
+@Composable
+private fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        labels.forEachIndexed { i, label ->
+            FilterChip(selected = selected == i, onClick = { onSelect(i) }, label = { Text(label) })
+        }
+    }
 }

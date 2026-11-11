@@ -84,6 +84,8 @@ object ProjectJson {
                     put("startMs", a.startMs)
                     put("durationMs", a.durationMs)
                     put("volume", a.volume.toDouble())
+                    put("fadeInMs", a.fadeInMs)
+                    put("fadeOutMs", a.fadeOutMs)
                 })
             }
         })
@@ -94,6 +96,8 @@ object ProjectJson {
                 put("durationMs", m.durationMs)
                 put("volume", m.volume.toDouble())
                 put("loop", m.loop)
+                put("fadeInMs", m.fadeInMs)
+                put("fadeOutMs", m.fadeOutMs)
             })
         }
     }
@@ -225,6 +229,8 @@ object ProjectJson {
                 durationMs = m.optLong("durationMs", 0),
                 volume = m.optDouble("volume", 0.6).toFloat(),
                 loop = m.optBoolean("loop", true),
+                fadeInMs = m.optLong("fadeInMs", 0),
+                fadeOutMs = m.optLong("fadeOutMs", 0),
             )
         }
         val layersJson = o.optJSONArray("layers") ?: JSONArray()
@@ -257,6 +263,8 @@ object ProjectJson {
                 startMs = a.optLong("startMs", 0),
                 durationMs = a.optLong("durationMs", 0),
                 volume = a.optDouble("volume", 1.0).toFloat(),
+                fadeInMs = a.optLong("fadeInMs", 0),
+                fadeOutMs = a.optLong("fadeOutMs", 0),
             )
         }
         return Project(

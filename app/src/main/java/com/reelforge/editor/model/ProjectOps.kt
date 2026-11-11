@@ -57,6 +57,43 @@ object ProjectOps {
         })
     }
 
+    /**
+     * Times worth snapping to: the edges of every clip and of every text, layer and sound, except
+     * the item [excludeId] (the one being moved).
+     */
+    fun snapPoints(project: Project, excludeId: String? = null): List<Long> {
+        val points = mutableListOf(0L)
+        var edge = 0L
+        project.clips.forEach {
+            edge += it.durationMs
+            points += edge
+        }
+        project.texts.filter { it.id != excludeId }.forEach { points += it.startMs; points += it.endMs }
+        project.layers.filter { it.id != excludeId }.forEach { points += it.startMs; points += it.endMs }
+        project.audio.filter { it.id != excludeId }.forEach {
+            points += it.startMs
+            points += it.startMs + it.durationMs
+        }
+        return points.distinct().sorted()
+    }
+
+    /** Returns the point nearest to [ms] if it is within [toleranceMs], otherwise [ms] itself. */
+    fun snap(ms: Long, points: List<Long>, toleranceMs: Long): Long {
+        val nearest = points.minByOrNull { kotlin.math.abs(it - ms) } ?: return ms
+        return if (kotlin.math.abs(nearest - ms) <= toleranceMs) nearest else ms
+    }
+
+    /**
+     * Where an item of [lengthMs] should start when dropped at [startMs]: its start snaps to a
+     * nearby point, or failing that its end does. Never before 0.
+     */
+    fun snapStart(startMs: Long, lengthMs: Long, points: List<Long>, toleranceMs: Long): Long {
+        val byStart = snap(startMs, points, toleranceMs)
+        if (byStart != startMs) return byStart.coerceAtLeast(0)
+        val byEnd = snap(startMs + lengthMs, points, toleranceMs)
+        return (byEnd - lengthMs).coerceAtLeast(0)
+    }
+
     /** Shortest clip an edge drag can leave, in source time. */
     const val MIN_CLIP_MS = 300L
 
