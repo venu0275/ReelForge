@@ -186,7 +186,7 @@ object ExportManager {
                         rotation = s.rotation,
                     )
                 }
-            buildClipItem(context, project, clip, width, height, overlays, fps)
+            buildClipItem(context, project, clip, width, height, overlays, fps, capFrameRate = !layered)
         }
 
         val sequences = mutableListOf(EditedMediaItemSequence(items))
@@ -273,10 +273,7 @@ object ExportManager {
                     .build()
             )
             .build()
-        val video = mutableListOf<Effect>(
-            FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat()),
-            Presentation.createForHeight(layerHeight),
-        )
+        val video = mutableListOf<Effect>(Presentation.createForHeight(layerHeight))
         if (layer.chromaKey) video += ChromaKeyEffect(layer.keyColor, layer.keyTolerance)
         val audio = if (layer.volume != 1f) listOf(volumeProcessor(layer.volume)) else emptyList()
         items += EditedMediaItem.Builder(media)
@@ -340,6 +337,7 @@ object ExportManager {
         height: Int,
         overlays: List<TextureOverlay>,
         fps: Int,
+        capFrameRate: Boolean,
     ): EditedMediaItem {
         val isImage = clip.type == ClipType.IMAGE
         val uri = Uri.parse(clip.uri)
@@ -365,8 +363,9 @@ object ExportManager {
         if (!isImage && clip.speed != 1f) {
             video += SpeedChangeEffect(clip.speed)
         }
-        if (!isImage) {
-            // Caps the frame rate, which also keeps fast-forwarded clips light to encode.
+        if (!isImage && capFrameRate) {
+            // Caps the frame rate, which also keeps fast-forwarded clips light to encode. Left out
+            // when video layers are stacked: Media3's frame dropping fails in that pipeline.
             video += FrameDropEffect.createDefaultFrameDropEffect(fps.toFloat())
         }
         if (!isImage && (clip.speed != 1f || clip.pitch != 1f)) {

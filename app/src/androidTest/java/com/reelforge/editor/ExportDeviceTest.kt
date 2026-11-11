@@ -500,7 +500,8 @@ class ExportDeviceTest {
         val uri = solid("multi_base", red)
         val project = Project(
             name = "multi",
-            clips = listOf(imageClip(uri, 1_500), imageClip(uri, 1_500).copy(fadeInMs = 300)),
+            // A real video on the main track too, sped up, under the layers.
+            clips = listOf(videoClip(clipFile).copy(speed = 2f), imageClip(uri, 2_250).copy(fadeInMs = 300)),
             videoLayers = layers,
             texts = listOf(TextItem(text = "On top", startMs = 0, endMs = 3_000, animIn = OverlayAnim.FADE)),
             layers = listOf(ImageLayer(uri = solid("multi_logo", Color.WHITE).toString(), scale = 0.2f, startMs = 500, endMs = 2_500)),
