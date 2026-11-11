@@ -186,7 +186,10 @@ object ExportManager {
                         rotation = s.rotation,
                     )
                 }
-            buildClipItem(context, project, clip, width, height, overlays, fps, capFrameRate = !layered)
+            buildClipItem(
+                context, project, clip, width, height, overlays, fps,
+                capFrameRate = !layered, videoOnly = layered,
+            )
         }
 
         // Video tracks go first, topmost first, with the main track underneath them all.
@@ -216,6 +219,17 @@ object ExportManager {
             }
         }
         sequences += EditedMediaItemSequence(items)
+        if (layered) {
+            // In a layered export the video tracks carry no sound. Each one's sound goes on its
+            // own audio-only track, with real silence wherever there is none. This avoids
+            // Media3's generated-silence path, which fails when several video tracks are stacked.
+            val silence = Uri.fromFile(MediaUtils.silenceFile(context, SILENCE_MS))
+            val mainAudio = project.clips.flatMap { clipAudioItems(it, silence) }
+            if (mainAudio.isNotEmpty()) sequences += EditedMediaItemSequence(mainAudio)
+            videoLayers.forEach { layer ->
+                layerAudioItems(layer, total, silence)?.let { sequences += EditedMediaItemSequence(it) }
+            }
+        }
         project.music?.let { music ->
             buildMusicSequence(music, total)?.let { sequences += it }
         }
@@ -226,7 +240,7 @@ object ExportManager {
             }
         }
 
-        val builder = Composition.Builder(sequences).experimentalSetForceAudioTrack(true)
+        val builder = Composition.Builder(sequences).experimentalSetForceAudioTrack(!layered)
         if (layered) {
             builder.setVideoCompositorSettings(LayerCompositorSettings(width, height, placements))
             val onTop = specs.map { s ->
@@ -292,10 +306,9 @@ object ExportManager {
             .build()
         val video = mutableListOf<Effect>(Presentation.createForHeight(layerHeight))
         if (layer.chromaKey) video += ChromaKeyEffect(layer.keyColor, layer.keyTolerance)
-        val audio = if (layer.volume != 1f) listOf(volumeProcessor(layer.volume)) else emptyList()
         items += EditedMediaItem.Builder(media)
-            .setRemoveAudio(layer.muted || !layer.hasAudio)
-            .setEffects(Effects(audio, video))
+            .setRemoveAudio(true) // its sound is on a separate audio track, see layerAudioItems
+            .setEffects(Effects(emptyList(), video))
             .build()
 
         if (tail >= MIN_BLANK_MS) items += blankItem(tail)
@@ -309,6 +322,72 @@ object ExportManager {
             rotation = layer.rotation,
         )
         return EditedMediaItemSequence(items) to placement
+    }
+
+    /** Real silence lasting [ms], as one or more pieces of the silence file. */
+    private fun silenceItems(silence: Uri, ms: Long): List<EditedMediaItem> {
+        val items = mutableListOf<EditedMediaItem>()
+        var left = ms
+        while (left >= 20) {
+            val part = min(left, SILENCE_MS)
+            val media = MediaItem.Builder().setUri(silence).apply {
+                if (part < SILENCE_MS) {
+                    setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder().setEndPositionMs(part).build()
+                    )
+                }
+            }.build()
+            items += EditedMediaItem.Builder(media).build()
+            left -= part
+        }
+        return items
+    }
+
+    /** The sound of one main-track clip as audio-only items: its own audio, or silence. */
+    private fun clipAudioItems(clip: Clip, silence: Uri): List<EditedMediaItem> {
+        if (clip.type == ClipType.IMAGE || clip.muted || !clip.hasAudio) {
+            return silenceItems(silence, clip.durationMs)
+        }
+        val media = MediaItem.Builder().setUri(Uri.parse(clip.uri))
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.trimStartMs)
+                    .setEndPositionMs(clip.trimEndMs)
+                    .build()
+            )
+            .build()
+        val audio = mutableListOf<AudioProcessor>()
+        if (clip.speed != 1f || clip.pitch != 1f) {
+            audio += SonicAudioProcessor().apply {
+                setSpeed(clip.speed)
+                setPitch(clip.pitch.coerceIn(0.5f, 2f))
+            }
+        }
+        if (clip.volume != 1f) audio += volumeProcessor(clip.volume)
+        if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) {
+            audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
+        }
+        return listOf(
+            EditedMediaItem.Builder(media).setRemoveVideo(true).setEffects(Effects(audio, emptyList())).build()
+        )
+    }
+
+    /** The sound of a video layer: silence up to its start, then its audio. Null when silent. */
+    private fun layerAudioItems(layer: VideoLayer, totalMs: Long, silence: Uri): List<EditedMediaItem>? {
+        if (layer.muted || !layer.hasAudio) return null
+        val lead = if (layer.startMs >= MIN_BLANK_MS) layer.startMs else 0L
+        val playMs = min(layer.durationMs, totalMs - lead)
+        val media = MediaItem.Builder().setUri(Uri.parse(layer.uri))
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(layer.trimStartMs)
+                    .setEndPositionMs(layer.trimStartMs + playMs)
+                    .build()
+            )
+            .build()
+        val audio = if (layer.volume != 1f) listOf(volumeProcessor(layer.volume)) else emptyList()
+        return silenceItems(silence, lead) +
+            EditedMediaItem.Builder(media).setRemoveVideo(true).setEffects(Effects(audio, emptyList())).build()
     }
 
     /** A voice-over / sound clip: silence up to its start, then the audio itself. */
@@ -355,6 +434,7 @@ object ExportManager {
         overlays: List<TextureOverlay>,
         fps: Int,
         capFrameRate: Boolean,
+        videoOnly: Boolean,
     ): EditedMediaItem {
         val isImage = clip.type == ClipType.IMAGE
         val uri = Uri.parse(clip.uri)
@@ -433,7 +513,7 @@ object ExportManager {
                 setDurationUs(clip.durationMs * 1000)
                 setFrameRate(fps)
             }
-            setRemoveAudio(isImage || clip.muted || !clip.hasAudio)
+            setRemoveAudio(videoOnly || isImage || clip.muted || !clip.hasAudio)
             setEffects(Effects(audio, video))
         }.build()
     }
