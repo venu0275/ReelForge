@@ -189,16 +189,19 @@ object ExportManager {
             buildClipItem(context, project, clip, width, height, overlays, fps, capFrameRate = !layered)
         }
 
-        val sequences = mutableListOf(EditedMediaItemSequence(items))
+        // Video tracks go first, topmost first, with the main track underneath them all.
+        val sequences = mutableListOf<EditedMediaItemSequence>()
         val placements = mutableListOf<LayerPlacement>()
         if (layered) {
             val blank = Uri.fromFile(MediaUtils.blankImage(context))
-            videoLayers.forEach { layer ->
+            // The layer added last is drawn on top.
+            videoLayers.asReversed().forEach { layer ->
                 val (sequence, placement) = buildVideoLayerSequence(layer, total, blank, height, fps)
                 sequences += sequence
                 placements += placement
             }
         }
+        sequences += EditedMediaItemSequence(items)
         project.music?.let { music ->
             buildMusicSequence(music, total)?.let { sequences += it }
         }

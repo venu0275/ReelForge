@@ -487,8 +487,9 @@ class LayerPlacement(
 )
 
 /**
- * Stacks the video layers over the main track. Input 0 is the main track and fills the frame;
- * input N is video layer N, shown only during its own time range.
+ * Stacks the video layers over the main track. Media3 draws input 0 on top and the last input at
+ * the bottom, so the layers come first (topmost first) and the main track is the last input.
+ * Each layer is shown only during its own time range.
  */
 @OptIn(UnstableApi::class)
 class LayerCompositorSettings(
@@ -510,10 +511,10 @@ class LayerCompositorSettings(
     override fun getOutputSize(inputSizes: List<Size>): Size = Size(width, height)
 
     override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
-        if (inputId == 0) return base
-        val layer = layers.getOrNull(inputId - 1) ?: return hidden
+        if (inputId == layers.size) return base
+        val layer = layers.getOrNull(inputId) ?: return hidden
         return if (presentationTimeUs >= layer.startUs && presentationTimeUs < layer.endUs) {
-            shown[inputId - 1]
+            shown[inputId]
         } else hidden
     }
 }

@@ -472,6 +472,21 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun laterVideoLayer_isDrawnOverEarlierOne() {
+        val lower = layerOf(solidVideo("stack_blue", blue, 1_500)).copy(startMs = 0, scale = 0.6f, x = 0f, y = 0f)
+        val upper = layerOf(solidVideo("stack_green", green, 1_500)).copy(startMs = 0, scale = 0.3f, x = 0f, y = 0f)
+        val project = Project(
+            name = "stack",
+            clips = listOf(imageClip(solid("stack_red", red), 1_500)),
+            videoLayers = listOf(lower, upper),
+        )
+        val file = exportOk(project).file!!
+        assertColour("top layer in the middle", green, pixel(file, 700, 0.5f, 0.5f), tolerance = 90)
+        assertColour("lower layer around it", blue, pixel(file, 700, 0.5f, 0.27f))
+        assertColour("main picture at the edge", red, pixel(file, 700, 0.05f, 0.5f))
+    }
+
+    @Test
     fun chromaKey_removesTheGreenScreenAndKeepsTheSubject() {
         val greenScreen = layerOf(solidVideo("key_green", green, 2_000, whiteCentre = true)).copy(
             startMs = 0, scale = 1f, x = 0f, y = 0f,
