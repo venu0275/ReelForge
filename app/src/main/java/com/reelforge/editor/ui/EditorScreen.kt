@@ -24,9 +24,11 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +40,7 @@ import androidx.media3.ui.PlayerView
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
 
@@ -96,6 +99,8 @@ fun EditorScreen(vm: EditorViewModel) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            TextButton(onClick = { vm.undo() }, enabled = vm.canUndo) { Text("Undo") }
+            TextButton(onClick = { vm.redo() }, enabled = vm.canRedo) { Text("Redo") }
             Button(
                 onClick = { panel = Panel.EXPORT },
                 enabled = project.clips.isNotEmpty(),
@@ -177,6 +182,13 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                         player = vm.player
                     }
                 },
+                update = { view ->
+                    view.resizeMode = if (current?.fill == true) {
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                },
                 onRelease = { it.player = null },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -198,15 +210,20 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                         Image(
                             bitmap = still,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize().rotate(current.rotation.toFloat()),
-                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize().graphicsLayer(
+                                scaleX = current.zoom * (if (current.flipH) -1f else 1f),
+                                scaleY = current.zoom,
+                                rotationZ = current.rotation.toFloat(),
+                            ),
+                            contentScale = if (current.fill) ContentScale.Crop else ContentScale.Fit,
                         )
                     }
                 }
             }
 
             if (current != null) {
-                val alpha = fadeAlpha(local, current.durationMs, current.fadeInMs, current.fadeOutMs)
+                val alpha = current.opacity.coerceIn(0f, 1f) *
+                    fadeAlpha(local, current.durationMs, current.fadeInMs, current.fadeOutMs)
                 if (alpha < 1f) {
                     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 1f - alpha)))
                 }
@@ -219,7 +236,20 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
                     val fontSize = with(density) { (frameHeight * t.size).toSp() }
                     Text(
                         t.text,
-                        modifier = Modifier.align(BiasAlignment(t.x, -t.y)),
+                        modifier = Modifier
+                            .align(BiasAlignment(t.x, -t.y))
+                            .then(
+                                if (t.background) {
+                                    Modifier
+                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                } else Modifier
+                            ),
+                        fontFamily = when (t.font) {
+                            TextFont.SANS -> FontFamily.SansSerif
+                            TextFont.SERIF -> FontFamily.Serif
+                            TextFont.MONO -> FontFamily.Monospace
+                        },
                         color = Color(t.color),
                         fontSize = fontSize,
                         lineHeight = fontSize * 1.2f,
@@ -360,6 +390,10 @@ private fun Tools(
         ToolButton("Rotate", hasClip) {
             vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) }
         }
+        ToolButton("Mirror", hasClip) { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
+        ToolButton(if (clip?.fill == true) "Fit" else "Fill", hasClip) {
+            vm.updateClip(id) { it.copy(fill = !it.fill) }
+        }
         ToolButton("Text", project.clips.isNotEmpty()) { openPanel(Panel.TEXT) }
         ToolButton("Music", true) { openPanel(Panel.MUSIC) }
         ToolButton("Copy", hasClip) { vm.duplicateClip(id) }
@@ -392,6 +426,7 @@ private fun ToolButton(label: String, enabled: Boolean, onClick: () -> Unit) {
 private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
     val state = vm.export
     var shortSide by remember { mutableIntStateOf(720) }
+    var quality by remember { mutableIntStateOf(1) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     AlertDialog(
@@ -416,6 +451,16 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                                 )
                             }
                         }
+                        Text("Quality")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Small file", "Balanced", "Best").forEachIndexed { i, label ->
+                                FilterChip(
+                                    selected = quality == i,
+                                    onClick = { quality = i },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
                         Text(
                             "MP4 (H.264 + AAC), ${project.aspect.label}, " +
                                 MediaUtils.formatTime(project.durationMs),
@@ -437,7 +482,7 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         },
         confirmButton = {
             when (state) {
-                ExportState.Idle -> TextButton(onClick = { vm.startExport(shortSide) }) { Text("Export") }
+                ExportState.Idle -> TextButton(onClick = { vm.startExport(shortSide, quality) }) { Text("Export") }
                 is ExportState.Running -> TextButton(onClick = { vm.cancelExport() }) { Text("Cancel") }
                 is ExportState.Done -> TextButton(onClick = {
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND)

@@ -48,12 +48,18 @@ data class Clip(
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
     val hasAudio: Boolean = true,
+    val opacity: Float = 1f,      // 0..1, blended over black
+    val zoom: Float = 1f,         // 1..3, centre zoom
+    val flipH: Boolean = false,   // mirror
+    val fill: Boolean = false,    // true = crop to fill the frame, false = fit with bars
 ) {
     val effectiveSpeed: Float get() = if (type == ClipType.IMAGE) 1f else speed
 
     /** Duration on the timeline (after trim and speed). */
     val durationMs: Long get() = ((trimEndMs - trimStartMs) / effectiveSpeed).toLong()
 }
+
+enum class TextFont(val label: String) { SANS("Sans"), SERIF("Serif"), MONO("Mono") }
 
 data class TextItem(
     val id: String = newId(),
@@ -64,6 +70,8 @@ data class TextItem(
     val y: Float = 0f,         // -1 (bottom) .. 1 (top)
     val startMs: Long = 0,
     val endMs: Long = 3000,
+    val font: TextFont = TextFont.SANS,
+    val background: Boolean = false,
 )
 
 data class MusicTrack(

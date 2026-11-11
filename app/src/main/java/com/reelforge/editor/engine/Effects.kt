@@ -11,6 +11,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.Brightness
 import androidx.media3.effect.Contrast
+import androidx.media3.effect.Crop
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.RgbAdjustment
@@ -19,6 +20,7 @@ import androidx.media3.effect.RgbMatrix
 import androidx.media3.effect.ScaleAndRotateTransformation
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.FilterPreset
+import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TextItem
 import kotlin.math.ceil
 import kotlin.math.max
@@ -38,13 +40,14 @@ class FadeEffect(
     private val durationUs: Long,
     private val fadeInUs: Long,
     private val fadeOutUs: Long,
+    private val opacity: Float = 1f,
 ) : RgbMatrix {
     private var baseUs = C.TIME_UNSET
 
     override fun getMatrix(presentationTimeUs: Long, useHdr: Boolean): FloatArray {
         if (baseUs == C.TIME_UNSET) baseUs = presentationTimeUs
         val t = presentationTimeUs - baseUs
-        val a = fadeAlpha(t, durationUs, fadeInUs, fadeOutUs)
+        val a = fadeAlpha(t, durationUs, fadeInUs, fadeOutUs) * opacity.coerceIn(0f, 1f)
         return floatArrayOf(
             a, 0f, 0f, 0f,
             0f, a, 0f, 0f,
@@ -104,13 +107,21 @@ object EffectFactory {
         0f, 0f, 0f, 1f,
     )
 
-    fun rotation(clip: Clip): List<Effect> =
-        if (clip.rotation % 360 == 0) emptyList()
-        else listOf(
-            ScaleAndRotateTransformation.Builder()
+    /** Mirror, rotation and centre zoom. */
+    fun geometry(clip: Clip): List<Effect> {
+        val out = mutableListOf<Effect>()
+        if (clip.rotation % 360 != 0 || clip.flipH) {
+            out += ScaleAndRotateTransformation.Builder()
+                .setScale(if (clip.flipH) -1f else 1f, 1f)
                 .setRotationDegrees(-clip.rotation.toFloat()) // model is clockwise
                 .build()
-        )
+        }
+        if (clip.zoom > 1.01f) {
+            val edge = 1f / clip.zoom.coerceIn(1f, 4f)
+            out += Crop(-edge, edge, -edge, edge)
+        }
+        return out
+    }
 
     fun color(clip: Clip): List<Effect> {
         val out = mutableListOf<Effect>()
@@ -143,20 +154,28 @@ object EffectFactory {
     }
 
     /** Effects used for the live preview player (rotation + colour only). */
-    fun preview(clip: Clip): List<Effect> = rotation(clip) + color(clip)
+    fun preview(clip: Clip): List<Effect> = geometry(clip) + color(clip)
 
-    const val NO_EFFECTS = "0|NONE|0.0|0.0|0.0"
+    const val NO_EFFECTS = "0|NONE|0.0|0.0|0.0|false|1.0"
 
     /** A string that changes whenever [preview] would return something different. */
     fun previewSignature(clip: Clip): String =
-        "${clip.rotation % 360}|${clip.filter}|${clip.brightness}|${clip.contrast}|${clip.saturation}"
+        "${clip.rotation % 360}|${clip.filter}|${clip.brightness}|${clip.contrast}|" +
+            "${clip.saturation}|${clip.flipH}|${if (clip.zoom > 1.01f) clip.zoom else 1.0f}"
 
     /** Renders a text item to a transparent bitmap sized for a frame [frameHeight] pixels tall. */
     fun renderText(item: TextItem, frameHeight: Int): Bitmap {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = item.color
             textSize = max(8f, item.size * frameHeight)
-            typeface = Typeface.DEFAULT_BOLD
+            typeface = Typeface.create(
+                when (item.font) {
+                    TextFont.SANS -> Typeface.SANS_SERIF
+                    TextFont.SERIF -> Typeface.SERIF
+                    TextFont.MONO -> Typeface.MONOSPACE
+                },
+                Typeface.BOLD,
+            )
             textAlign = Paint.Align.CENTER
             setShadowLayer(textSize * 0.08f, 0f, textSize * 0.04f, 0xB0000000.toInt())
         }
@@ -167,6 +186,10 @@ object EffectFactory {
         val height = ceil(lineHeight * lines.size + pad * 2).toInt().coerceAtLeast(2)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
+        if (item.background) {
+            val box = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x99000000.toInt() }
+            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), pad, pad, box)
+        }
         var baseline = pad - paint.fontMetrics.ascent
         for (line in lines) {
             canvas.drawText(line, width / 2f, baseline, paint)

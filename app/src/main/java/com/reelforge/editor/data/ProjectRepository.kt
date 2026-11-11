@@ -7,6 +7,7 @@ import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TextItem
 import org.json.JSONArray
 import org.json.JSONObject
@@ -66,6 +67,10 @@ class ProjectRepository(context: Context) {
         put("fadeInMs", c.fadeInMs)
         put("fadeOutMs", c.fadeOutMs)
         put("hasAudio", c.hasAudio)
+        put("opacity", c.opacity.toDouble())
+        put("zoom", c.zoom.toDouble())
+        put("flipH", c.flipH)
+        put("fill", c.fill)
     }
 
     private fun textToJson(t: TextItem) = JSONObject().apply {
@@ -77,6 +82,8 @@ class ProjectRepository(context: Context) {
         put("y", t.y.toDouble())
         put("startMs", t.startMs)
         put("endMs", t.endMs)
+        put("font", t.font.name)
+        put("background", t.background)
     }
 
     private fun fromJson(o: JSONObject): Project {
@@ -103,6 +110,10 @@ class ProjectRepository(context: Context) {
                 fadeInMs = c.optLong("fadeInMs", 0),
                 fadeOutMs = c.optLong("fadeOutMs", 0),
                 hasAudio = c.optBoolean("hasAudio", true),
+                opacity = c.optDouble("opacity", 1.0).toFloat(),
+                zoom = c.optDouble("zoom", 1.0).toFloat(),
+                flipH = c.optBoolean("flipH", false),
+                fill = c.optBoolean("fill", false),
             )
         }
         val texts = (0 until textsJson.length()).map { i ->
@@ -116,6 +127,9 @@ class ProjectRepository(context: Context) {
                 y = t.optDouble("y", 0.0).toFloat(),
                 startMs = t.optLong("startMs", 0),
                 endMs = t.optLong("endMs", 3000),
+                font = runCatching { TextFont.valueOf(t.optString("font")) }
+                    .getOrDefault(TextFont.SANS),
+                background = t.optBoolean("background", false),
             )
         }
         val music = o.optJSONObject("music")?.let { m ->

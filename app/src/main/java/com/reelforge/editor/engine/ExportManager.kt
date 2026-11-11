@@ -16,6 +16,8 @@ import androidx.media3.effect.Presentation
 import androidx.media3.effect.SpeedChangeEffect
 import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
+import androidx.media3.transformer.DefaultEncoderFactory
+import androidx.media3.transformer.VideoEncoderSettings
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.Effects
@@ -45,10 +47,31 @@ object ExportManager {
         }
     }
 
-    fun createTransformer(context: Context, listener: Transformer.Listener): Transformer =
+    /** Target video bitrate for a frame size; [quality] is 0 (small file), 1 or 2 (best). */
+    fun bitrate(width: Int, height: Int, quality: Int): Int {
+        val bitsPerPixel = when (quality) {
+            0 -> 0.07
+            2 -> 0.20
+            else -> 0.12
+        }
+        return (width.toLong() * height * IMAGE_FRAME_RATE * bitsPerPixel).toInt()
+    }
+
+    fun createTransformer(
+        context: Context,
+        listener: Transformer.Listener,
+        videoBitrate: Int,
+    ): Transformer =
         Transformer.Builder(context)
             .setVideoMimeType(MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
+            .setEncoderFactory(
+                DefaultEncoderFactory.Builder(context)
+                    .setRequestedVideoEncoderSettings(
+                        VideoEncoderSettings.Builder().setBitrate(videoBitrate).build()
+                    )
+                    .build()
+            )
             .addListener(listener)
             .build()
 
@@ -114,11 +137,17 @@ object ExportManager {
             audio += volumeProcessor(clip.volume)
         }
 
-        video += EffectFactory.rotation(clip)
+        video += EffectFactory.geometry(clip)
         video += EffectFactory.color(clip)
-        video += Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT)
-        if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) {
-            video += FadeEffect(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
+        video += Presentation.createForWidthAndHeight(
+            width,
+            height,
+            if (clip.fill) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT,
+        )
+        if (clip.fadeInMs > 0 || clip.fadeOutMs > 0 || clip.opacity < 1f) {
+            video += FadeEffect(
+                clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000, clip.opacity
+            )
         }
         if (overlays.isNotEmpty()) {
             video += OverlayEffect(ImmutableList.copyOf(overlays))

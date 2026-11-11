@@ -65,6 +65,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     var isPlaying by mutableStateOf(false)
         private set
     var message by mutableStateOf<String?>(null)
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
     var export by mutableStateOf<ExportState>(ExportState.Idle)
         private set
 
@@ -79,6 +83,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private var effectSignature = ""
     private var musicSignature = ""
     private var effectsEverSet = false
+    private val undoStack = ArrayDeque<Project>()
+    private val redoStack = ArrayDeque<Project>()
+    private var lastMutationAt = 0L
     private var saveJob: Job? = null
     private var transformer: Transformer? = null
     private val requested = mutableSetOf<String>()
@@ -119,6 +126,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openProject(p: Project) {
         project = p
+        undoStack.clear()
+        redoStack.clear()
+        canUndo = false
+        canRedo = false
         selectedClipId = p.clips.firstOrNull()?.id
         playheadMs = 0
         playlistSignature = ""
@@ -150,8 +161,24 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun mutate(block: (Project) -> Project) {
         val current = project ?: return
-        val next = block(current).copy(updatedAt = System.currentTimeMillis())
+        val changed = block(current)
+        if (changed == current) return
+        // Rapid changes (dragging a slider) collapse into a single undo step.
+        val now = System.currentTimeMillis()
+        if (now - lastMutationAt > 700 || undoStack.isEmpty()) {
+            undoStack.addLast(current)
+            if (undoStack.size > 60) undoStack.removeFirst()
+        }
+        lastMutationAt = now
+        redoStack.clear()
+        commit(changed.copy(updatedAt = now))
+    }
+
+    private fun commit(next: Project) {
         project = next
+        canUndo = undoStack.isNotEmpty()
+        canRedo = redoStack.isNotEmpty()
+        if (next.clips.none { it.id == selectedClipId }) selectedClipId = next.clips.firstOrNull()?.id
         playheadMs = playheadMs.coerceIn(0, next.durationMs)
         syncPlayer()
         saveJob?.cancel()
@@ -159,6 +186,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             delay(400)
             withContext(Dispatchers.IO) { repo.save(next) }
         }
+    }
+
+    fun undo() {
+        val current = project ?: return
+        val previous = undoStack.removeLastOrNull() ?: return
+        redoStack.addLast(current)
+        lastMutationAt = 0
+        commit(previous)
+    }
+
+    fun redo() {
+        val current = project ?: return
+        val next = redoStack.removeLastOrNull() ?: return
+        undoStack.addLast(current)
+        lastMutationAt = 0
+        commit(next)
     }
 
     // ------------------------------------------------------------------- clips
@@ -245,11 +288,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ text + music
 
-    fun addText(): String {
+    fun addText(text: String = "Your text", size: Float = 0.08f): String {
         val p = project ?: return ""
         val start = playheadMs
         val end = (start + 3000).coerceAtMost(maxOf(p.durationMs, start + 500))
-        val item = TextItem(text = "Your text", startMs = start, endMs = end)
+        val item = TextItem(text = text, size = size, startMs = start, endMs = end)
         mutate { it.copy(texts = it.texts + item) }
         return item.id
     }
@@ -283,6 +326,19 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeMusic() = mutate { it.copy(music = null) }
+
+    /** Fade the clip out and the next one in, i.e. a dip-to-black transition. 0 removes it. */
+    fun setTransitionAfter(id: String, durationMs: Long) = mutate { p ->
+        val index = p.clips.indexOfFirst { it.id == id }
+        if (index < 0 || index >= p.clips.lastIndex) p
+        else p.copy(clips = p.clips.mapIndexed { i, c ->
+            when (i) {
+                index -> c.copy(fadeOutMs = durationMs.coerceAtMost(c.durationMs / 2))
+                index + 1 -> c.copy(fadeInMs = durationMs.coerceAtMost(c.durationMs / 2))
+                else -> c
+            }
+        })
+    }
 
     // ---------------------------------------------------------------- playback
 
@@ -445,7 +501,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ export
 
-    fun startExport(shortSide: Int) {
+    fun startExport(shortSide: Int, quality: Int) {
         val p = project ?: return
         if (p.clips.isEmpty() || export is ExportState.Running) return
         player.pause()
@@ -453,7 +509,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val output = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
         try {
             val composition = ExportManager.buildComposition(ctx, p, shortSide)
-            val t = ExportManager.createTransformer(ctx, object : Transformer.Listener {
+            val (outWidth, outHeight) = ExportManager.outputSize(p.aspect, shortSide)
+            val bitrate = ExportManager.bitrate(outWidth, outHeight, quality)
+            val listener = object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     viewModelScope.launch {
                         export = try {
@@ -480,7 +538,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     )
                     finishExport()
                 }
-            })
+            }
+            val t = ExportManager.createTransformer(ctx, listener, bitrate)
             transformer = t
             export = ExportState.Running(0)
             t.start(composition, output.absolutePath)

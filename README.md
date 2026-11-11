@@ -8,18 +8,22 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Projects: create, reopen, delete; saved automatically. Aspect ratios 16:9, 9:16, 1:1, 4:5.
 - Import videos and photos from the gallery onto a single main track.
 - Timeline: select, reorder, duplicate, delete, split at the playhead, trim.
-- Per clip: speed (0.25x–4x), volume (0–200%) and mute, rotate, 8 colour filters,
-  brightness / contrast / saturation, fade in / fade out.
-- Text overlays: colour, size, position, start and end time.
+- Undo / redo for every edit.
+- Per clip: speed (0.25x–4x), volume (0–200%) and mute, rotate, mirror, zoom, fit or fill
+  the frame, opacity, 8 colour filters, brightness / contrast / saturation, fade in / fade out,
+  dip-to-black transition to the next clip.
+- Text overlays: colour, font, background box, size, position, start and end time.
+- Emoji stickers.
 - Background music: any audio file, volume, loop.
 - Live preview with scrubbing.
-- Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p, saved to `Movies/ReelForge`, with share.
+- Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.
 
 ## Not built yet
 
-Multi-layer video (picture-in-picture), chroma key, keyframe animation, clip-to-clip
-transitions (crossfade, wipe, slide), stickers and animated text, voice-over recording, reverse,
-audio effects, blend modes, asset store, auto captions.
+Multi-layer video (picture-in-picture), chroma key, blend modes, keyframe animation,
+crossfade / wipe / slide transitions, coloured or blurred backgrounds, animated text and
+stickers, voice-over recording, audio fades and effects, reverse, freeze frame, speed curves,
+auto captions, asset store.
 
 ## Build
 

@@ -40,6 +40,7 @@ import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.util.MediaUtils
 import kotlin.math.roundToInt
 
@@ -209,8 +210,16 @@ fun AdjustPanel(vm: EditorViewModel, clip: Clip) {
     CommitSlider("Saturation", clip.saturation, -100f..100f, { "%+.0f".format(it) }) { v ->
         vm.updateClip(clip.id) { it.copy(saturation = v) }
     }
+    CommitSlider("Zoom", clip.zoom, 1f..3f, { "%.1fx".format(it) }) { v ->
+        vm.updateClip(clip.id) { it.copy(zoom = v) }
+    }
+    CommitSlider("Opacity", clip.opacity, 0f..1f, { "${(it * 100).roundToInt()}%" }) { v ->
+        vm.updateClip(clip.id) { it.copy(opacity = v) }
+    }
     TextButton(onClick = {
-        vm.updateClip(clip.id) { it.copy(brightness = 0f, contrast = 0f, saturation = 0f) }
+        vm.updateClip(clip.id) {
+            it.copy(brightness = 0f, contrast = 0f, saturation = 0f, zoom = 1f, opacity = 1f)
+        }
     }) { Text("Reset") }
 }
 
@@ -224,7 +233,21 @@ fun FadePanel(vm: EditorViewModel, clip: Clip) {
     CommitSlider("Fade out", clip.fadeOutMs.toFloat(), 0f..max, { "%.1f s".format(it / 1000f) }) { v ->
         vm.updateClip(clip.id) { it.copy(fadeOutMs = v.toLong()) }
     }
+    Text("Transition to the next clip (dip to black)", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(0L to "None", 300L to "0.3 s", 500L to "0.5 s", 1000L to "1 s").forEach { (ms, label) ->
+            FilterChip(
+                selected = false,
+                onClick = { vm.setTransitionAfter(clip.id, ms) },
+                label = { Text(label) },
+            )
+        }
+    }
 }
+
+private val Stickers = listOf(
+    "😀", "😂", "😍", "😎", "🥳", "😢", "😡", "👍", "👏", "🙏", "❤️", "🔥", "⭐", "🎉", "🎵", "✅",
+)
 
 private val TextColors = listOf(
     0xFFFFFFFF, 0xFF000000, 0xFFFF4D5E, 0xFFFFC107, 0xFF4CAF50, 0xFF4DD0E1, 0xFF7C4DFF, 0xFFFF80AB,
@@ -255,6 +278,18 @@ fun TextPanel(vm: EditorViewModel, project: Project) {
             }
         }
         Button(onClick = { editingId = vm.addText() }) { Text("Add text at playhead") }
+        Spacer(Modifier.height(12.dp))
+        Text("Stickers", style = MaterialTheme.typography.labelLarge)
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Stickers.forEach { emoji ->
+                TextButton(onClick = { editingId = vm.addText(emoji, 0.18f) }) {
+                    Text(emoji, style = MaterialTheme.typography.headlineSmall)
+                }
+            }
+        }
         return
     }
 
@@ -290,7 +325,24 @@ fun TextPanel(vm: EditorViewModel, project: Project) {
             )
         }
     }
-    Spacer(Modifier.height(8.dp))
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextFont.entries.forEach { f ->
+            FilterChip(
+                selected = editing.font == f,
+                onClick = { vm.updateText(id) { it.copy(font = f) } },
+                label = { Text(f.label) },
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Text("Box")
+        Switch(
+            checked = editing.background,
+            onCheckedChange = { b -> vm.updateText(id) { it.copy(background = b) } },
+        )
+    }
     LabeledSlider("Size", editing.size, 0.03f..0.25f) { v -> vm.updateText(id) { it.copy(size = v) } }
     LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
     LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
