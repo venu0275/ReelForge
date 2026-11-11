@@ -206,8 +206,8 @@ class ScreenshotTest {
         save("04_editor_landscape")
 
         // 5. A tool open in landscape (side pane).
-        tap("Speed", scroll = true)
-        waitForText("Clip length")
+        tap("Adjust", scroll = true)
+        waitForText("Brightness")
         save("05_tool_open_landscape")
         tap("Close")
 
