@@ -2,6 +2,8 @@
 
 package com.reelforge.editor.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -24,8 +26,11 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -35,16 +40,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.reelforge.editor.engine.fadeAlpha
+import com.reelforge.editor.engine.overlayAnim
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
 
-enum class Panel { TRIM, SPEED, VOLUME, FILTER, ADJUST, FADE, TEXT, MUSIC, EXPORT }
+enum class Panel { TRIM, SPEED, VOLUME, FILTER, ADJUST, FADE, TEXT, LAYER, AUDIO, MUSIC, EXPORT }
 
 @Composable
 fun EditorScreen(vm: EditorViewModel) {
@@ -72,6 +79,23 @@ fun EditorScreen(vm: EditorViewModel) {
     val pickAudio = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.setMusic(uri) }
+    val context = LocalContext.current
+    val pickLayer = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) vm.addImageLayer(uri) }
+    val pickSound = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) vm.addAudioClip(uri) }
+    val micPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) vm.startRecording() else vm.message = "Microphone permission is needed to record"
+    }
+    val record: () -> Unit = {
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) vm.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
     val addMedia: () -> Unit = {
         pickMedia.launch(
             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
@@ -147,6 +171,16 @@ fun EditorScreen(vm: EditorViewModel) {
                     Panel.ADJUST -> clip?.let { AdjustPanel(vm, it) }
                     Panel.FADE -> clip?.let { FadePanel(vm, it) }
                     Panel.TEXT -> TextPanel(vm, project)
+                    Panel.LAYER -> LayerPanel(vm, project) {
+                        pickLayer.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                    Panel.AUDIO -> AudioPanel(
+                        vm, project,
+                        record = record,
+                        pickSound = { pickSound.launch(arrayOf("audio/*")) },
+                    )
                     Panel.MUSIC -> MusicPanel(vm, project) { pickAudio.launch(arrayOf("audio/*")) }
                     Panel.EXPORT -> Unit
                 }
@@ -230,35 +264,96 @@ private fun PreviewArea(vm: EditorViewModel, project: Project, modifier: Modifie
             }
 
             val density = LocalDensity.current
+            val frameHeightPx = with(density) { frameHeight.toPx() }
+            val now = vm.playheadMs
+
+            project.layers
+                .filter { now >= it.startMs && now < it.endMs }
+                .forEach { layer ->
+                    key(layer.id) {
+                        LaunchedEffect(layer.uri) { vm.requestStill(layer.uri) }
+                        val still = vm.previews[layer.uri]
+                        val anim = overlayAnim(
+                            now - layer.startMs, layer.endMs - layer.startMs, layer.animIn, layer.animOut
+                        )
+                        if (still != null) {
+                            Image(
+                                bitmap = still,
+                                contentDescription = null,
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier
+                                    .align(BiasAlignment(layer.x, -layer.y))
+                                    .height(frameHeight * layer.scale)
+                                    .graphicsLayer(
+                                        alpha = (anim.alpha * layer.opacity).coerceIn(0f, 1f),
+                                        scaleX = anim.scale,
+                                        scaleY = anim.scale,
+                                        translationY = -anim.dy * frameHeightPx / 2f,
+                                    ),
+                            )
+                        }
+                    }
+                }
+
             project.texts
-                .filter { vm.playheadMs >= it.startMs && vm.playheadMs < it.endMs }
+                .filter { now >= it.startMs && now < it.endMs }
                 .forEach { t ->
-                    val fontSize = with(density) { (frameHeight * t.size).toSp() }
-                    Text(
-                        t.text,
-                        modifier = Modifier
-                            .align(BiasAlignment(t.x, -t.y))
-                            .then(
-                                if (t.background) {
-                                    Modifier
-                                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                } else Modifier
-                            ),
-                        fontFamily = when (t.font) {
+                    key(t.id) {
+                        val anim = overlayAnim(now - t.startMs, t.endMs - t.startMs, t.animIn, t.animOut)
+                        val fontSize = with(density) { (frameHeight * t.size).toSp() }
+                        val family = when (t.font) {
                             TextFont.SANS -> FontFamily.SansSerif
                             TextFont.SERIF -> FontFamily.Serif
                             TextFont.MONO -> FontFamily.Monospace
-                        },
-                        color = Color(t.color),
-                        fontSize = fontSize,
-                        lineHeight = fontSize * 1.2f,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        style = TextStyle(
-                            shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(0f, 2f), 6f)
-                        ),
-                    )
+                        }
+                        Box(
+                            Modifier
+                                .align(BiasAlignment(t.x, -t.y))
+                                .graphicsLayer(
+                                    alpha = anim.alpha,
+                                    scaleX = anim.scale,
+                                    scaleY = anim.scale,
+                                    translationY = -anim.dy * frameHeightPx / 2f,
+                                )
+                                .then(
+                                    if (t.background) {
+                                        Modifier
+                                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    } else Modifier
+                                )
+                        ) {
+                            if (t.outline) {
+                                Text(
+                                    t.text,
+                                    color = Color.Black,
+                                    fontSize = fontSize,
+                                    lineHeight = fontSize * 1.2f,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = family,
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(
+                                        drawStyle = Stroke(
+                                            width = frameHeightPx * t.size * 0.12f,
+                                            join = StrokeJoin.Round,
+                                        )
+                                    ),
+                                )
+                            }
+                            Text(
+                                t.text,
+                                color = Color(t.color),
+                                fontSize = fontSize,
+                                lineHeight = fontSize * 1.2f,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = family,
+                                textAlign = TextAlign.Center,
+                                style = TextStyle(
+                                    shadow = Shadow(Color.Black.copy(alpha = 0.7f), Offset(0f, 2f), 6f)
+                                ),
+                            )
+                        }
+                    }
                 }
         }
     }
@@ -395,7 +490,10 @@ private fun Tools(
             vm.updateClip(id) { it.copy(fill = !it.fill) }
         }
         ToolButton("Text", project.clips.isNotEmpty()) { openPanel(Panel.TEXT) }
+        ToolButton("Layer", project.clips.isNotEmpty()) { openPanel(Panel.LAYER) }
+        ToolButton("Voice", project.clips.isNotEmpty()) { openPanel(Panel.AUDIO) }
         ToolButton("Music", true) { openPanel(Panel.MUSIC) }
+        ToolButton("Freeze", isVideo) { vm.freezeFrame() }
         ToolButton("Copy", hasClip) { vm.duplicateClip(id) }
         ToolButton("◀ Move", hasClip) { vm.moveClip(id, -1) }
         ToolButton("Move ▶", hasClip) { vm.moveClip(id, 1) }

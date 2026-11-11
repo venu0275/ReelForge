@@ -7,6 +7,8 @@ import android.graphics.Typeface
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Effect
+import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.Brightness
@@ -20,8 +22,10 @@ import androidx.media3.effect.RgbMatrix
 import androidx.media3.effect.ScaleAndRotateTransformation
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.FilterPreset
+import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TextItem
+import java.nio.ByteBuffer
 import kotlin.math.ceil
 import kotlin.math.max
 
@@ -65,19 +69,53 @@ fun fadeAlpha(t: Long, duration: Long, fadeIn: Long, fadeOut: Long): Float {
     return a.coerceIn(0f, 1f)
 }
 
-/** A text bitmap that is only visible in [startUs, endUs) measured from the clip's first frame. */
+/** Alpha, scale and vertical offset (in frame units, -1..1) of an overlay at one moment. */
+data class AnimState(val alpha: Float, val scale: Float, val dy: Float)
+
+private const val ANIM_MS = 400f
+
+/** Entry / exit animation state at [tMs] into an overlay that lasts [durationMs]. */
+fun overlayAnim(tMs: Long, durationMs: Long, animIn: OverlayAnim, animOut: OverlayAnim): AnimState {
+    val window = minOf(ANIM_MS, durationMs / 2f).coerceAtLeast(1f)
+    var alpha = 1f
+    var scale = 1f
+    var dy = 0f
+    fun blend(anim: OverlayAnim, progress: Float) {
+        val p = progress.coerceIn(0f, 1f)
+        when (anim) {
+            OverlayAnim.NONE -> Unit
+            OverlayAnim.FADE -> alpha *= p
+            OverlayAnim.SLIDE -> {
+                alpha *= p
+                dy -= (1f - p) * 0.25f
+            }
+            OverlayAnim.POP -> {
+                alpha *= p
+                scale *= 0.3f + 0.7f * p
+            }
+        }
+    }
+    if (tMs < window) blend(animIn, tMs / window)
+    val remaining = durationMs - tMs
+    if (remaining < window) blend(animOut, remaining / window)
+    return AnimState(alpha, scale, dy)
+}
+
+/**
+ * A bitmap (text, sticker or image layer) shown during [startUs, endUs), measured from the first
+ * frame of the clip it is attached to. The range may start before 0 or end after the clip.
+ */
 @OptIn(UnstableApi::class)
-class TimedTextOverlay(
+class TimedBitmapOverlay(
     private val bitmap: Bitmap,
     private val startUs: Long,
     private val endUs: Long,
-    x: Float,
-    y: Float,
+    private val x: Float,
+    private val y: Float,
+    private val opacity: Float,
+    private val animIn: OverlayAnim,
+    private val animOut: OverlayAnim,
 ) : BitmapOverlay() {
-    private val visible: OverlaySettings = OverlaySettings.Builder()
-        .setBackgroundFrameAnchor(x, y)
-        .setOverlayFrameAnchor(x, y)
-        .build()
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
     private var baseUs = C.TIME_UNSET
 
@@ -93,7 +131,55 @@ class TimedTextOverlay(
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         val t = relative(presentationTimeUs)
-        return if (t in startUs until endUs) visible else hidden
+        if (t < startUs || t >= endUs) return hidden
+        val anim = overlayAnim((t - startUs) / 1000, (endUs - startUs) / 1000, animIn, animOut)
+        return OverlaySettings.Builder()
+            .setBackgroundFrameAnchor(x.coerceIn(-1f, 1f), (y + anim.dy).coerceIn(-1f, 1f))
+            .setOverlayFrameAnchor(x.coerceIn(-1f, 1f), y.coerceIn(-1f, 1f))
+            .setScale(anim.scale, anim.scale)
+            .setAlphaScale((anim.alpha * opacity).coerceIn(0f, 1f))
+            .build()
+    }
+}
+
+/** Fades a clip's sound in and out, matching its picture fade. Expects 16-bit PCM. */
+@OptIn(UnstableApi::class)
+class AudioFadeProcessor(
+    private val durationUs: Long,
+    private val fadeInUs: Long,
+    private val fadeOutUs: Long,
+) : BaseAudioProcessor() {
+    private var frames = 0L
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
+            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+        }
+        return inputAudioFormat
+    }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val channels = inputAudioFormat.channelCount.coerceAtLeast(1)
+        val sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(1)
+        val out = replaceOutputBuffer(inputBuffer.remaining())
+        while (inputBuffer.remaining() >= 2 * channels) {
+            val tUs = frames * 1_000_000L / sampleRate
+            val gain = fadeAlpha(tUs, durationUs, fadeInUs, fadeOutUs)
+            repeat(channels) {
+                out.putShort((inputBuffer.short * gain).toInt().toShort())
+            }
+            frames++
+        }
+        inputBuffer.position(inputBuffer.limit())
+        out.flip()
+    }
+
+    override fun onFlush() {
+        frames = 0
+    }
+
+    override fun onReset() {
+        frames = 0
     }
 }
 
@@ -191,7 +277,17 @@ object EffectFactory {
             canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), pad, pad, box)
         }
         var baseline = pad - paint.fontMetrics.ascent
+        val stroke = if (item.outline) {
+            Paint(paint).apply {
+                clearShadowLayer()
+                style = Paint.Style.STROKE
+                strokeJoin = Paint.Join.ROUND
+                strokeWidth = textSize * 0.12f
+                color = 0xFF000000.toInt()
+            }
+        } else null
         for (line in lines) {
+            if (stroke != null) canvas.drawText(line, width / 2f, baseline, stroke)
             canvas.drawText(line, width / 2f, baseline, paint)
             baseline += lineHeight
         }

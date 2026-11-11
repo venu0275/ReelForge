@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
+import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.util.MediaUtils
@@ -343,6 +344,15 @@ fun TextPanel(vm: EditorViewModel, project: Project) {
             onCheckedChange = { b -> vm.updateText(id) { it.copy(background = b) } },
         )
     }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Outline", Modifier.weight(1f))
+        Switch(
+            checked = editing.outline,
+            onCheckedChange = { b -> vm.updateText(id) { it.copy(outline = b) } },
+        )
+    }
+    AnimChips("Animate in", editing.animIn) { a -> vm.updateText(id) { it.copy(animIn = a) } }
+    AnimChips("Animate out", editing.animOut) { a -> vm.updateText(id) { it.copy(animOut = a) } }
     LabeledSlider("Size", editing.size, 0.03f..0.25f) { v -> vm.updateText(id) { it.copy(size = v) } }
     LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
     LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
@@ -402,5 +412,121 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = pickAudio) { Text("Replace") }
         TextButton(onClick = { vm.removeMusic() }) { Text("Remove") }
+    }
+}
+
+@Composable
+private fun AnimChips(label: String, value: OverlayAnim, onChange: (OverlayAnim) -> Unit) {
+    Text(label, style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OverlayAnim.entries.forEach { a ->
+            FilterChip(selected = value == a, onClick = { onChange(a) }, label = { Text(a.label) })
+        }
+    }
+}
+
+@Composable
+private fun TimeRange(startMs: Long, endMs: Long, totalMs: Long, onChange: (Long, Long) -> Unit) {
+    val total = maxOf(totalMs, 500L).toFloat()
+    Text(
+        "Visible ${MediaUtils.formatTime(startMs)} – ${MediaUtils.formatTime(endMs)}",
+        style = MaterialTheme.typography.labelLarge,
+    )
+    RangeSlider(
+        value = startMs.toFloat().coerceIn(0f, total)..endMs.toFloat().coerceIn(0f, total),
+        onValueChange = { r ->
+            if (r.endInclusive - r.start >= 200f) onChange(r.start.toLong(), r.endInclusive.toLong())
+        },
+        valueRange = 0f..total,
+    )
+}
+
+/** Picture-in-picture image layers: photos, logos and watermarks on top of the video. */
+@Composable
+fun LayerPanel(vm: EditorViewModel, project: Project, pickImage: () -> Unit) {
+    var editingId by remember { mutableStateOf<String?>(null) }
+    val editing = project.layers.firstOrNull { it.id == editingId }
+
+    if (editing == null) {
+        PanelTitle("Image layers")
+        if (project.layers.isEmpty()) {
+            Text("Put a photo, logo or watermark on top of your video.")
+        }
+        project.layers.forEachIndexed { i, layer ->
+            Row(
+                Modifier.fillMaxWidth().clickable { editingId = layer.id }.padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Layer ${i + 1}", Modifier.weight(1f))
+                Text(
+                    "${MediaUtils.formatTime(layer.startMs)} – ${MediaUtils.formatTime(layer.endMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = pickImage) { Text("Add image at playhead") }
+        return
+    }
+
+    val id = editing.id
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Edit layer", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+        TextButton(onClick = {
+            editingId = null
+            vm.deleteLayer(id)
+        }) { Text("Delete") }
+        TextButton(onClick = { editingId = null }) { Text("Done") }
+    }
+    LabeledSlider("Size", editing.scale, 0.05f..1f) { v -> vm.updateLayer(id) { it.copy(scale = v) } }
+    LabeledSlider("Opacity", editing.opacity, 0f..1f) { v -> vm.updateLayer(id) { it.copy(opacity = v) } }
+    LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateLayer(id) { it.copy(x = v) } }
+    LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateLayer(id) { it.copy(y = v) } }
+    TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
+        vm.updateLayer(id) { it.copy(startMs = s, endMs = e) }
+    }
+    AnimChips("Animate in", editing.animIn) { a -> vm.updateLayer(id) { it.copy(animIn = a) } }
+    AnimChips("Animate out", editing.animOut) { a -> vm.updateLayer(id) { it.copy(animOut = a) } }
+}
+
+/** Voice-over recordings and sound clips placed on the timeline. */
+@Composable
+fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSound: () -> Unit) {
+    PanelTitle("Voice-over and sounds")
+    if (vm.isRecording) {
+        Text("Recording… the video is playing so you can speak along with it.")
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.stopRecording() }) { Text("Stop recording") }
+        return
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = record) { Text("Record at playhead") }
+        TextButton(onClick = pickSound) { Text("Add audio file") }
+    }
+    Text(
+        "Use headphones while recording so the microphone does not pick up the video sound.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    project.audio.forEach { clip ->
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(clip.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    "Starts ${MediaUtils.formatTime(clip.startMs)} · ${MediaUtils.formatTime(clip.durationMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
+        }
+        CommitSlider(
+            label = "Volume",
+            value = clip.volume,
+            range = 0f..2f,
+            format = { "${(it * 100).roundToInt()}%" },
+        ) { v -> vm.updateAudioClip(clip.id) { it.copy(volume = v) } }
     }
 }

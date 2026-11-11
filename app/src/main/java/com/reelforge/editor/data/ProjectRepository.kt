@@ -2,6 +2,9 @@ package com.reelforge.editor.data
 
 import android.content.Context
 import com.reelforge.editor.model.AspectRatio
+import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.ImageLayer
+import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
@@ -38,6 +41,34 @@ class ProjectRepository(context: Context) {
         put("updatedAt", p.updatedAt)
         put("clips", JSONArray().apply { p.clips.forEach { put(clipToJson(it)) } })
         put("texts", JSONArray().apply { p.texts.forEach { put(textToJson(it)) } })
+        put("layers", JSONArray().apply {
+            p.layers.forEach { l ->
+                put(JSONObject().apply {
+                    put("id", l.id)
+                    put("uri", l.uri)
+                    put("scale", l.scale.toDouble())
+                    put("x", l.x.toDouble())
+                    put("y", l.y.toDouble())
+                    put("opacity", l.opacity.toDouble())
+                    put("startMs", l.startMs)
+                    put("endMs", l.endMs)
+                    put("animIn", l.animIn.name)
+                    put("animOut", l.animOut.name)
+                })
+            }
+        })
+        put("audio", JSONArray().apply {
+            p.audio.forEach { a ->
+                put(JSONObject().apply {
+                    put("id", a.id)
+                    put("uri", a.uri)
+                    put("title", a.title)
+                    put("startMs", a.startMs)
+                    put("durationMs", a.durationMs)
+                    put("volume", a.volume.toDouble())
+                })
+            }
+        })
         p.music?.let { m ->
             put("music", JSONObject().apply {
                 put("uri", m.uri)
@@ -84,7 +115,13 @@ class ProjectRepository(context: Context) {
         put("endMs", t.endMs)
         put("font", t.font.name)
         put("background", t.background)
+        put("outline", t.outline)
+        put("animIn", t.animIn.name)
+        put("animOut", t.animOut.name)
     }
+
+    private fun anim(name: String): OverlayAnim =
+        runCatching { OverlayAnim.valueOf(name) }.getOrDefault(OverlayAnim.NONE)
 
     private fun fromJson(o: JSONObject): Project {
         val clipsJson = o.optJSONArray("clips") ?: JSONArray()
@@ -130,6 +167,9 @@ class ProjectRepository(context: Context) {
                 font = runCatching { TextFont.valueOf(t.optString("font")) }
                     .getOrDefault(TextFont.SANS),
                 background = t.optBoolean("background", false),
+                outline = t.optBoolean("outline", false),
+                animIn = anim(t.optString("animIn")),
+                animOut = anim(t.optString("animOut")),
             )
         }
         val music = o.optJSONObject("music")?.let { m ->
@@ -141,6 +181,34 @@ class ProjectRepository(context: Context) {
                 loop = m.optBoolean("loop", true),
             )
         }
+        val layersJson = o.optJSONArray("layers") ?: JSONArray()
+        val layers = (0 until layersJson.length()).map { i ->
+            val l = layersJson.getJSONObject(i)
+            ImageLayer(
+                id = l.getString("id"),
+                uri = l.getString("uri"),
+                scale = l.optDouble("scale", 0.35).toFloat(),
+                x = l.optDouble("x", 0.0).toFloat(),
+                y = l.optDouble("y", 0.0).toFloat(),
+                opacity = l.optDouble("opacity", 1.0).toFloat(),
+                startMs = l.optLong("startMs", 0),
+                endMs = l.optLong("endMs", 3000),
+                animIn = anim(l.optString("animIn")),
+                animOut = anim(l.optString("animOut")),
+            )
+        }
+        val audioJson = o.optJSONArray("audio") ?: JSONArray()
+        val audio = (0 until audioJson.length()).map { i ->
+            val a = audioJson.getJSONObject(i)
+            AudioClip(
+                id = a.getString("id"),
+                uri = a.getString("uri"),
+                title = a.optString("title", "Audio"),
+                startMs = a.optLong("startMs", 0),
+                durationMs = a.optLong("durationMs", 0),
+                volume = a.optDouble("volume", 1.0).toFloat(),
+            )
+        }
         return Project(
             id = o.getString("id"),
             name = o.getString("name"),
@@ -149,6 +217,8 @@ class ProjectRepository(context: Context) {
             clips = clips,
             texts = texts,
             music = music,
+            layers = layers,
+            audio = audio,
             updatedAt = o.optLong("updatedAt", 0),
         )
     }

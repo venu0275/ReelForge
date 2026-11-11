@@ -1,6 +1,7 @@
 package com.reelforge.editor.engine
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.media3.common.Effect
@@ -24,11 +25,13 @@ import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Transformer
 import com.google.common.collect.ImmutableList
 import com.reelforge.editor.model.AspectRatio
+import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.Project
-import kotlin.math.max
+import com.reelforge.editor.util.MediaUtils
 import kotlin.math.min
 
 /** Turns a [Project] into a Media3 Transformer [Composition] and renders it to an MP4. */
@@ -36,6 +39,7 @@ import kotlin.math.min
 object ExportManager {
 
     private const val IMAGE_FRAME_RATE = 30
+    private const val SILENCE_MS = 10_000L
 
     /** Output frame size for an aspect ratio, where [shortSide] is e.g. 720 or 1080. */
     fun outputSize(aspect: AspectRatio, shortSide: Int): Pair<Int, Int> {
@@ -75,30 +79,67 @@ object ExportManager {
             .addListener(listener)
             .build()
 
+    private class OverlaySpec(
+        val bitmap: Bitmap,
+        val startMs: Long,
+        val endMs: Long,
+        val x: Float,
+        val y: Float,
+        val opacity: Float,
+        val animIn: OverlayAnim,
+        val animOut: OverlayAnim,
+    )
+
+    /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
     fun buildComposition(context: Context, project: Project, shortSide: Int): Composition {
         val (width, height) = outputSize(project.aspect, shortSide)
-        val textBitmaps = project.texts.associate { it.id to EffectFactory.renderText(it, height) }
+
+        // Image layers sit below text and stickers.
+        val specs = project.layers.mapNotNull { layer ->
+            val source = MediaUtils.decodeImage(context, Uri.parse(layer.uri), 1440) ?: return@mapNotNull null
+            val targetHeight = (layer.scale * height).toInt().coerceAtLeast(2)
+            val targetWidth = (source.width.toLong() * targetHeight / source.height).toInt().coerceAtLeast(2)
+            OverlaySpec(
+                Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true),
+                layer.startMs, layer.endMs, layer.x, layer.y, layer.opacity, layer.animIn, layer.animOut,
+            )
+        } + project.texts.map { text ->
+            OverlaySpec(
+                EffectFactory.renderText(text, height),
+                text.startMs, text.endMs, text.x, text.y, 1f, text.animIn, text.animOut,
+            )
+        }
 
         val items = project.clips.mapIndexed { index, clip ->
             val clipStart = project.clipStartMs(index)
             val clipEnd = clipStart + clip.durationMs
-            val overlays = project.texts
+            val overlays = specs
                 .filter { it.endMs > clipStart && it.startMs < clipEnd }
-                .map { text ->
-                    TimedTextOverlay(
-                        bitmap = textBitmaps.getValue(text.id),
-                        startUs = max(0L, text.startMs - clipStart) * 1000,
-                        endUs = min(clip.durationMs, text.endMs - clipStart) * 1000,
-                        x = text.x,
-                        y = text.y,
+                .map { s ->
+                    TimedBitmapOverlay(
+                        bitmap = s.bitmap,
+                        startUs = (s.startMs - clipStart) * 1000,
+                        endUs = (s.endMs - clipStart) * 1000,
+                        x = s.x,
+                        y = s.y,
+                        opacity = s.opacity,
+                        animIn = s.animIn,
+                        animOut = s.animOut,
                     )
                 }
-            buildClipItem(clip, width, height, overlays)
+            buildClipItem(context, clip, width, height, overlays)
         }
 
+        val total = project.durationMs
         val sequences = mutableListOf(EditedMediaItemSequence(items))
         project.music?.let { music ->
-            buildMusicSequence(music, project.durationMs)?.let { sequences += it }
+            buildMusicSequence(music, total)?.let { sequences += it }
+        }
+        if (project.audio.isNotEmpty()) {
+            val silence = Uri.fromFile(MediaUtils.silenceFile(context, SILENCE_MS))
+            project.audio.forEach { clip ->
+                buildAudioClipSequence(clip, total, silence)?.let { sequences += it }
+            }
         }
 
         return Composition.Builder(sequences)
@@ -106,16 +147,56 @@ object ExportManager {
             .build()
     }
 
+    /** A voice-over / sound clip: silence up to its start, then the audio itself. */
+    private fun buildAudioClipSequence(
+        clip: AudioClip,
+        videoDurationMs: Long,
+        silence: Uri,
+    ): EditedMediaItemSequence? {
+        val available = videoDurationMs - clip.startMs
+        if (available < 100) return null
+        val items = mutableListOf<EditedMediaItem>()
+        var gap = clip.startMs
+        while (gap >= 50) {
+            val part = min(gap, SILENCE_MS)
+            val media = MediaItem.Builder().setUri(silence).apply {
+                if (part < SILENCE_MS) {
+                    setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder().setEndPositionMs(part).build()
+                    )
+                }
+            }.build()
+            items += EditedMediaItem.Builder(media).build()
+            gap -= part
+        }
+        val playMs = if (clip.durationMs > 0) min(clip.durationMs, available) else available
+        val media = MediaItem.Builder().setUri(Uri.parse(clip.uri))
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder().setEndPositionMs(playMs).build()
+            )
+            .build()
+        items += EditedMediaItem.Builder(media)
+            .setRemoveVideo(true)
+            .setEffects(Effects(listOf(volumeProcessor(clip.volume)), emptyList()))
+            .build()
+        return EditedMediaItemSequence(items)
+    }
+
     private fun buildClipItem(
+        context: Context,
         clip: Clip,
         width: Int,
         height: Int,
         overlays: List<TextureOverlay>,
     ): EditedMediaItem {
         val isImage = clip.type == ClipType.IMAGE
-        val mediaItem = MediaItem.Builder().setUri(Uri.parse(clip.uri)).apply {
+        val uri = Uri.parse(clip.uri)
+        val mediaItem = MediaItem.Builder().setUri(uri).apply {
             if (isImage) {
                 setImageDurationMs(clip.durationMs)
+                val mime = if (uri.scheme == "file") MimeTypes.IMAGE_JPEG
+                else context.contentResolver.getType(uri)
+                if (mime != null) setMimeType(mime)
             } else {
                 setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
@@ -148,6 +229,10 @@ object ExportManager {
             video += FadeEffect(
                 clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000, clip.opacity
             )
+        }
+        val hasFade = clip.fadeInMs > 0 || clip.fadeOutMs > 0
+        if (!isImage && !clip.muted && clip.hasAudio && hasFade) {
+            audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
         }
         if (overlays.isNotEmpty()) {
             video += OverlayEffect(ImmutableList.copyOf(overlays))

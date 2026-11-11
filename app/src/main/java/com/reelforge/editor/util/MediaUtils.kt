@@ -112,6 +112,58 @@ object MediaUtils {
         return uri
     }
 
+    /** Saves the video frame nearest to [timeMs] as a JPEG in app storage. */
+    fun saveFrame(context: Context, uri: Uri, timeMs: Long): File? {
+        val r = MediaMetadataRetriever()
+        return try {
+            r.setDataSource(context, uri)
+            val frame = r.getFrameAtTime(timeMs * 1000, MediaMetadataRetriever.OPTION_CLOSEST)
+                ?: return null
+            val dir = File(context.filesDir, "frames").apply { mkdirs() }
+            val file = File(dir, "frame_${System.currentTimeMillis()}.jpg")
+            file.outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+            file
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { r.release() }
+        }
+    }
+
+    /** Returns a WAV file of silence ([durationMs] long, mono 44.1 kHz), creating it if needed. */
+    fun silenceFile(context: Context, durationMs: Long): File {
+        val file = File(context.cacheDir, "silence_$durationMs.wav")
+        if (file.exists() && file.length() > 44) return file
+        val sampleRate = 44100
+        val dataSize = (sampleRate * 2L * durationMs / 1000).toInt()
+        val header = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN).apply {
+            put("RIFF".toByteArray(Charsets.US_ASCII))
+            putInt(36 + dataSize)
+            put("WAVE".toByteArray(Charsets.US_ASCII))
+            put("fmt ".toByteArray(Charsets.US_ASCII))
+            putInt(16)
+            putShort(1)                 // PCM
+            putShort(1)                 // mono
+            putInt(sampleRate)
+            putInt(sampleRate * 2)      // byte rate
+            putShort(2)                 // block align
+            putShort(16)                // bits per sample
+            put("data".toByteArray(Charsets.US_ASCII))
+            putInt(dataSize)
+        }
+        file.outputStream().use { out ->
+            out.write(header.array())
+            val chunk = ByteArray(8192)
+            var left = dataSize
+            while (left > 0) {
+                val n = minOf(left, chunk.size)
+                out.write(chunk, 0, n)
+                left -= n
+            }
+        }
+        return file
+    }
+
     fun formatTime(ms: Long): String {
         val totalSec = (ms / 1000).coerceAtLeast(0)
         val tenths = ((ms % 1000) / 100).coerceAtLeast(0)

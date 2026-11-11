@@ -59,6 +59,9 @@ data class Clip(
     val durationMs: Long get() = ((trimEndMs - trimStartMs) / effectiveSpeed).toLong()
 }
 
+/** Entry / exit animation for text, stickers and image layers. */
+enum class OverlayAnim(val label: String) { NONE("None"), FADE("Fade"), SLIDE("Slide"), POP("Pop") }
+
 enum class TextFont(val label: String) { SANS("Sans"), SERIF("Serif"), MONO("Mono") }
 
 data class TextItem(
@@ -72,6 +75,33 @@ data class TextItem(
     val endMs: Long = 3000,
     val font: TextFont = TextFont.SANS,
     val background: Boolean = false,
+    val outline: Boolean = false,
+    val animIn: OverlayAnim = OverlayAnim.NONE,
+    val animOut: OverlayAnim = OverlayAnim.NONE,
+)
+
+/** A picture (photo, logo, watermark) drawn on top of the main track. */
+data class ImageLayer(
+    val id: String = newId(),
+    val uri: String,
+    val scale: Float = 0.35f,  // height as a fraction of frame height
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val opacity: Float = 1f,
+    val startMs: Long = 0,
+    val endMs: Long = 3000,
+    val animIn: OverlayAnim = OverlayAnim.NONE,
+    val animOut: OverlayAnim = OverlayAnim.NONE,
+)
+
+/** A voice-over or sound effect placed at a position on the timeline. */
+data class AudioClip(
+    val id: String = newId(),
+    val uri: String,
+    val title: String,
+    val startMs: Long,
+    val durationMs: Long,
+    val volume: Float = 1f,
 )
 
 data class MusicTrack(
@@ -89,6 +119,8 @@ data class Project(
     val clips: List<Clip> = emptyList(),
     val texts: List<TextItem> = emptyList(),
     val music: MusicTrack? = null,
+    val layers: List<ImageLayer> = emptyList(),
+    val audio: List<AudioClip> = emptyList(),
     val updatedAt: Long = System.currentTimeMillis(),
 ) {
     val durationMs: Long get() = clips.sumOf { it.durationMs }

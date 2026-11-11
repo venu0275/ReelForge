@@ -2,7 +2,9 @@ package com.reelforge.editor.ui
 
 import android.app.Application
 import android.content.Intent
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -27,7 +29,10 @@ import androidx.media3.transformer.Transformer
 import com.reelforge.editor.data.ProjectRepository
 import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.ExportManager
+import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.model.AspectRatio
+import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.ImageLayer
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.MusicTrack
@@ -78,6 +83,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     val player: ExoPlayer = ExoPlayer.Builder(app).build()
     private val musicPlayer: ExoPlayer = ExoPlayer.Builder(app).build()
+    private val voicePlayer: ExoPlayer = ExoPlayer.Builder(app).build()
+    private var voiceClipId: String? = null
+
+    var isRecording by mutableStateOf(false)
+        private set
+    private var recorder: MediaRecorder? = null
+    private var recordFile: File? = null
+    private var recordStartMs = 0L
 
     private var playlistSignature = ""
     private var effectSignature = ""
@@ -98,7 +111,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
-                if (playing) startMusic() else musicPlayer.pause()
+                if (playing) {
+                    startMusic()
+                } else {
+                    musicPlayer.pause()
+                    stopVoice()
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -139,8 +157,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun closeProject() {
+        if (isRecording) stopRecording()
         player.pause()
         player.clearMediaItems()
+        stopVoice()
         musicPlayer.stop()
         musicPlayer.clearMediaItems()
         val p = project
@@ -327,6 +347,188 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeMusic() = mutate { it.copy(music = null) }
 
+    // ------------------------------------------------------------ image layers
+
+    fun addImageLayer(uri: Uri): String {
+        val p = project ?: return ""
+        runCatching {
+            ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val start = playheadMs
+        val end = (start + 3000).coerceAtMost(maxOf(p.durationMs, start + 500))
+        val layer = ImageLayer(uri = uri.toString(), startMs = start, endMs = end)
+        mutate { it.copy(layers = it.layers + layer) }
+        return layer.id
+    }
+
+    fun updateLayer(id: String, block: (ImageLayer) -> ImageLayer) = mutate { p ->
+        p.copy(layers = p.layers.map { if (it.id == id) block(it) else it })
+    }
+
+    fun deleteLayer(id: String) = mutate { p -> p.copy(layers = p.layers.filterNot { it.id == id }) }
+
+    // ------------------------------------------------- voice-over + sound clips
+
+    fun addAudioClip(uri: Uri) {
+        val start = playheadMs
+        viewModelScope.launch {
+            val clip = withContext(Dispatchers.IO) {
+                runCatching {
+                    ctx.contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                AudioClip(
+                    uri = uri.toString(),
+                    title = MediaUtils.displayName(ctx, uri),
+                    startMs = start,
+                    durationMs = MediaUtils.audioDurationMs(ctx, uri),
+                )
+            }
+            mutate { it.copy(audio = it.audio + clip) }
+        }
+    }
+
+    fun updateAudioClip(id: String, block: (AudioClip) -> AudioClip) = mutate { p ->
+        p.copy(audio = p.audio.map { if (it.id == id) block(it) else it })
+    }
+
+    fun deleteAudioClip(id: String) = mutate { p -> p.copy(audio = p.audio.filterNot { it.id == id }) }
+
+    /** Starts recording from the microphone at the playhead while the video plays. */
+    fun startRecording() {
+        val p = project ?: return
+        if (isRecording || p.clips.isEmpty()) return
+        val dir = File(ctx.filesDir, "voice").apply { mkdirs() }
+        val file = File(dir, "voice_${System.currentTimeMillis()}.m4a")
+        try {
+            @Suppress("DEPRECATION")
+            val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else MediaRecorder()
+            r.setAudioSource(MediaRecorder.AudioSource.MIC)
+            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            r.setAudioSamplingRate(44100)
+            r.setAudioEncodingBitRate(128000)
+            r.setOutputFile(file.absolutePath)
+            r.prepare()
+            r.start()
+            recorder = r
+            recordFile = file
+            if (playheadMs >= p.durationMs - 200) seekTo(0)
+            recordStartMs = playheadMs
+            isRecording = true
+            stopVoice()
+            player.play()
+        } catch (e: Exception) {
+            file.delete()
+            message = "Could not start recording"
+        }
+    }
+
+    fun stopRecording() {
+        if (!isRecording) return
+        isRecording = false
+        player.pause()
+        val file = recordFile
+        val ok = runCatching { recorder?.stop() }.isSuccess
+        runCatching { recorder?.release() }
+        recorder = null
+        recordFile = null
+        if (!ok || file == null) {
+            file?.delete()
+            message = "Recording was too short"
+            return
+        }
+        val start = recordStartMs
+        viewModelScope.launch {
+            val uri = Uri.fromFile(file)
+            val duration = withContext(Dispatchers.IO) { MediaUtils.audioDurationMs(ctx, uri) }
+            val number = (project?.audio?.count { it.title.startsWith("Voice") } ?: 0) + 1
+            val clip = AudioClip(
+                uri = uri.toString(), title = "Voice $number", startMs = start, durationMs = duration,
+            )
+            mutate { it.copy(audio = it.audio + clip) }
+        }
+    }
+
+    private fun stopVoice() {
+        if (voiceClipId != null) {
+            voicePlayer.pause()
+            voiceClipId = null
+        }
+    }
+
+    /** Plays the voice / sound clip under the playhead in the preview. */
+    private fun syncVoice(p: Project) {
+        val clip = p.audio.firstOrNull { playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
+        if (clip == null || isRecording) {
+            stopVoice()
+            return
+        }
+        if (clip.id != voiceClipId) {
+            voiceClipId = clip.id
+            voicePlayer.setMediaItem(MediaItem.fromUri(Uri.parse(clip.uri)))
+            voicePlayer.prepare()
+            voicePlayer.seekTo(playheadMs - clip.startMs)
+            voicePlayer.play()
+        }
+        voicePlayer.volume = clip.volume.coerceIn(0f, 1f)
+    }
+
+    // ------------------------------------------------------------ freeze frame
+
+    /** Inserts a 2-second still of the frame under the playhead. */
+    fun freezeFrame() {
+        val p = project ?: return
+        val (index, local) = p.locate(playheadMs) ?: return
+        val clip = p.clips[index]
+        if (clip.type != ClipType.VIDEO) {
+            message = "Freeze frame works on video clips"
+            return
+        }
+        val offset = (local * clip.effectiveSpeed).toLong()
+        val sourceMs = clip.trimStartMs + offset
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                MediaUtils.saveFrame(ctx, Uri.parse(clip.uri), sourceMs)
+            }
+            if (file == null) {
+                message = "Could not capture this frame"
+                return@launch
+            }
+            val still = clip.copy(
+                id = newId(),
+                uri = Uri.fromFile(file).toString(),
+                type = ClipType.IMAGE,
+                sourceDurationMs = 2000,
+                trimStartMs = 0,
+                trimEndMs = 2000,
+                speed = 1f,
+                hasAudio = false,
+                fadeInMs = 0,
+                fadeOutMs = 0,
+            )
+            mutate { current ->
+                val i = current.clips.indexOfFirst { it.id == clip.id }
+                if (i < 0) return@mutate current
+                val c = current.clips[i]
+                val length = c.trimEndMs - c.trimStartMs
+                val list = current.clips.toMutableList()
+                when {
+                    offset < 200 -> list.add(i, still)
+                    length - offset < 200 -> list.add(i + 1, still)
+                    else -> {
+                        list[i] = c.copy(trimEndMs = sourceMs, fadeOutMs = 0)
+                        list.add(i + 1, still)
+                        list.add(i + 2, c.copy(id = newId(), trimStartMs = sourceMs, fadeInMs = 0))
+                    }
+                }
+                current.copy(clips = list)
+            }
+            selectedClipId = still.id
+        }
+    }
+
     /** Fade the clip out and the next one in, i.e. a dip-to-black transition. 0 removes it. */
     fun setTransitionAfter(id: String, durationMs: Long) = mutate { p ->
         val index = p.clips.indexOfFirst { it.id == id }
@@ -347,7 +549,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val builder = MediaItem.Builder().setUri(uri).setMediaId(clip.id)
         if (clip.type == ClipType.IMAGE) {
             builder.setImageDurationMs(clip.durationMs)
-            ctx.contentResolver.getType(uri)?.let { builder.setMimeType(it) }
+            val mime = if (uri.scheme == "file") "image/jpeg" else ctx.contentResolver.getType(uri)
+            if (mime != null) builder.setMimeType(mime)
         } else {
             builder.setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
@@ -448,6 +651,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val p = project ?: return
         val target = globalMs.coerceIn(0, p.durationMs)
         playheadMs = target
+        stopVoice()
         val (index, local) = p.locate(target) ?: return
         player.seekTo(index, (local * p.clips[index].effectiveSpeed).toLong())
         applyClipParams()
@@ -469,6 +673,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val clip = p.clips.getOrNull(index) ?: return
         val local = (player.currentPosition / clip.effectiveSpeed).toLong()
         playheadMs = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
+        // Sound follows the picture fade.
+        val gain = fadeAlpha(local, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
+        player.volume = (if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)) * gain
+        syncVoice(p)
     }
 
     // -------------------------------------------------------------- thumbnails
@@ -489,13 +697,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun requestPreview(clip: Clip) {
-        if (clip.type != ClipType.IMAGE) return
-        if (!requested.add("p:${clip.uri}")) return
+        if (clip.type == ClipType.IMAGE) requestStill(clip.uri)
+    }
+
+    /** Loads a full-size still (photo clip or image layer) for the preview. */
+    fun requestStill(uri: String) {
+        if (!requested.add("p:$uri")) return
         viewModelScope.launch {
             val bitmap = withContext(Dispatchers.IO) {
-                MediaUtils.decodeImage(ctx, Uri.parse(clip.uri), 1280)
+                MediaUtils.decodeImage(ctx, Uri.parse(uri), 1280)
             }
-            if (bitmap != null) previews[clip.uri] = bitmap.asImageBitmap()
+            if (bitmap != null) previews[uri] = bitmap.asImageBitmap()
         }
     }
 
@@ -504,46 +716,54 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun startExport(shortSide: Int, quality: Int) {
         val p = project ?: return
         if (p.clips.isEmpty() || export is ExportState.Running) return
+        if (isRecording) stopRecording()
         player.pause()
         player.stop() // free hardware decoders for the export
+        export = ExportState.Running(0)
         val output = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
-        try {
-            val composition = ExportManager.buildComposition(ctx, p, shortSide)
-            val (outWidth, outHeight) = ExportManager.outputSize(p.aspect, shortSide)
-            val bitrate = ExportManager.bitrate(outWidth, outHeight, quality)
-            val listener = object : Transformer.Listener {
-                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    viewModelScope.launch {
-                        export = try {
-                            val name = "${p.name.replace(Regex("[^A-Za-z0-9_-]"), "_")}_${System.currentTimeMillis()}.mp4"
-                            val uri = withContext(Dispatchers.IO) {
-                                MediaUtils.saveToGallery(ctx, output, name)
-                            }
-                            ExportState.Done(uri)
-                        } catch (e: Exception) {
-                            ExportState.Failed(e.message ?: "Could not save the video")
-                        }
-                        finishExport()
-                    }
-                }
 
-                override fun onError(
-                    composition: Composition,
-                    exportResult: ExportResult,
-                    exportException: ExportException,
-                ) {
-                    output.delete()
-                    export = ExportState.Failed(
-                        "${exportException.errorCodeName}: ${exportException.message ?: "export failed"}"
-                    )
+        val listener = object : Transformer.Listener {
+            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                viewModelScope.launch {
+                    export = try {
+                        val safeName = p.name.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                        val name = "${safeName}_${System.currentTimeMillis()}.mp4"
+                        val uri = withContext(Dispatchers.IO) {
+                            MediaUtils.saveToGallery(ctx, output, name)
+                        }
+                        ExportState.Done(uri)
+                    } catch (e: Exception) {
+                        ExportState.Failed(e.message ?: "Could not save the video")
+                    }
                     finishExport()
                 }
             }
-            val t = ExportManager.createTransformer(ctx, listener, bitrate)
-            transformer = t
-            export = ExportState.Running(0)
-            t.start(composition, output.absolutePath)
-            viewModelScope.launch {
+
+            override fun onError(
+                composition: Composition,
+                exportResult: ExportResult,
+                exportException: ExportException,
+            ) {
+                output.delete()
+                export = ExportState.Failed(
+                    "${exportException.errorCodeName}: ${exportException.message ?: "export failed"}"
+                )
+                finishExport()
+            }
+        }
+
+        viewModelScope.launch {
+            try {
+                val composition = withContext(Dispatchers.IO) {
+                    ExportManager.buildComposition(ctx, p, shortSide)
+                }
+                if (export !is ExportState.Running) return@launch // cancelled while preparing
+                val (outWidth, outHeight) = ExportManager.outputSize(p.aspect, shortSide)
+                val t = ExportManager.createTransformer(
+                    ctx, listener, ExportManager.bitrate(outWidth, outHeight, quality)
+                )
+                transformer = t
+                t.start(composition, output.absolutePath)
                 val holder = ProgressHolder()
                 while (export is ExportState.Running) {
                     val active = transformer ?: break
@@ -552,10 +772,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     delay(300)
                 }
+            } catch (e: Exception) {
+                export = ExportState.Failed(e.message ?: "Could not start export")
+                finishExport()
             }
-        } catch (e: Exception) {
-            export = ExportState.Failed(e.message ?: "Could not start export")
-            finishExport()
         }
     }
 
@@ -578,7 +798,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         transformer?.cancel()
+        runCatching { recorder?.release() }
         player.release()
         musicPlayer.release()
+        voicePlayer.release()
     }
 }
