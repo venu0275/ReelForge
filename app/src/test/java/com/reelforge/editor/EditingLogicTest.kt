@@ -1,0 +1,525 @@
+package com.reelforge.editor
+
+import com.reelforge.editor.data.ProjectJson
+import com.reelforge.editor.engine.ExportManager
+import com.reelforge.editor.engine.fadeAlpha
+import com.reelforge.editor.engine.overlayAnim
+import com.reelforge.editor.model.AspectRatio
+import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.Background
+import com.reelforge.editor.model.Clip
+import com.reelforge.editor.model.ClipType
+import com.reelforge.editor.model.FilterPreset
+import com.reelforge.editor.model.History
+import com.reelforge.editor.model.ImageLayer
+import com.reelforge.editor.model.MusicTrack
+import com.reelforge.editor.model.OverlayAnim
+import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.ProjectOps
+import com.reelforge.editor.model.TextAlignH
+import com.reelforge.editor.model.TextFont
+import com.reelforge.editor.model.TextItem
+import com.reelforge.editor.model.TransitionStyle
+import com.reelforge.editor.util.MediaUtils
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+private fun video(id: String, lengthMs: Long, speed: Float = 1f) =
+    Clip(id = id, uri = "file:///$id.mp4", type = ClipType.VIDEO, sourceDurationMs = lengthMs, speed = speed)
+
+private fun image(id: String, lengthMs: Long) =
+    Clip(id = id, uri = "file:///$id.jpg", type = ClipType.IMAGE, sourceDurationMs = lengthMs, hasAudio = false)
+
+private fun project(vararg clips: Clip) = Project(id = "p", name = "Test", clips = clips.toList())
+
+// ---------------------------------------------------------------- timeline maths
+
+class TimelineTest {
+
+    @Test fun `clip duration follows trim and speed`() {
+        val clip = video("a", 10_000).copy(trimStartMs = 2_000, trimEndMs = 6_000)
+        assertEquals(4_000, clip.durationMs)
+        assertEquals(2_000, clip.copy(speed = 2f).durationMs)
+        assertEquals(8_000, clip.copy(speed = 0.5f).durationMs)
+    }
+
+    @Test fun `speed is ignored for photos`() {
+        val photo = image("a", 3_000).copy(speed = 4f)
+        assertEquals(3_000, photo.durationMs)
+    }
+
+    @Test fun `project duration is the sum of its clips`() {
+        val p = project(video("a", 4_000), image("b", 3_000), video("c", 2_000, speed = 2f))
+        assertEquals(8_000, p.durationMs)
+        assertEquals(0, p.clipStartMs(0))
+        assertEquals(4_000, p.clipStartMs(1))
+        assertEquals(7_000, p.clipStartMs(2))
+    }
+
+    @Test fun `locate finds the clip and local time`() {
+        val p = project(video("a", 4_000), image("b", 3_000))
+        assertEquals(0 to 0L, p.locate(0))
+        assertEquals(0 to 3_999L, p.locate(3_999))
+        assertEquals(1 to 0L, p.locate(4_000))
+        assertEquals(1 to 2_500L, p.locate(6_500))
+    }
+
+    @Test fun `locate past the end clamps to the last clip`() {
+        val p = project(video("a", 4_000), image("b", 3_000))
+        assertEquals(1 to 2_999L, p.locate(7_000))
+        assertEquals(1 to 2_999L, p.locate(999_999))
+    }
+
+    @Test fun `locate handles negative time and an empty project`() {
+        assertEquals(0 to 0L, project(video("a", 4_000)).locate(-500))
+        assertNull(project().locate(0))
+        assertEquals(0, project().durationMs)
+    }
+}
+
+// ------------------------------------------------------------------ edit actions
+
+class ProjectOpsTest {
+
+    @Test fun `split cuts one clip into two and keeps total length`() {
+        val p = project(video("a", 4_000), video("b", 2_000))
+        val out = ProjectOps.split(p, 1_000, newClipId = "a2")!!
+        assertEquals(listOf("a", "a2", "b"), out.clips.map { it.id })
+        assertEquals(1_000, out.clips[0].durationMs)
+        assertEquals(3_000, out.clips[1].durationMs)
+        assertEquals(1_000, out.clips[1].trimStartMs)
+        assertEquals(p.durationMs, out.durationMs)
+    }
+
+    @Test fun `split respects speed when finding the source position`() {
+        val p = project(video("a", 4_000, speed = 2f)) // 2 s on the timeline
+        val out = ProjectOps.split(p, 500, newClipId = "a2")!!
+        assertEquals(1_000, out.clips[0].trimEndMs)
+        assertEquals(1_000, out.clips[1].trimStartMs)
+        assertEquals(2_000, out.durationMs)
+    }
+
+    @Test fun `split in the second clip uses the right clip`() {
+        val p = project(video("a", 4_000), video("b", 2_000))
+        val out = ProjectOps.split(p, 5_000, newClipId = "b2")!!
+        assertEquals(listOf("a", "b", "b2"), out.clips.map { it.id })
+        assertEquals(1_000, out.clips[1].durationMs)
+    }
+
+    @Test fun `split removes the fades at the cut`() {
+        val p = project(video("a", 4_000).copy(fadeInMs = 500, fadeOutMs = 500))
+        val out = ProjectOps.split(p, 2_000, newClipId = "a2")!!
+        assertEquals(500, out.clips[0].fadeInMs)
+        assertEquals(0, out.clips[0].fadeOutMs)
+        assertEquals(0, out.clips[1].fadeInMs)
+        assertEquals(500, out.clips[1].fadeOutMs)
+    }
+
+    @Test fun `split too close to an edge is refused`() {
+        val p = project(video("a", 4_000))
+        assertNull(ProjectOps.split(p, 0))
+        assertNull(ProjectOps.split(p, 150))
+        assertNull(ProjectOps.split(p, 3_900))
+        assertNull(ProjectOps.split(p, 4_000))
+    }
+
+    @Test fun `split on an empty project is refused`() {
+        assertNull(ProjectOps.split(project(), 0))
+    }
+
+    @Test fun `split works on photos`() {
+        val out = ProjectOps.split(project(image("a", 3_000)), 1_000, newClipId = "a2")!!
+        assertEquals(1_000, out.clips[0].durationMs)
+        assertEquals(2_000, out.clips[1].durationMs)
+    }
+
+    @Test fun `duplicate inserts a copy right after the original`() {
+        val p = project(video("a", 4_000), video("b", 2_000))
+        val out = ProjectOps.duplicate(p, "a", newClipId = "copy")
+        assertEquals(listOf("a", "copy", "b"), out.clips.map { it.id })
+        assertEquals(out.clips[0].copy(id = "copy"), out.clips[1])
+    }
+
+    @Test fun `duplicate of an unknown clip changes nothing`() {
+        val p = project(video("a", 4_000))
+        assertSame(p, ProjectOps.duplicate(p, "missing"))
+    }
+
+    @Test fun `move reorders clips`() {
+        val p = project(video("a", 1_000), video("b", 1_000), video("c", 1_000))
+        assertEquals(listOf("b", "a", "c"), ProjectOps.move(p, "a", 1).clips.map { it.id })
+        assertEquals(listOf("a", "c", "b"), ProjectOps.move(p, "c", -1).clips.map { it.id })
+        assertEquals(listOf("b", "c", "a"), ProjectOps.move(p, "a", 2).clips.map { it.id })
+    }
+
+    @Test fun `move outside the track changes nothing`() {
+        val p = project(video("a", 1_000), video("b", 1_000))
+        assertSame(p, ProjectOps.move(p, "a", -1))
+        assertSame(p, ProjectOps.move(p, "b", 1))
+        assertSame(p, ProjectOps.move(p, "missing", 1))
+    }
+
+    @Test fun `delete removes only the named clip`() {
+        val p = project(video("a", 1_000), video("b", 1_000))
+        assertEquals(listOf("b"), ProjectOps.delete(p, "a").clips.map { it.id })
+        assertEquals(p, ProjectOps.delete(p, "missing"))
+        assertTrue(ProjectOps.delete(ProjectOps.delete(p, "a"), "b").clips.isEmpty())
+    }
+
+    @Test fun `transition fades this clip out and the next one in`() {
+        val p = project(video("a", 4_000), video("b", 4_000), video("c", 4_000))
+        val out = ProjectOps.transitionAfter(p, "a", 500)
+        assertEquals(500, out.clips[0].fadeOutMs)
+        assertEquals(500, out.clips[1].fadeInMs)
+        assertEquals(0, out.clips[1].fadeOutMs)
+        assertEquals(0, out.clips[2].fadeInMs)
+    }
+
+    @Test fun `transition is capped at half of a short clip`() {
+        val p = project(video("a", 600), video("b", 400))
+        val out = ProjectOps.transitionAfter(p, "a", 1_000)
+        assertEquals(300, out.clips[0].fadeOutMs)
+        assertEquals(200, out.clips[1].fadeInMs)
+    }
+
+    @Test fun `transition on the last or an unknown clip changes nothing`() {
+        val p = project(video("a", 4_000), video("b", 4_000))
+        assertSame(p, ProjectOps.transitionAfter(p, "b", 500))
+        assertSame(p, ProjectOps.transitionAfter(p, "missing", 500))
+    }
+
+    @Test fun `negative transition length is treated as none`() {
+        val p = project(video("a", 4_000), video("b", 4_000))
+        val out = ProjectOps.transitionAfter(p, "a", -300)
+        assertEquals(0, out.clips[0].fadeOutMs)
+        assertEquals(0, out.clips[1].fadeInMs)
+    }
+
+    @Test fun `fades are clamped to half the clip`() {
+        val clip = video("a", 1_000).copy(fadeInMs = 900, fadeOutMs = 2_000)
+        val out = ProjectOps.clampFades(clip)
+        assertEquals(500, out.fadeInMs)
+        assertEquals(500, out.fadeOutMs)
+        val negative = ProjectOps.clampFades(clip.copy(fadeInMs = -50))
+        assertEquals(0, negative.fadeInMs)
+    }
+}
+
+// --------------------------------------------------------------------- undo redo
+
+class HistoryTest {
+
+    @Test fun `undo and redo walk through states`() {
+        val h = History<String>()
+        h.record("A", 1_000)   // A -> B
+        h.record("B", 5_000)   // B -> C
+        assertTrue(h.canUndo)
+        assertFalse(h.canRedo)
+        assertEquals("B", h.undo("C"))
+        assertEquals("A", h.undo("B"))
+        assertNull(h.undo("A"))
+        assertEquals("B", h.redo("A"))
+        assertEquals("C", h.redo("B"))
+        assertNull(h.redo("C"))
+    }
+
+    @Test fun `rapid changes collapse into one undo step`() {
+        val h = History<Int>(coalesceMs = 700)
+        h.record(0, 1_000)
+        h.record(1, 1_100)
+        h.record(2, 1_200)
+        assertEquals(0, h.undo(3))
+        assertNull(h.undo(0))
+    }
+
+    @Test fun `a new change clears redo`() {
+        val h = History<String>()
+        h.record("A", 1_000)
+        assertEquals("A", h.undo("B"))
+        assertTrue(h.canRedo)
+        h.record("A", 9_000)
+        assertFalse(h.canRedo)
+    }
+
+    @Test fun `history keeps only the newest entries`() {
+        val h = History<Int>(limit = 3, coalesceMs = 0)
+        for (i in 0 until 10) h.record(i, i * 1_000L + 1)
+        assertEquals(9, h.undo(10))
+        assertEquals(8, h.undo(9))
+        assertEquals(7, h.undo(8))
+        assertNull(h.undo(7))
+    }
+
+    @Test fun `undo and redo on an empty history return nothing`() {
+        val h = History<String>()
+        assertNull(h.undo("x"))
+        assertNull(h.redo("x"))
+        h.record("a", 1_000)
+        h.clear()
+        assertFalse(h.canUndo)
+    }
+}
+
+// ------------------------------------------------------------- fades, animations
+
+class EffectMathTest {
+
+    @Test fun `fade alpha ramps in and out`() {
+        assertEquals(0f, fadeAlpha(0, 4_000, 1_000, 1_000), 0.001f)
+        assertEquals(0.5f, fadeAlpha(500, 4_000, 1_000, 1_000), 0.001f)
+        assertEquals(1f, fadeAlpha(2_000, 4_000, 1_000, 1_000), 0.001f)
+        assertEquals(0.5f, fadeAlpha(3_500, 4_000, 1_000, 1_000), 0.001f)
+        assertEquals(0f, fadeAlpha(4_000, 4_000, 1_000, 1_000), 0.001f)
+    }
+
+    @Test fun `no fade means full brightness everywhere`() {
+        for (t in listOf(0L, 1L, 2_000L, 3_999L, 4_000L)) {
+            assertEquals(1f, fadeAlpha(t, 4_000, 0, 0), 0f)
+        }
+    }
+
+    @Test fun `fade alpha never leaves 0 to 1`() {
+        for (t in -1_000L..6_000L step 250) {
+            val a = fadeAlpha(t, 4_000, 800, 800)
+            assertTrue("alpha $a at $t", a in 0f..1f)
+        }
+    }
+
+    @Test fun `overlay animation starts hidden and ends hidden`() {
+        val start = overlayAnim(0, 3_000, OverlayAnim.FADE, OverlayAnim.FADE)
+        val middle = overlayAnim(1_500, 3_000, OverlayAnim.FADE, OverlayAnim.FADE)
+        val end = overlayAnim(3_000, 3_000, OverlayAnim.FADE, OverlayAnim.FADE)
+        assertEquals(0f, start.alpha, 0.001f)
+        assertEquals(1f, middle.alpha, 0.001f)
+        assertEquals(0f, end.alpha, 0.001f)
+    }
+
+    @Test fun `pop scales up and slide moves up into place`() {
+        val pop = overlayAnim(0, 3_000, OverlayAnim.POP, OverlayAnim.NONE)
+        assertTrue(pop.scale < 1f)
+        val slide = overlayAnim(0, 3_000, OverlayAnim.SLIDE, OverlayAnim.NONE)
+        assertTrue(slide.dy < 0f)
+        val settled = overlayAnim(1_500, 3_000, OverlayAnim.SLIDE, OverlayAnim.POP)
+        assertEquals(1f, settled.scale, 0.001f)
+        assertEquals(0f, settled.dy, 0.001f)
+    }
+
+    @Test fun `no animation leaves the overlay untouched`() {
+        for (t in listOf(0L, 10L, 1_500L, 2_990L)) {
+            val s = overlayAnim(t, 3_000, OverlayAnim.NONE, OverlayAnim.NONE)
+            assertEquals(1f, s.alpha, 0f)
+            assertEquals(1f, s.scale, 0f)
+            assertEquals(0f, s.dy, 0f)
+        }
+    }
+
+    @Test fun `animation on a zero length overlay does not divide by zero`() {
+        val s = overlayAnim(0, 0, OverlayAnim.POP, OverlayAnim.SLIDE)
+        assertFalse(s.alpha.isNaN())
+        assertFalse(s.scale.isNaN())
+        assertFalse(s.dy.isNaN())
+    }
+}
+
+// ------------------------------------------------------------------ export sizes
+
+class ExportSizeTest {
+
+    @Test fun `output sizes match the aspect ratio`() {
+        assertEquals(1920 to 1080, ExportManager.outputSize(AspectRatio.LANDSCAPE, 1080))
+        assertEquals(1080 to 1920, ExportManager.outputSize(AspectRatio.PORTRAIT, 1080))
+        assertEquals(720 to 720, ExportManager.outputSize(AspectRatio.SQUARE, 720))
+        assertEquals(1080 to 1350, ExportManager.outputSize(AspectRatio.FOUR_FIVE, 1080))
+        assertEquals(1280 to 720, ExportManager.outputSize(AspectRatio.LANDSCAPE, 720))
+    }
+
+    @Test fun `output sizes are always even numbers`() {
+        for (aspect in AspectRatio.entries) {
+            for (side in listOf(240, 360, 480, 540, 720, 1080, 481, 719)) {
+                val (w, h) = ExportManager.outputSize(aspect, side)
+                assertEquals("$aspect $side width", 0, w % 2)
+                assertEquals("$aspect $side height", 0, h % 2)
+                assertTrue(w > 0 && h > 0)
+            }
+        }
+    }
+
+    @Test fun `bitrate grows with quality and size`() {
+        val low = ExportManager.bitrate(1280, 720, 0)
+        val mid = ExportManager.bitrate(1280, 720, 1)
+        val high = ExportManager.bitrate(1280, 720, 2)
+        assertTrue(low < mid && mid < high)
+        assertTrue(ExportManager.bitrate(1920, 1080, 1) > mid)
+        // An unknown quality level falls back to the balanced one.
+        assertEquals(mid, ExportManager.bitrate(1280, 720, 99))
+    }
+
+    @Test fun `time is formatted as minutes seconds tenths`() {
+        assertEquals("00:00.0", MediaUtils.formatTime(0))
+        assertEquals("00:01.5", MediaUtils.formatTime(1_500))
+        assertEquals("01:05.2", MediaUtils.formatTime(65_250))
+        assertEquals("00:00.0", MediaUtils.formatTime(-400))
+    }
+}
+
+// ------------------------------------------------------------------ saved files
+
+class ProjectJsonTest {
+
+    private val full = Project(
+        id = "p1",
+        name = "Holiday \"cut\" ✈️",
+        aspect = AspectRatio.PORTRAIT,
+        clips = listOf(
+            video("a", 9_000).copy(
+                trimStartMs = 1_000, trimEndMs = 7_000, speed = 1.5f, volume = 0.4f, muted = true,
+                rotation = 90, filter = FilterPreset.SEPIA, brightness = 0.2f, contrast = -0.3f,
+                saturation = 40f, fadeInMs = 300, fadeOutMs = 500, opacity = 0.8f, zoom = 1.7f,
+                flipH = true, fill = true, transition = TransitionStyle.SLIDE, pitch = 1.25f,
+            ),
+            image("b", 3_000),
+        ),
+        texts = listOf(
+            TextItem(
+                id = "t1", text = "Line one\nLine two", color = 0xFF112233.toInt(), size = 0.12f,
+                x = -0.5f, y = 0.75f, startMs = 500, endMs = 2_500, font = TextFont.CURSIVE,
+                background = true, outline = true, animIn = OverlayAnim.POP, animOut = OverlayAnim.SLIDE,
+                bold = false, italic = true, align = TextAlignH.RIGHT, opacity = 0.6f, rotation = 15f,
+                outlineColor = 0xFFFF0000.toInt(), boxColor = 0xCC00FF00.toInt(),
+                fontPath = "/data/fonts/x.ttf", moving = true, x2 = 0.9f, y2 = -0.9f,
+            )
+        ),
+        music = MusicTrack("content://music/1", "Song", 180_000, volume = 0.3f, loop = false),
+        layers = listOf(
+            ImageLayer(
+                id = "l1", uri = "content://img/1", scale = 0.5f, x = 0.2f, y = -0.2f, opacity = 0.7f,
+                rotation = -30f, startMs = 100, endMs = 900, animIn = OverlayAnim.FADE,
+                animOut = OverlayAnim.FADE, moving = true, x2 = 1f, y2 = 1f,
+            )
+        ),
+        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f)),
+        background = Background.BLUR,
+        backgroundColor = 0xFF336699.toInt(),
+        updatedAt = 1_700_000_000_000,
+    )
+
+    @Test fun `every field survives save and load`() {
+        assertEquals(full, ProjectJson.decode(ProjectJson.encode(full)))
+    }
+
+    @Test fun `an empty project survives save and load`() {
+        val empty = Project(id = "e", name = "", updatedAt = 5)
+        assertEquals(empty, ProjectJson.decode(ProjectJson.encode(empty)))
+    }
+
+    @Test fun `a file saved by the first app version still loads with defaults`() {
+        val old = """
+            {"id":"old","name":"Old","aspect":"LANDSCAPE","updatedAt":1,
+             "clips":[{"id":"c","uri":"u","type":"VIDEO","sourceDurationMs":5000,
+                       "trimStartMs":0,"trimEndMs":5000}],
+             "texts":[{"id":"t","text":"Hi"}]}
+        """
+        val p = ProjectJson.decode(old)
+        assertEquals(1f, p.clips[0].speed, 0f)
+        assertEquals(1f, p.clips[0].opacity, 0f)
+        assertEquals(TransitionStyle.FADE, p.clips[0].transition)
+        assertEquals(TextFont.SANS, p.texts[0].font)
+        assertTrue(p.texts[0].bold)
+        assertNull(p.texts[0].fontPath)
+        assertTrue(p.layers.isEmpty())
+        assertTrue(p.audio.isEmpty())
+        assertNull(p.music)
+        assertEquals(Background.BLACK, p.background)
+    }
+
+    @Test fun `unknown enum values fall back instead of failing`() {
+        val odd = """
+            {"id":"x","name":"X","aspect":"HEXAGON","background":"LAVA",
+             "clips":[{"id":"c","uri":"u","type":"VIDEO","sourceDurationMs":1000,
+                       "trimStartMs":0,"trimEndMs":1000,"filter":"XRAY","transition":"SPIN"}],
+             "texts":[{"id":"t","text":"Hi","font":"COMIC","align":"DIAGONAL","animIn":"EXPLODE"}]}
+        """
+        val p = ProjectJson.decode(odd)
+        assertEquals(AspectRatio.LANDSCAPE, p.aspect)
+        assertEquals(Background.BLACK, p.background)
+        assertEquals(FilterPreset.NONE, p.clips[0].filter)
+        assertEquals(TransitionStyle.FADE, p.clips[0].transition)
+        assertEquals(TextFont.SANS, p.texts[0].font)
+        assertEquals(TextAlignH.CENTER, p.texts[0].align)
+        assertEquals(OverlayAnim.NONE, p.texts[0].animIn)
+    }
+
+    @Test fun `broken files are rejected`() {
+        assertThrows(Exception::class.java) { ProjectJson.decode("") }
+        assertThrows(Exception::class.java) { ProjectJson.decode("not json at all") }
+        assertThrows(Exception::class.java) { ProjectJson.decode("{\"name\":\"no id\"}") }
+        assertThrows(Exception::class.java) {
+            ProjectJson.decode("{\"id\":\"x\",\"name\":\"X\",\"clips\":[{\"id\":\"c\"}]}")
+        }
+    }
+
+    @Test fun `different projects produce different files`() {
+        assertNotEquals(ProjectJson.encode(full), ProjectJson.encode(full.copy(name = "Other")))
+    }
+}
+
+// -------------------------------------------------------------------- performance
+
+class LogicPerformanceTest {
+
+    private fun bigProject(clipCount: Int): Project = Project(
+        id = "big",
+        name = "Big",
+        clips = (0 until clipCount).map { video("c$it", 2_000 + (it % 7) * 500L) },
+        texts = (0 until clipCount / 2).map {
+            TextItem(id = "t$it", text = "Caption $it", startMs = it * 1_000L, endMs = it * 1_000L + 900)
+        },
+    )
+
+    private fun millis(block: () -> Unit): Long {
+        val start = System.nanoTime()
+        block()
+        return (System.nanoTime() - start) / 1_000_000
+    }
+
+    @Test fun `finding the playhead in a 1000 clip project is fast`() {
+        val p = bigProject(1_000)
+        val total = p.durationMs
+        repeat(200) { p.locate(total / 2) } // warm up
+        val took = millis { repeat(10_000) { p.locate((it * 37L) % total) } }
+        println("PERF locate: 10,000 lookups in a 1,000-clip project took $took ms")
+        assertTrue("locate too slow: $took ms", took < 3_000)
+    }
+
+    @Test fun `saving and loading a 500 clip project is fast`() {
+        val p = bigProject(500)
+        repeat(3) { ProjectJson.decode(ProjectJson.encode(p)) } // warm up
+        var text = ""
+        val encode = millis { repeat(20) { text = ProjectJson.encode(p) } }
+        val decode = millis { repeat(20) { ProjectJson.decode(text) } }
+        println("PERF json: 500-clip project, ${text.length / 1024} KB, save ${encode / 20} ms, load ${decode / 20} ms")
+        assertTrue("save too slow: $encode ms for 20", encode < 4_000)
+        assertTrue("load too slow: $decode ms for 20", decode < 4_000)
+        assertEquals(p, ProjectJson.decode(text))
+    }
+
+    @Test fun `200 splits in a row stay fast and keep the total length`() {
+        var p = project(video("a", 600_000))
+        val total = p.durationMs
+        val took = millis {
+            for (i in 1..200) {
+                p = ProjectOps.split(p, i * 2_500L, newClipId = "s$i") ?: p
+            }
+        }
+        println("PERF split: 200 splits took $took ms, ${p.clips.size} clips")
+        assertEquals(201, p.clips.size)
+        assertEquals(total, p.durationMs)
+        assertTrue("splits too slow: $took ms", took < 2_000)
+    }
+}

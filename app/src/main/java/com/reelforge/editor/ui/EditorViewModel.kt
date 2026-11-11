@@ -42,7 +42,9 @@ import com.reelforge.editor.model.ImageLayer
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.MusicTrack
+import com.reelforge.editor.model.History
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.newId
 import com.reelforge.editor.util.MediaUtils
@@ -105,9 +107,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private var effectSignature = ""
     private var musicSignature = ""
     private var effectsEverSet = false
-    private val undoStack = ArrayDeque<Project>()
-    private val redoStack = ArrayDeque<Project>()
-    private var lastMutationAt = 0L
+    private val history = History<Project>()
     private var saveJob: Job? = null
     private var transformer: Transformer? = null
     private val requested = mutableSetOf<String>()
@@ -153,8 +153,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openProject(p: Project) {
         project = p
-        undoStack.clear()
-        redoStack.clear()
+        history.clear()
         canUndo = false
         canRedo = false
         selectedClipId = p.clips.firstOrNull()?.id
@@ -202,19 +201,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (changed == current) return
         // Rapid changes (dragging a slider) collapse into a single undo step.
         val now = System.currentTimeMillis()
-        if (now - lastMutationAt > 700 || undoStack.isEmpty()) {
-            undoStack.addLast(current)
-            if (undoStack.size > 60) undoStack.removeFirst()
-        }
-        lastMutationAt = now
-        redoStack.clear()
+        history.record(current, now)
         commit(changed.copy(updatedAt = now))
     }
 
     private fun commit(next: Project) {
         project = next
-        canUndo = undoStack.isNotEmpty()
-        canRedo = redoStack.isNotEmpty()
+        canUndo = history.canUndo
+        canRedo = history.canRedo
         if (next.clips.none { it.id == selectedClipId }) selectedClipId = next.clips.firstOrNull()?.id
         playheadMs = playheadMs.coerceIn(0, next.durationMs)
         syncPlayer()
@@ -227,18 +221,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun undo() {
         val current = project ?: return
-        val previous = undoStack.removeLastOrNull() ?: return
-        redoStack.addLast(current)
-        lastMutationAt = 0
-        commit(previous)
+        commit(history.undo(current) ?: return)
     }
 
     fun redo() {
         val current = project ?: return
-        val next = redoStack.removeLastOrNull() ?: return
-        undoStack.addLast(current)
-        lastMutationAt = 0
-        commit(next)
+        commit(history.redo(current) ?: return)
     }
 
     // ------------------------------------------------------------------- clips
@@ -285,42 +273,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         selectedClipId = project?.clips?.getOrNull(index.coerceAtMost((project?.clips?.size ?: 1) - 1))?.id
     }
 
-    fun duplicateClip(id: String) = mutate { p ->
-        val index = p.clips.indexOfFirst { it.id == id }
-        if (index < 0) p
-        else p.copy(
-            clips = p.clips.toMutableList().apply { add(index + 1, p.clips[index].copy(id = newId())) }
-        )
-    }
+    fun duplicateClip(id: String) = mutate { ProjectOps.duplicate(it, id) }
 
-    fun moveClip(id: String, delta: Int) = mutate { p ->
-        val from = p.clips.indexOfFirst { it.id == id }
-        val to = from + delta
-        if (from < 0 || to !in p.clips.indices) p
-        else p.copy(clips = p.clips.toMutableList().apply { add(to, removeAt(from)) })
-    }
+    fun moveClip(id: String, delta: Int) = mutate { ProjectOps.move(it, id, delta) }
 
     /** Splits the clip under the playhead into two clips. */
     fun splitAtPlayhead() {
         val p = project ?: return
-        val (index, local) = p.locate(playheadMs) ?: return
-        val clip = p.clips[index]
-        val sourceOffset = (local * clip.effectiveSpeed).toLong()
-        val length = clip.trimEndMs - clip.trimStartMs
-        if (sourceOffset < 200 || length - sourceOffset < 200) {
+        val secondId = newId()
+        val result = ProjectOps.split(p, playheadMs, secondId)
+        if (result == null) {
             message = "Move the playhead further inside the clip to split"
             return
         }
-        val cut = clip.trimStartMs + sourceOffset
-        val first = clip.copy(trimEndMs = cut, fadeOutMs = 0)
-        val second = clip.copy(id = newId(), trimStartMs = cut, fadeInMs = 0)
-        mutate {
-            it.copy(clips = it.clips.toMutableList().apply {
-                set(index, first)
-                add(index + 1, second)
-            })
-        }
-        selectedClipId = second.id
+        mutate { result }
+        selectedClipId = secondId
     }
 
     // ------------------------------------------------------------ text + music
@@ -638,17 +605,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Fade the clip out and the next one in, i.e. a dip-to-black transition. 0 removes it. */
-    fun setTransitionAfter(id: String, durationMs: Long) = mutate { p ->
-        val index = p.clips.indexOfFirst { it.id == id }
-        if (index < 0 || index >= p.clips.lastIndex) p
-        else p.copy(clips = p.clips.mapIndexed { i, c ->
-            when (i) {
-                index -> c.copy(fadeOutMs = durationMs.coerceAtMost(c.durationMs / 2))
-                index + 1 -> c.copy(fadeInMs = durationMs.coerceAtMost(c.durationMs / 2))
-                else -> c
-            }
-        })
-    }
+    fun setTransitionAfter(id: String, durationMs: Long) =
+        mutate { ProjectOps.transitionAfter(it, id, durationMs) }
 
     // ---------------------------------------------------------------- playback
 

@@ -26,16 +26,25 @@ class ProjectRepository(context: Context) {
 
     fun list(): List<Project> =
         (dir.listFiles { f -> f.extension == "json" } ?: emptyArray())
-            .mapNotNull { runCatching { fromJson(JSONObject(it.readText())) }.getOrNull() }
+            .mapNotNull { runCatching { ProjectJson.decode(it.readText()) }.getOrNull() }
             .sortedByDescending { it.updatedAt }
 
     fun save(project: Project) {
-        File(dir, "${project.id}.json").writeText(toJson(project).toString())
+        File(dir, "${project.id}.json").writeText(ProjectJson.encode(project))
     }
 
     fun delete(id: String) {
         File(dir, "$id.json").delete()
     }
+}
+
+/** Converts projects to and from JSON text. */
+object ProjectJson {
+
+    fun encode(project: Project): String = toJson(project).toString()
+
+    /** Throws if [text] is not a valid saved project. */
+    fun decode(text: String): Project = fromJson(JSONObject(text))
 
     private fun toJson(p: Project) = JSONObject().apply {
         put("id", p.id)

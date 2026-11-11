@@ -42,6 +42,7 @@ import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextFont
 import com.reelforge.editor.model.TransitionStyle
@@ -127,10 +128,7 @@ fun TrimPanel(vm: EditorViewModel, clip: Clip) {
     )
 }
 
-private fun Clip.clampFades(): Clip {
-    val half = durationMs / 2
-    return copy(fadeInMs = fadeInMs.coerceIn(0, half), fadeOutMs = fadeOutMs.coerceIn(0, half))
-}
+private fun Clip.clampFades(): Clip = ProjectOps.clampFades(this)
 
 @Composable
 fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
