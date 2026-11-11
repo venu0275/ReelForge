@@ -34,6 +34,7 @@ import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.TextItem
+import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.ui.EditorViewModel
 import com.reelforge.editor.ui.MainActivity
 import com.reelforge.editor.util.MediaUtils
@@ -189,6 +190,14 @@ class ScreenshotTest {
             texts = listOf(
                 TextItem(text = "Day 1", size = 0.12f, y = 0.6f, startMs = 0, endMs = 20_000, outline = true),
             ),
+            // A picture-in-picture video in the top-right corner from 5 s to 11 s.
+            videoLayers = listOf(
+                VideoLayer(
+                    uri = Uri.fromFile(video).toString(), sourceDurationMs = info.durationMs,
+                    startMs = 5_000, aspect = MediaUtils.videoAspect(context, Uri.fromFile(video)) ?: 1.78f,
+                    scale = 0.4f, x = 0.9f, y = 0.8f, hasAudio = info.hasAudio,
+                )
+            ),
         )
         ProjectRepository(context).save(project)
         ProjectRepository(context).save(
@@ -259,5 +268,14 @@ class ScreenshotTest {
         tap("Place", scroll = true)
         waitForText("Turn left 90°")
         save("11_text_turn_landscape")
+
+        // 12. The video layer editor.
+        rule.onNodeWithContentDescription("Close tool").performClick()
+        waitForText("Add to your video")
+        tap("Layer", scroll = true)
+        waitForText("Add video")
+        tap("Edit")
+        waitForText("Edit video layer")
+        save("12_video_layer_landscape")
     }
 }

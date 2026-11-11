@@ -41,13 +41,15 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Fade in / fade out for music and sound clips; timeline snapping to the playhead and edges.
 - Font store: 39 open-licence Google Fonts (including Telugu and Hindi faces) downloaded on
   demand, so the app install stays small.
+- Video layers: up to three videos on top of the main track (picture-in-picture) with size,
+  position, rotation, opacity, timing, trim, volume and chroma key (green / blue screen).
 - Portrait and landscape layouts: in landscape the video sits on the left and the timeline,
   tools and the open tool's controls sit in a side pane on the right.
 - Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.
 
 ## Not built yet
 
-Video layers (video picture-in-picture), chroma key, blend modes, true crossfade / wipe
+Blend modes, corner pin, true crossfade / wipe
 transitions, multi-point keyframes, reverse, speed curves, equaliser, auto captions, asset store.
 
 ## Build
