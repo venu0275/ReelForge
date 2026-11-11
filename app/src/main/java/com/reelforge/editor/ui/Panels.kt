@@ -522,7 +522,10 @@ fun TextPanel(
 
         TextTab.PLACE -> {
             Text("Turn", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 FilterChip(
                     selected = false,
                     onClick = { vm.updateText(id) { it.copy(rotation = turned(it.rotation, 90f)) } },
