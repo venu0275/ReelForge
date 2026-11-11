@@ -146,6 +146,16 @@ class ScreenshotTest {
 
     @Test
     fun captureMainScreens() {
+        try {
+            captureAll()
+        } catch (e: Throwable) {
+            // Keep a picture of whatever was on screen when a step failed.
+            runCatching { save("99_failed_step") }
+            throw e
+        }
+    }
+
+    private fun captureAll() {
         val sunset = scene("sunset", Color.rgb(255, 120, 80), Color.rgb(120, 40, 110), Color.rgb(60, 40, 90))
         val day = scene("day", Color.rgb(90, 170, 255), Color.rgb(200, 230, 255), Color.rgb(60, 140, 80))
         val night = scene("night", Color.rgb(15, 20, 60), Color.rgb(60, 70, 140), Color.rgb(30, 30, 50))
