@@ -61,7 +61,8 @@ jobs:
           target: google_apis
           profile: pixel_6
           disk-size: 3072M
-          ram-size: 3072M
+          ram-size: 4096M
+          cores: 3
           disable-animations: true
           script: |
             adb logcat -c
