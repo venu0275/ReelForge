@@ -22,10 +22,14 @@ jobs:
         run: grep -rh "PERF" app/build/test-results/testDebugUnitTest/*.xml || true
       - run: ./gradlew assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        timeout-minutes: 5
         with:
           name: ReelForge-debug-apk
           path: app/build/outputs/apk/debug/*.apk
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        timeout-minutes: 5
         if: always()
         with:
           name: unit-test-report
@@ -84,11 +88,15 @@ jobs:
           git commit -q -m "Screenshots from ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screenshots
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        timeout-minutes: 5
         if: always()
         with:
           name: screenshots
           path: screenshots/
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        timeout-minutes: 5
         if: always()
         with:
           name: device-test-report
