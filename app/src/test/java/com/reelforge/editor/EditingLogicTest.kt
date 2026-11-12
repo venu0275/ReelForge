@@ -1150,11 +1150,10 @@ class LoopFxTest {
     }
 
     @Test fun `loops repeat and tolerate odd times`() {
-        val fx = com.reelforge.editor.model.LoopFx
-        assertEquals(pose(fx.SPIN, 500).rotation, pose(fx.SPIN, 2500).rotation, 0.01f)
-        assertEquals(pose(fx.BLINK, 100), pose(fx.BLINK, 900))
-        assertEquals(pose(fx.BOUNCE, 0), pose(fx.BOUNCE, -50))
-        assertTrue(pose(fx.BOUNCE, 300).dy > 0f)
+        assertEquals(pose(com.reelforge.editor.model.LoopFx.SPIN, 500).rotation, pose(com.reelforge.editor.model.LoopFx.SPIN, 2500).rotation, 0.01f)
+        assertEquals(pose(com.reelforge.editor.model.LoopFx.BLINK, 100), pose(com.reelforge.editor.model.LoopFx.BLINK, 900))
+        assertEquals(pose(com.reelforge.editor.model.LoopFx.BOUNCE, 0), pose(com.reelforge.editor.model.LoopFx.BOUNCE, -50))
+        assertTrue(pose(com.reelforge.editor.model.LoopFx.BOUNCE, 300).dy > 0f)
     }
 
     @Test fun `the loop setting survives saving`() {
