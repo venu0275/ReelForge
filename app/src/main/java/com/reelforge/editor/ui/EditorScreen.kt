@@ -142,6 +142,10 @@ fun EditorScreen(vm: EditorViewModel) {
     var editingTextId by remember { mutableStateOf<String?>(null) }
     // True while the full-screen "new text" editor is open.
     var composing by remember { mutableStateOf(false) }
+    // The text whose words are being changed there; null while writing a new one.
+    var composeTarget by remember { mutableStateOf<String?>(null) }
+    // The text or picture selected on the preview (shown with a frame and handles).
+    var previewPick by remember { mutableStateOf<String?>(null) }
     var editingLayerId by remember { mutableStateOf<String?>(null) }
     var fontTarget by remember { mutableStateOf<String?>(null) }
     val pickFont = rememberLauncherForActivityResult(
@@ -201,7 +205,15 @@ fun EditorScreen(vm: EditorViewModel) {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val preview: @Composable (Modifier) -> Unit = { modifier ->
-        PreviewArea(vm, project, modifier, onEditText = editText, onEditLayer = editLayer)
+        PreviewArea(
+            vm, project, modifier, onEditText = editText, onEditLayer = editLayer,
+            pickedId = previewPick,
+            onPick = { previewPick = it },
+            onRetype = { id ->
+                composeTarget = id
+                composing = true
+            },
+        )
     }
 
     val messageBar: @Composable () -> Unit = {
@@ -278,7 +290,10 @@ fun EditorScreen(vm: EditorViewModel) {
                     fontTarget = textId
                     pickFont.launch(arrayOf("*/*"))
                 },
-                newText = { composing = true },
+                newText = {
+                    composeTarget = null
+                    composing = true
+                },
             )
             Panel.BACKGROUND -> BackgroundPanel(vm, project)
             Panel.DRAW -> Unit
@@ -420,11 +435,17 @@ fun EditorScreen(vm: EditorViewModel) {
     if (composing) {
         TextComposer(
             vm,
-            onClose = { composing = false },
-            onSaved = { id ->
-                // Close the tool so the new text is in view and can be dragged into place.
+            existing = project.texts.firstOrNull { it.id == composeTarget },
+            onClose = {
                 composing = false
+                composeTarget = null
+            },
+            onSaved = { id ->
+                // Close the tool so the text is in view, selected, and can be dragged into place.
+                composing = false
+                composeTarget = null
                 editingTextId = id
+                previewPick = id
                 panel = null
             },
         )
@@ -1262,6 +1283,9 @@ private fun PreviewArea(
     modifier: Modifier,
     onEditText: (String) -> Unit,
     onEditLayer: (String) -> Unit,
+    pickedId: String?,
+    onPick: (String?) -> Unit,
+    onRetype: (String) -> Unit,
 ) {
     val location = project.locate(vm.playheadMs)
     val current = location?.let { project.clips[it.first] }
@@ -1275,6 +1299,8 @@ private fun PreviewArea(
             Modifier
                 .aspectRatio(project.aspect.w.toFloat() / project.aspect.h)
                 .clipToBounds()
+                // Tapping the picture itself, away from any item, lets go of the selection.
+                .onEmptyTap { onPick(null) }
         ) {
             val frameHeight = maxHeight
 
@@ -1398,25 +1424,29 @@ private fun PreviewArea(
                             val gesture = rememberDragState()
                             val itemHeightPx = frameHeightPx * layer.scale
                             val itemWidthPx = itemHeightPx * still.width / still.height.coerceAtLeast(1)
+                            val place = if (pose != null) BiasAlignment(pose.x, -pose.y)
+                            else glide(
+                                layer.x, layer.y, layer.x2, layer.y2, layer.moving,
+                                now - layer.startMs, layer.endMs - layer.startMs,
+                            )
+                            val shownScale = anim.scale * (pose?.scale ?: 1f)
+                            val shownAngle = -((pose?.rotation ?: layer.rotation) + anim.rotation)
+                            val canMove = layer.keyframes.isEmpty()
                             Image(
                                 bitmap = still,
                                 contentDescription = null,
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
-                                    .align(
-                                        if (pose != null) BiasAlignment(pose.x, -pose.y)
-                                        else glide(
-                                            layer.x, layer.y, layer.x2, layer.y2, layer.moving,
-                                            now - layer.startMs, layer.endMs - layer.startMs,
-                                        )
-                                    )
+                                    .align(place)
                                     .height(frameHeight * layer.scale)
-                                    // Drag to move, pinch to resize, twist to turn; a tap opens its settings.
+                                    // Drag to move, pinch to resize, twist to turn. The first tap
+                                    // selects it; a tap when selected opens its settings.
                                     .itemGestures(
                                         gesture,
-                                        enabled = layer.keyframes.isEmpty(),
-                                        onTap = { onEditLayer(layer.id) },
+                                        enabled = canMove,
+                                        onTap = { if (pickedId == layer.id) onEditLayer(layer.id) else onPick(layer.id) },
                                         onEnd = { pan, zoom, turn ->
+                                            onPick(layer.id)
                                             vm.updateLayer(layer.id) {
                                                 val nx = ProjectOps.movedBias(it.x, pan.x, frameWidthPx, itemWidthPx)
                                                 val ny = ProjectOps.movedBias(it.y, -pan.y, frameHeightPx, itemHeightPx)
@@ -1433,14 +1463,40 @@ private fun PreviewArea(
                                     )
                                     .graphicsLayer(
                                         alpha = (anim.alpha * (pose?.opacity ?: layer.opacity)).coerceIn(0f, 1f),
-                                        scaleX = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
-                                        scaleY = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
+                                        scaleX = shownScale * gesture.zoom,
+                                        scaleY = shownScale * gesture.zoom,
                                         translationX = anim.dx * frameWidthPx / 2f + gesture.pan.x,
                                         translationY = -anim.dy * frameHeightPx / 2f + gesture.pan.y,
-                                        rotationZ = -((pose?.rotation ?: layer.rotation) + anim.rotation) + gesture.turn,
-                                    )
-                                    .dragOutline(gesture),
+                                        rotationZ = shownAngle + gesture.turn,
+                                    ),
                             )
+                            if (pickedId == layer.id && canMove) {
+                                SelectionHandles(
+                                    centre = Offset(
+                                        (frameWidthPx - itemWidthPx) / 2f * (1f + place.horizontalBias) +
+                                            itemWidthPx / 2f + anim.dx * frameWidthPx / 2f,
+                                        (frameHeightPx - itemHeightPx) / 2f * (1f + place.verticalBias) +
+                                            itemHeightPx / 2f - anim.dy * frameHeightPx / 2f,
+                                    ),
+                                    halfWidth = itemWidthPx / 2f * shownScale,
+                                    halfHeight = itemHeightPx / 2f * shownScale,
+                                    angle = shownAngle,
+                                    state = gesture,
+                                    onCommit = { zoom, turn ->
+                                        vm.updateLayer(layer.id) {
+                                            it.copy(
+                                                scale = (it.scale * zoom).coerceIn(0.03f, 2f),
+                                                rotation = it.rotation - turn,
+                                            )
+                                        }
+                                    },
+                                    onEdit = null,
+                                    onDelete = {
+                                        onPick(null)
+                                        vm.deleteLayer(layer.id)
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -1465,20 +1521,24 @@ private fun PreviewArea(
                         val gesture = rememberDragState()
                         val textWidthPx = bitmap.width.toFloat()
                         val textHeightPx = bitmap.height.toFloat()
+                        val place = if (pose != null) BiasAlignment(pose.x, -pose.y)
+                        else glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
+                        val shownScale = anim.scale * (pose?.scale ?: 1f)
+                        val shownAngle = -((pose?.rotation ?: t.rotation) + anim.rotation)
+                        val canMove = t.keyframes.isEmpty()
                         Image(
                             bitmap = bitmap,
                             contentDescription = t.text,
                             modifier = Modifier
-                                .align(
-                                    if (pose != null) BiasAlignment(pose.x, -pose.y)
-                                    else glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
-                                )
-                                // Drag to move, pinch to resize, twist to turn; a tap opens its settings.
+                                .align(place)
+                                // Drag to move, pinch to resize, twist to turn. The first tap
+                                // selects it; a tap when selected opens its settings.
                                 .itemGestures(
                                     gesture,
-                                    enabled = t.keyframes.isEmpty(),
-                                    onTap = { onEditText(t.id) },
+                                    enabled = canMove,
+                                    onTap = { if (pickedId == t.id) onEditText(t.id) else onPick(t.id) },
                                     onEnd = { pan, zoom, turn ->
+                                        onPick(t.id)
                                         vm.updateText(t.id) {
                                             val nx = ProjectOps.movedBias(it.x, pan.x, frameWidthPx, textWidthPx)
                                             val ny = ProjectOps.movedBias(it.y, -pan.y, frameHeightPx, textHeightPx)
@@ -1495,14 +1555,40 @@ private fun PreviewArea(
                                 )
                                 .graphicsLayer(
                                     alpha = (anim.alpha * (pose?.opacity ?: t.opacity)).coerceIn(0f, 1f),
-                                    scaleX = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
-                                    scaleY = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
+                                    scaleX = shownScale * gesture.zoom,
+                                    scaleY = shownScale * gesture.zoom,
                                     translationX = anim.dx * frameWidthPx / 2f + gesture.pan.x,
                                     translationY = -anim.dy * frameHeightPx / 2f + gesture.pan.y,
-                                    rotationZ = -((pose?.rotation ?: t.rotation) + anim.rotation) + gesture.turn,
-                                )
-                                .dragOutline(gesture),
+                                    rotationZ = shownAngle + gesture.turn,
+                                ),
                         )
+                        if (pickedId == t.id && canMove) {
+                            SelectionHandles(
+                                centre = Offset(
+                                    (frameWidthPx - textWidthPx) / 2f * (1f + place.horizontalBias) +
+                                        textWidthPx / 2f + anim.dx * frameWidthPx / 2f,
+                                    (frameHeightPx - textHeightPx) / 2f * (1f + place.verticalBias) +
+                                        textHeightPx / 2f - anim.dy * frameHeightPx / 2f,
+                                ),
+                                halfWidth = textWidthPx / 2f * shownScale,
+                                halfHeight = textHeightPx / 2f * shownScale,
+                                angle = shownAngle,
+                                state = gesture,
+                                onCommit = { zoom, turn ->
+                                    vm.updateText(t.id) {
+                                        it.copy(
+                                            size = (it.size * zoom).coerceIn(0.02f, 0.5f),
+                                            rotation = it.rotation - turn,
+                                        )
+                                    }
+                                },
+                                onEdit = { onRetype(t.id) },
+                                onDelete = {
+                                    onPick(null)
+                                    vm.deleteText(t.id)
+                                },
+                            )
+                        }
                     }
                 }
         }
