@@ -1184,3 +1184,22 @@ class SettingsTest {
         assertEquals(2, fixed.exportQuality)
     }
 }
+
+class DragOnPreviewTest {
+    @Test fun `dragging moves an item by the right share of the free space`() {
+        // Frame 1000 px, item 200 px: 400 px of travel each side of the centre.
+        assertEquals(0.5f, ProjectOps.movedBias(0f, 200f, 1000f, 200f), 0.001f)
+        assertEquals(-0.25f, ProjectOps.movedBias(0.25f, -200f, 1000f, 200f), 0.001f)
+    }
+
+    @Test fun `dragging stops at the edges and lands on the centre when close`() {
+        assertEquals(1f, ProjectOps.movedBias(0.8f, 5000f, 1000f, 200f), 0f)
+        assertEquals(-1f, ProjectOps.movedBias(0f, -5000f, 1000f, 200f), 0f)
+        assertEquals(0f, ProjectOps.movedBias(0.5f, -195f, 1000f, 200f), 0f)
+    }
+
+    @Test fun `an item wider than the frame can still be moved`() {
+        val moved = ProjectOps.movedBias(0f, 25f, 1000f, 3000f)
+        assertTrue(moved > 0.4f && moved <= 1f)
+    }
+}

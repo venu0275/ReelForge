@@ -367,6 +367,7 @@ fun TextPanel(
     editingId: String?,
     onEditing: (String?) -> Unit,
     pickFont: (String) -> Unit,
+    newText: () -> Unit,
 ) {
     val editing = project.texts.firstOrNull { it.id == editingId }
 
@@ -386,7 +387,7 @@ fun TextPanel(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onEditing(vm.addText()) }) { Text("Add text at playhead") }
+            Button(onClick = newText) { Text("Add text at playhead") }
             if (project.texts.isNotEmpty()) {
                 TextButton(onClick = { vm.deleteAllTexts() }) { Text("Delete all") }
             }

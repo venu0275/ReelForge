@@ -578,6 +578,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ text + music
 
+    /** Adds a text written in the full-screen editor; it starts at the playhead. */
+    fun addTextItem(draft: TextItem): String {
+        val p = project ?: return ""
+        if (draft.text.isBlank()) return ""
+        val start = playheadMs
+        val end = (start + settings.itemMs).coerceAtMost(maxOf(p.durationMs, start + 500))
+        val item = draft.copy(startMs = start, endMs = end)
+        mutate { it.copy(texts = it.texts + item) }
+        return item.id
+    }
+
     fun addText(text: String = "Your text", size: Float = 0.08f): String {
         val p = project ?: return ""
         val start = playheadMs

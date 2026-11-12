@@ -78,6 +78,16 @@ object ProjectOps {
     }
 
     /** Returns the point nearest to [ms] if it is within [toleranceMs], otherwise [ms] itself. */
+    /**
+     * New position (-1..1) of an item dragged by [deltaPx] along one axis. [framePx] is the frame
+     * size and [itemPx] the item size on that axis. Lands exactly on the centre when it is close.
+     */
+    fun movedBias(bias: Float, deltaPx: Float, framePx: Float, itemPx: Float): Float {
+        val free = maxOf(framePx - itemPx, framePx * 0.1f, 1f) / 2f
+        val moved = (bias + deltaPx / free).coerceIn(-1f, 1f)
+        return if (kotlin.math.abs(moved) < 0.04f) 0f else moved
+    }
+
     fun snap(ms: Long, points: List<Long>, toleranceMs: Long): Long {
         val nearest = points.minByOrNull { kotlin.math.abs(it - ms) } ?: return ms
         return if (kotlin.math.abs(nearest - ms) <= toleranceMs) nearest else ms

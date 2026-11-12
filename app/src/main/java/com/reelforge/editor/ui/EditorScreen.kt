@@ -140,6 +140,8 @@ fun EditorScreen(vm: EditorViewModel) {
         if (granted) vm.startRecording() else vm.message = "Microphone permission is needed to record"
     }
     var editingTextId by remember { mutableStateOf<String?>(null) }
+    // True while the full-screen "new text" editor is open.
+    var composing by remember { mutableStateOf(false) }
     var editingLayerId by remember { mutableStateOf<String?>(null) }
     var fontTarget by remember { mutableStateOf<String?>(null) }
     val pickFont = rememberLauncherForActivityResult(
@@ -276,6 +278,7 @@ fun EditorScreen(vm: EditorViewModel) {
                     fontTarget = textId
                     pickFont.launch(arrayOf("*/*"))
                 },
+                newText = { composing = true },
             )
             Panel.BACKGROUND -> BackgroundPanel(vm, project)
             Panel.DRAW -> Unit
@@ -412,6 +415,19 @@ fun EditorScreen(vm: EditorViewModel) {
             timeline(Modifier.fillMaxWidth())
             menu(Modifier.fillMaxWidth().heightIn(max = 190.dp), false)
         }
+    }
+
+    if (composing) {
+        TextComposer(
+            vm,
+            onClose = { composing = false },
+            onSaved = { id ->
+                // Close the tool so the new text is in view and can be dragged into place.
+                composing = false
+                editingTextId = id
+                panel = null
+            },
+        )
     }
 
     if (open == Panel.EXPORT) {
@@ -1367,6 +1383,9 @@ private fun PreviewArea(
                         val pose = if (layer.keyframes.isEmpty()) null
                         else ProjectOps.poseAt(layer.keyframes, now - layer.startMs, layer.keyframes.first())
                         if (still != null) {
+                            val gesture = rememberDragState()
+                            val itemHeightPx = frameHeightPx * layer.scale
+                            val itemWidthPx = itemHeightPx * still.width / still.height.coerceAtLeast(1)
                             Image(
                                 bitmap = still,
                                 contentDescription = null,
@@ -1380,15 +1399,35 @@ private fun PreviewArea(
                                         )
                                     )
                                     .height(frameHeight * layer.scale)
+                                    // Drag to move, pinch to resize, twist to turn; a tap opens its settings.
+                                    .itemGestures(
+                                        gesture,
+                                        enabled = layer.keyframes.isEmpty(),
+                                        onTap = { onEditLayer(layer.id) },
+                                        onEnd = { pan, zoom, turn ->
+                                            vm.updateLayer(layer.id) {
+                                                val nx = ProjectOps.movedBias(it.x, pan.x, frameWidthPx, itemWidthPx)
+                                                val ny = ProjectOps.movedBias(it.y, -pan.y, frameHeightPx, itemHeightPx)
+                                                it.copy(
+                                                    x = nx,
+                                                    y = ny,
+                                                    x2 = (it.x2 + nx - it.x).coerceIn(-1f, 1f),
+                                                    y2 = (it.y2 + ny - it.y).coerceIn(-1f, 1f),
+                                                    scale = (it.scale * zoom).coerceIn(0.03f, 2f),
+                                                    rotation = it.rotation - turn,
+                                                )
+                                            }
+                                        },
+                                    )
                                     .graphicsLayer(
                                         alpha = (anim.alpha * (pose?.opacity ?: layer.opacity)).coerceIn(0f, 1f),
-                                        scaleX = anim.scale * (pose?.scale ?: 1f),
-                                        scaleY = anim.scale * (pose?.scale ?: 1f),
-                                        translationX = anim.dx * frameWidthPx / 2f,
-                                        translationY = -anim.dy * frameHeightPx / 2f,
-                                        rotationZ = -((pose?.rotation ?: layer.rotation) + anim.rotation),
+                                        scaleX = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
+                                        scaleY = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
+                                        translationX = anim.dx * frameWidthPx / 2f + gesture.pan.x,
+                                        translationY = -anim.dy * frameHeightPx / 2f + gesture.pan.y,
+                                        rotationZ = -((pose?.rotation ?: layer.rotation) + anim.rotation) + gesture.turn,
                                     )
-                                    .clickable { onEditLayer(layer.id) },
+                                    .dragOutline(gesture),
                             )
                         }
                     }
@@ -1411,6 +1450,9 @@ private fun PreviewArea(
                         val bitmap = remember(look, heightPx) {
                             EffectFactory.renderText(look, heightPx).asImageBitmap()
                         }
+                        val gesture = rememberDragState()
+                        val textWidthPx = bitmap.width.toFloat()
+                        val textHeightPx = bitmap.height.toFloat()
                         Image(
                             bitmap = bitmap,
                             contentDescription = t.text,
@@ -1419,15 +1461,35 @@ private fun PreviewArea(
                                     if (pose != null) BiasAlignment(pose.x, -pose.y)
                                     else glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
                                 )
+                                // Drag to move, pinch to resize, twist to turn; a tap opens its settings.
+                                .itemGestures(
+                                    gesture,
+                                    enabled = t.keyframes.isEmpty(),
+                                    onTap = { onEditText(t.id) },
+                                    onEnd = { pan, zoom, turn ->
+                                        vm.updateText(t.id) {
+                                            val nx = ProjectOps.movedBias(it.x, pan.x, frameWidthPx, textWidthPx)
+                                            val ny = ProjectOps.movedBias(it.y, -pan.y, frameHeightPx, textHeightPx)
+                                            it.copy(
+                                                x = nx,
+                                                y = ny,
+                                                x2 = (it.x2 + nx - it.x).coerceIn(-1f, 1f),
+                                                y2 = (it.y2 + ny - it.y).coerceIn(-1f, 1f),
+                                                size = (it.size * zoom).coerceIn(0.02f, 0.5f),
+                                                rotation = it.rotation - turn,
+                                            )
+                                        }
+                                    },
+                                )
                                 .graphicsLayer(
                                     alpha = (anim.alpha * (pose?.opacity ?: t.opacity)).coerceIn(0f, 1f),
-                                    scaleX = anim.scale * (pose?.scale ?: 1f),
-                                    scaleY = anim.scale * (pose?.scale ?: 1f),
-                                    translationX = anim.dx * frameWidthPx / 2f,
-                                    translationY = -anim.dy * frameHeightPx / 2f,
-                                    rotationZ = -((pose?.rotation ?: t.rotation) + anim.rotation),
+                                    scaleX = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
+                                    scaleY = anim.scale * (pose?.scale ?: 1f) * gesture.zoom,
+                                    translationX = anim.dx * frameWidthPx / 2f + gesture.pan.x,
+                                    translationY = -anim.dy * frameHeightPx / 2f + gesture.pan.y,
+                                    rotationZ = -((pose?.rotation ?: t.rotation) + anim.rotation) + gesture.turn,
                                 )
-                                .clickable { onEditText(t.id) },
+                                .dragOutline(gesture),
                         )
                     }
                 }
