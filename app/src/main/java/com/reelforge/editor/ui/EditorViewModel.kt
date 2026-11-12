@@ -34,6 +34,11 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.reelforge.editor.data.AssetCatalog
+import com.reelforge.editor.data.SocialSticker
+import com.reelforge.editor.data.SoundEffect
+import com.reelforge.editor.data.SoundMaker
+import com.reelforge.editor.data.StickerAsset
+import com.reelforge.editor.data.StickerCatalog
 import com.reelforge.editor.data.AssetDownloader
 import com.reelforge.editor.data.FontAsset
 import com.reelforge.editor.data.ProjectRepository
@@ -693,6 +698,94 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun removeStoreFont(asset: FontAsset) {
         AssetCatalog.fontFile(ctx, asset).delete()
         refreshInstalledFonts()
+    }
+
+    // ------------------------------------------------------------------ store
+
+    /** Stickers that can be downloaded on demand (see assets/sticker_catalog.json). */
+    val storeStickers: List<StickerAsset> = StickerCatalog.stickers(app)
+
+    var installedStickers by mutableStateOf(emptySet<String>())
+        private set
+
+    /** Codes of stickers that are downloading right now. */
+    val stickerBusy = mutableStateMapOf<String, Boolean>()
+
+    init {
+        refreshInstalledStickers()
+    }
+
+    private fun refreshInstalledStickers() {
+        installedStickers =
+            storeStickers.filter { StickerCatalog.file(ctx, it).length() > 0 }.map { it.code }.toSet()
+    }
+
+    /** Downloads the sticker if needed, then puts it on the video at the playhead. */
+    fun addSticker(asset: StickerAsset) {
+        if (project == null) return
+        val file = StickerCatalog.file(ctx, asset)
+        if (file.length() > 0) {
+            addImageLayer(Uri.fromFile(file))
+            return
+        }
+        if (stickerBusy.containsKey(asset.code)) return
+        stickerBusy[asset.code] = true
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    AssetDownloader.download(asset.url, file)
+                    checkNotNull(android.graphics.BitmapFactory.decodeFile(file.absolutePath)) { "not a picture" }
+                }.onFailure { file.delete() }.isSuccess
+            }
+            stickerBusy.remove(asset.code)
+            refreshInstalledStickers()
+            if (ok) addImageLayer(Uri.fromFile(file))
+            else message = "Could not download the sticker. Check the internet connection."
+        }
+    }
+
+    /** Deletes downloaded stickers that no project on screen is using. */
+    fun removeUnusedStickers() {
+        val used = project?.layers?.map { it.uri }?.toSet().orEmpty()
+        storeStickers.forEach { asset ->
+            val file = StickerCatalog.file(ctx, asset)
+            if (Uri.fromFile(file).toString() !in used) file.delete()
+        }
+        refreshInstalledStickers()
+    }
+
+    /** Adds one of the built-in channel buttons ("Subscribe", "Like", ...) at the playhead. */
+    fun addSocialSticker(sticker: SocialSticker) {
+        if (project == null) return
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                sticker.file(ctx).also { f ->
+                    if (f.length() == 0L) f.outputStream().use {
+                        sticker.render().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                }
+            }
+            val id = addImageLayer(Uri.fromFile(file))
+            if (id.isNotEmpty()) updateLayer(id) { it.copy(scale = 0.14f, y = -0.6f) }
+        }
+    }
+
+    /** Adds one of the built-in sound effects at the playhead. */
+    fun addSoundEffect(effect: SoundEffect) {
+        if (project == null) return
+        val start = playheadMs
+        viewModelScope.launch {
+            val (file, duration) = withContext(Dispatchers.IO) {
+                val samples = SoundMaker.samples(effect)
+                val f = effect.file(ctx)
+                if (f.length() == 0L) f.writeBytes(SoundMaker.wav(samples))
+                f to samples.size * 1000L / SoundMaker.SAMPLE_RATE
+            }
+            val clip = AudioClip(
+                uri = Uri.fromFile(file).toString(), title = effect.title, startMs = start, durationMs = duration,
+            )
+            mutate { it.copy(audio = it.audio + clip) }
+        }
     }
 
     // ------------------------------------------------------------ custom fonts

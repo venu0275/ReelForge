@@ -1072,3 +1072,33 @@ class LogicPerformanceTest {
         assertTrue("splits too slow: $took ms", took < 2_000)
     }
 }
+
+class StoreTest {
+
+    @Test fun `the shipped sticker catalog is well formed`() {
+        val file = listOf("src/main/assets/sticker_catalog.json", "app/src/main/assets/sticker_catalog.json")
+            .map { java.io.File(it) }.first { it.exists() }
+        val stickers = com.reelforge.editor.data.StickerCatalog.parse(file.readText())
+        assertTrue(stickers.size >= 60)
+        assertEquals("codes must be unique", stickers.size, stickers.map { it.code }.toSet().size)
+        for (s in stickers) {
+            assertTrue(s.code, s.code.matches(Regex("[0-9a-f]{4,5}")))
+            assertTrue(s.url, s.url.startsWith("https://") && s.url.endsWith("emoji_u${s.code}.png"))
+            assertTrue(s.code, s.label.isNotEmpty() && s.group.isNotBlank())
+        }
+    }
+
+    @Test fun `every sound effect is audible, short and repeatable`() {
+        for (effect in com.reelforge.editor.data.SoundEffect.entries) {
+            val a = com.reelforge.editor.data.SoundMaker.samples(effect)
+            val b = com.reelforge.editor.data.SoundMaker.samples(effect)
+            assertTrue(effect.name, a.contentEquals(b))
+            assertTrue(effect.name, a.size in 1_000..50_000)
+            val peak = a.maxOf { kotlin.math.abs(it.toInt()) }
+            assertTrue("${effect.name} peak $peak", peak in 6_000..Short.MAX_VALUE.toInt())
+            val wav = com.reelforge.editor.data.SoundMaker.wav(a)
+            assertEquals(44 + a.size * 2, wav.size)
+            assertEquals("RIFF", String(wav, 0, 4, Charsets.US_ASCII))
+        }
+    }
+}

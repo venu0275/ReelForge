@@ -36,6 +36,8 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Backdrop behind clips that do not fill the frame: black, a colour, or a blurred copy.
 - Fade styles: fade, slide, zoom (slide and zoom are rendered on export).
 - Voice changer (pitch presets) per clip.
+- Store: emoji stickers downloaded on demand (Noto Emoji, Apache 2.0), built-in Subscribe / Like /
+  Follow buttons and built-in sound effects (pop, ding, whoosh ...).
 - Custom fonts (import a .ttf / .otf) and a handwriting / drawing pad.
 - Two-point motion for text, stickers and image layers.
 - Background music: any audio file, volume, loop.

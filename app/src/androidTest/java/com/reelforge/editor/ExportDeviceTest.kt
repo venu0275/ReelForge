@@ -781,6 +781,52 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun store_everyStickerDownloadsAndDecodes() {
+        val stickers = com.reelforge.editor.data.StickerCatalog.stickers(context)
+        assertTrue("catalog is empty", stickers.size >= 60)
+        val broken = mutableListOf<String>()
+        for (sticker in stickers) {
+            val file = File(context.cacheDir, "stickertest_${sticker.code}.png")
+            try {
+                AssetDownloader.download(sticker.url, file)
+                val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                assertTrue("not a picture", bitmap != null && bitmap.width >= 64)
+            } catch (e: Throwable) {
+                broken += "${sticker.code}: ${e.message}"
+                log("STICKER BROKEN ${sticker.code}: ${e.message}")
+            } finally {
+                file.delete()
+            }
+        }
+        log("STICKERS ok ${stickers.size - broken.size}/${stickers.size}")
+        assertTrue("stickers that failed to download: $broken", broken.isEmpty())
+    }
+
+    @Test
+    fun store_buttonsAndSoundEffectsExport() {
+        val uri = solid(0xFF202020.toInt())
+        val layers = com.reelforge.editor.data.SocialSticker.entries.take(3).mapIndexed { i, sticker ->
+            val bitmap = sticker.render()
+            assertTrue(sticker.name, bitmap.width > bitmap.height && bitmap.getPixel(bitmap.width / 2, 4) == sticker.background)
+            val file = File(context.cacheDir, "social_$i.png")
+            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            com.reelforge.editor.model.ImageLayer(uri = Uri.fromFile(file).toString(), scale = 0.14f, y = -0.6f + i * 0.5f, startMs = 0, endMs = 2_000)
+        }
+        val sounds = com.reelforge.editor.data.SoundEffect.entries.mapIndexed { i, effect ->
+            val samples = com.reelforge.editor.data.SoundMaker.samples(effect)
+            val file = File(context.cacheDir, "fx_$i.wav")
+            file.writeBytes(com.reelforge.editor.data.SoundMaker.wav(samples))
+            val duration = MediaUtils.audioDurationMs(context, Uri.fromFile(file))
+            assertNear(effect.name, samples.size * 1000L / 44100, duration, 60)
+            AudioClip(uri = Uri.fromFile(file).toString(), title = effect.title, startMs = i * 200L, durationMs = duration)
+        }
+        val project = Project(name = "store", clips = listOf(imageClip(uri, 2_000)), layers = layers, audio = sounds)
+        val info = inspect(exportOk(project).file!!)
+        assertNear("length", 2_000, info.durationMs, 600)
+        assertTrue("sound effects must be in the export", info.hasAudio)
+    }
+
+    @Test
     fun fontStore_everyCatalogFontDownloadsAndLoads() {
         val fonts = AssetCatalog.fonts(context)
         assertTrue("catalog is empty", fonts.size >= 20)

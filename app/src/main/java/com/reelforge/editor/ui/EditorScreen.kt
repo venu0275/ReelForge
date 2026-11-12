@@ -91,6 +91,7 @@ enum class Panel(val title: String) {
     AUDIO("Voice and sounds"),
     MUSIC("Music"),
     BACKGROUND("Backdrop"),
+    STORE("Store"),
     DRAW("Draw"),
     EXPORT("Export"),
 }
@@ -300,6 +301,7 @@ fun EditorScreen(vm: EditorViewModel) {
                 pickSound = { pickSound.launch(arrayOf("audio/*")) },
             )
             Panel.MUSIC -> MusicPanel(vm, project) { pickAudio.launch(arrayOf("audio/*")) }
+            Panel.STORE -> StorePanel(vm)
             Panel.EXPORT -> Unit
         }
     }
@@ -557,6 +559,7 @@ private fun EditorMenu(
                 MenuTile("Voice", enabled = hasClips) { openPanel(Panel.AUDIO) }
                 MenuTile("Music") { openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
+                MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
             } else {
                 val id = clip.id
                 val isVideo = clip.type == ClipType.VIDEO
