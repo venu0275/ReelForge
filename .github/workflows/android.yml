@@ -71,10 +71,10 @@ jobs:
           script: |
             adb logcat -G 32M
             adb logcat -c
-            ./gradlew connectedDebugAndroidTest --stacktrace || touch tests-failed
-            adb logcat -d -s ReelForgeTest:V TestRunner:I
+            timeout 1500 ./gradlew connectedDebugAndroidTest --stacktrace || touch tests-failed
+            timeout 120 adb logcat -d -s ReelForgeTest:V TestRunner:I || true
             mkdir -p screenshots
-            adb pull /sdcard/Pictures/ReelForgeTest/. screenshots/ || true
+            timeout 120 adb pull /sdcard/Pictures/ReelForgeTest/. screenshots/ || true
             test ! -f tests-failed
       - name: Publish screenshots to the ci-screenshots branch
         if: always() && github.ref == 'refs/heads/main'
