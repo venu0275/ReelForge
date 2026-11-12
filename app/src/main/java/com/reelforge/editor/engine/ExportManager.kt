@@ -231,7 +231,9 @@ object ExportManager {
             }
         }
         project.music?.let { music ->
-            buildMusicSequence(music, total)?.let { sequences += it }
+            buildMusicSequence(music, total) {
+                Uri.fromFile(MediaUtils.silenceFile(context, SILENCE_MS))
+            }?.let { sequences += it }
         }
         if (project.audio.isNotEmpty()) {
             val silence = Uri.fromFile(MediaUtils.silenceFile(context, SILENCE_MS))
@@ -525,32 +527,48 @@ object ExportManager {
      * Background music laid end to end until it covers the video (when looping), with the last
      * piece cut to fit. The fade-in goes on the first piece and the fade-out on the last.
      */
-    private fun buildMusicSequence(music: MusicTrack, videoDurationMs: Long): EditedMediaItemSequence? {
-        if (videoDurationMs <= 0) return null
+    /**
+     * Background music: silence up to where it starts, then the song from its offset, repeated
+     * when looping, until it is cut off or the video ends.
+     */
+    private fun buildMusicSequence(
+        music: MusicTrack,
+        videoDurationMs: Long,
+        silence: () -> Uri,
+    ): EditedMediaItemSequence? {
+        val start = music.startMs.coerceIn(0, videoDurationMs)
+        val span = music.windowEnd(videoDurationMs) - start
+        if (span < 100) return null
         val known = music.durationMs > 0
-        val length = if (known) music.durationMs else videoDurationMs
-        val pieces = mutableListOf<Long>()
-        var remaining = videoDurationMs
+        var from = if (known) music.offsetMs % music.durationMs else music.offsetMs
+        val pieces = mutableListOf<Pair<Long, Long>>() // (position in the file, length)
+        var remaining = span
         while (remaining > 0 && pieces.size < MAX_MUSIC_REPEATS) {
-            val piece = min(length, remaining)
-            pieces += piece
+            val piece = if (known) min(music.durationMs - from, remaining) else remaining
+            if (piece >= 20) pieces += from to piece // slivers shorter than a frame are skipped
             remaining -= piece
+            from = 0
             if (!music.loop) break
         }
+        if (pieces.isEmpty()) return null
+
         val uri = Uri.parse(music.uri)
-        val items = pieces.mapIndexed { i, piece ->
-            val media = MediaItem.Builder().setUri(uri).apply {
-                if (!known || piece < length) {
-                    setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder().setEndPositionMs(piece).build()
-                    )
-                }
-            }.build()
+        val items = mutableListOf<EditedMediaItem>()
+        if (start >= 20) items += silenceItems(silence(), start)
+        pieces.forEachIndexed { i, (position, length) ->
+            val media = MediaItem.Builder().setUri(uri)
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(position)
+                        .setEndPositionMs(position + length)
+                        .build()
+                )
+                .build()
             val fadeIn = if (i == 0) music.fadeInMs else 0L
             val fadeOut = if (i == pieces.lastIndex) music.fadeOutMs else 0L
-            EditedMediaItem.Builder(media)
+            items += EditedMediaItem.Builder(media)
                 .setRemoveVideo(true)
-                .setEffects(Effects(audioChain(music.volume, piece, fadeIn, fadeOut), emptyList()))
+                .setEffects(Effects(audioChain(music.volume, length, fadeIn, fadeOut), emptyList()))
                 .build()
         }
         return EditedMediaItemSequence(items)

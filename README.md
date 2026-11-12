@@ -16,6 +16,8 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Select, reorder, duplicate, delete, split at the playhead, replace a clip's media.
 - One-tap cuts at the playhead for clips, text, image and video layers and sounds: Trim left,
   Split, Trim right, plus Split + freeze for video clips; Fine trim for exact values.
+- Tap any bar on the timeline (text, layer, sound, music) to select it and get its cut,
+  edit and delete actions; background music can start later, stop earlier and be slid along.
 - Undo / redo for every edit.
 - Per clip: speed (0.25x–4x), volume (0–200%) and mute, rotate, mirror, zoom, fit or fill
   the frame, opacity, 8 colour filters, brightness / contrast / saturation, fade in / fade out,

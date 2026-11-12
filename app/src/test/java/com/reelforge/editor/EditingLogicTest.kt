@@ -399,6 +399,52 @@ class EdgeTrimTest {
         }
     }
 
+    @Test fun `music can start later, stop earlier and carries on from the same point`() {
+        val song = MusicTrack("u", "Song", durationMs = 4_000, loop = true)
+        val p = project(video("a", 10_000)).copy(music = song)
+        assertEquals(10_000, song.windowEnd(10_000))
+
+        // Start here: the music begins at 3 s, from 3 s into the song.
+        val left = ProjectOps.cutMusic(p, 3_000, Cut.LEFT)!!.music!!
+        assertEquals(3_000, left.startMs)
+        assertEquals(3_000, left.offsetMs)
+        assertEquals(3_000, left.filePosition(3_000))
+        assertEquals(0, left.filePosition(4_000)) // loops back to the start of the song
+
+        // Stop here.
+        val right = ProjectOps.cutMusic(p, 6_000, Cut.RIGHT)!!.music!!
+        assertEquals(6_000, right.windowEnd(10_000))
+        assertEquals(0, right.startMs)
+
+        // Both, then slide it: the stretch moves, the part of the song does not change.
+        val both = ProjectOps.cutMusic(p.copy(music = left), 6_000, Cut.RIGHT)!!
+        val moved = ProjectOps.shiftMusic(both, 1_500).music!!
+        assertEquals(4_500, moved.startMs)
+        assertEquals(7_500, moved.stopMs)
+        assertEquals(3_000, moved.offsetMs)
+        assertEquals(0, ProjectOps.shiftMusic(both, -99_000).music!!.startMs)
+    }
+
+    @Test fun `music that does not loop ends when the song ends`() {
+        val song = MusicTrack("u", "Song", durationMs = 4_000, loop = false)
+        assertEquals(4_000, song.windowEnd(10_000))
+        assertEquals(6_500, song.copy(startMs = 3_000, offsetMs = 500).windowEnd(10_000))
+        assertEquals(10_000, song.copy(startMs = 8_000).windowEnd(10_000))
+        // An unknown song length is treated as covering the video.
+        assertEquals(10_000, song.copy(durationMs = 0).windowEnd(10_000))
+    }
+
+    @Test fun `music cuts are refused for split, outside the music, or with no music`() {
+        val song = MusicTrack("u", "Song", durationMs = 4_000, loop = false) // covers 0–4 s
+        val p = project(video("a", 10_000)).copy(music = song)
+        assertNull(ProjectOps.cutMusic(p, 2_000, Cut.SPLIT))
+        assertNull(ProjectOps.cutMusic(p, 6_000, Cut.LEFT))
+        assertNull(ProjectOps.cutMusic(p, 100, Cut.RIGHT))
+        assertNull(ProjectOps.cutMusic(project(video("a", 10_000)), 2_000, Cut.LEFT))
+        val noMusic = project(video("a", 10_000))
+        assertSame(noMusic, ProjectOps.shiftMusic(noMusic, 500))
+    }
+
     @Test fun `replace keeps the edits and fits the new media`() {
         val styled = video("a", 10_000).copy(
             trimStartMs = 2_000, trimEndMs = 6_000, filter = FilterPreset.SEPIA, speed = 2f, fadeInMs = 300,
@@ -717,7 +763,10 @@ class ProjectJsonTest {
                 fontPath = "/data/fonts/x.ttf", moving = true, x2 = 0.9f, y2 = -0.9f,
             )
         ),
-        music = MusicTrack("content://music/1", "Song", 180_000, volume = 0.3f, loop = false),
+        music = MusicTrack(
+            "content://music/1", "Song", 180_000, volume = 0.3f, loop = false,
+            fadeInMs = 500, fadeOutMs = 900, startMs = 2_000, stopMs = 9_000, offsetMs = 30_000,
+        ),
         layers = listOf(
             ImageLayer(
                 id = "l1", uri = "content://img/1", scale = 0.5f, x = 0.2f, y = -0.2f, opacity = 0.7f,

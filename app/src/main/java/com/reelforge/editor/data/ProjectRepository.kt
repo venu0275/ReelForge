@@ -124,6 +124,9 @@ object ProjectJson {
                 put("loop", m.loop)
                 put("fadeInMs", m.fadeInMs)
                 put("fadeOutMs", m.fadeOutMs)
+                put("startMs", m.startMs)
+                put("stopMs", m.stopMs)
+                put("offsetMs", m.offsetMs)
             })
         }
     }
@@ -257,6 +260,9 @@ object ProjectJson {
                 loop = m.optBoolean("loop", true),
                 fadeInMs = m.optLong("fadeInMs", 0),
                 fadeOutMs = m.optLong("fadeOutMs", 0),
+                startMs = m.optLong("startMs", 0),
+                stopMs = m.optLong("stopMs", 0),
+                offsetMs = m.optLong("offsetMs", 0),
             )
         }
         val layersJson = o.optJSONArray("layers") ?: JSONArray()

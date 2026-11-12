@@ -361,6 +361,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         applyCut(ProjectOps.cutVideoLayer(p, id, playheadMs, cut))
     }
 
+    fun cutMusic(cut: Cut) {
+        applyCut(ProjectOps.cutMusic(project ?: return, playheadMs, cut))
+    }
+
+    fun shiftMusic(deltaMs: Long) = mutate { ProjectOps.shiftMusic(it, deltaMs) }
+
+    /** Lets the music run over the whole video again. */
+    fun resetMusicRange() = mutate { p ->
+        p.copy(music = p.music?.copy(startMs = 0, stopMs = 0, offsetMs = 0))
+    }
+
     fun cutAudio(id: String, cut: Cut) {
         applyCut(ProjectOps.cutAudio(project ?: return, id, playheadMs, cut))
     }
@@ -959,16 +970,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun startMusic() {
-        val music = project?.music ?: return
-        val position = when {
-            music.durationMs <= 0 -> playheadMs
-            music.loop -> playheadMs % music.durationMs
-            else -> playheadMs
-        }
-        if (!music.loop && music.durationMs in 1..position) {
+        val p = project ?: return
+        val music = p.music ?: return
+        // Outside the part of the timeline the music covers, it stays quiet.
+        if (playheadMs < music.startMs || playheadMs >= music.windowEnd(p.durationMs)) {
             musicPlayer.pause()
             return
         }
+        val position = music.filePosition(playheadMs)
         if (kotlin.math.abs(musicPlayer.currentPosition - position) > 300) {
             musicPlayer.seekTo(position)
         }
@@ -1046,11 +1055,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val gain = fadeAlpha(local, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
         player.volume = (if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)) * gain
         p.music?.let { music ->
-            // Music fades in at the start and out where it (or the video) ends.
-            val end = if (music.loop || music.durationMs <= 0) p.durationMs
-            else minOf(music.durationMs, p.durationMs)
+            // Music plays only inside its own stretch of the timeline, fading at both ends.
+            val end = music.windowEnd(p.durationMs)
+            val inside = playheadMs >= music.startMs && playheadMs < end
+            if (inside && !musicPlayer.isPlaying) startMusic()
+            if (!inside && musicPlayer.isPlaying) musicPlayer.pause()
             musicPlayer.volume = music.volume.coerceIn(0f, 1f) *
-                fadeAlpha(playheadMs, end, music.fadeInMs, music.fadeOutMs)
+                fadeAlpha(playheadMs - music.startMs, end - music.startMs, music.fadeInMs, music.fadeOutMs)
         }
         syncVoice(p)
         syncLayers(p, true)

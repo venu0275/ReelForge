@@ -601,8 +601,18 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
         return
     }
     Text(music.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    Text(MediaUtils.formatTime(music.durationMs), style = MaterialTheme.typography.bodySmall)
+    val musicEnd = music.windowEnd(project.durationMs)
+    Text(
+        "Song length ${MediaUtils.formatTime(music.durationMs)} · plays " +
+            "${MediaUtils.formatTime(music.startMs)} – ${MediaUtils.formatTime(musicEnd)}",
+        style = MaterialTheme.typography.bodySmall,
+    )
     Spacer(Modifier.height(8.dp))
+    // Trim left = start the music here; Trim right = stop it here.
+    CutRow(vm.canCut(music.startMs, musicEnd), showSplit = false) { cut -> vm.cutMusic(cut) }
+    if (music.startMs > 0 || music.stopMs > 0 || music.offsetMs > 0) {
+        TextButton(onClick = { vm.resetMusicRange() }) { Text("Play over the whole video again") }
+    }
     CommitSlider(
         label = "Volume",
         value = music.volume,

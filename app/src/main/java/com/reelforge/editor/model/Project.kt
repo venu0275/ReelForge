@@ -195,7 +195,23 @@ data class MusicTrack(
     val loop: Boolean = true,
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
-)
+    val startMs: Long = 0,    // where on the timeline the music begins
+    val stopMs: Long = 0,     // where it is cut off; 0 = plays as long as it can
+    val offsetMs: Long = 0,   // where in the audio file it begins
+) {
+    /** Where the music ends on a video [videoMs] long. */
+    fun windowEnd(videoMs: Long): Long {
+        val natural = if (loop || durationMs <= 0) videoMs
+        else minOf(videoMs, startMs + durationMs - offsetMs % durationMs)
+        return if (stopMs > startMs) minOf(stopMs, natural) else natural
+    }
+
+    /** The position in the audio file that plays at [timelineMs]. */
+    fun filePosition(timelineMs: Long): Long {
+        val raw = offsetMs + (timelineMs - startMs)
+        return if (durationMs > 0 && loop) raw % durationMs else raw
+    }
+}
 
 data class Project(
     val id: String = newId(),

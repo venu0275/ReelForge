@@ -660,6 +660,26 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun musicWithLateStartEarlyStopAndOffset_export() {
+        val audio = baseVideo(1_500)
+        val uri = photo("music_window", 640, 360, Color.rgb(60, 40, 110))
+        val base = Project(name = "window", clips = listOf(imageClip(uri, 4_000)))
+        val song = MusicTrack(Uri.fromFile(audio).toString(), "song", 1_500, loop = true)
+        val cases = listOf(
+            song.copy(startMs = 1_200, offsetMs = 700),                 // starts late, mid-song, loops on
+            song.copy(stopMs = 2_300, fadeOutMs = 500),                 // stops early
+            song.copy(startMs = 900, stopMs = 3_100, offsetMs = 1_450), // both, offset near the song's end
+            song.copy(loop = false, startMs = 3_200),                   // short tail, no loop
+            song.copy(startMs = 9_000),                                 // starts after the video: ignored
+        )
+        cases.forEachIndexed { i, music ->
+            val info = inspect(exportOk(base.copy(music = music)).file!!)
+            assertNear("case $i: music must not change the video length", 4_000, info.durationMs, 700)
+            assertTrue("case $i", info.hasAudio)
+        }
+    }
+
+    @Test
     fun fontStore_everyCatalogFontDownloadsAndLoads() {
         val fonts = AssetCatalog.fonts(context)
         assertTrue("catalog is empty", fonts.size >= 20)

@@ -69,6 +69,7 @@ import com.reelforge.editor.engine.overlayAnim
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
+import com.reelforge.editor.model.Cut
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.ProjectOps
@@ -179,9 +180,16 @@ fun EditorScreen(vm: EditorViewModel) {
     }
 
     // Back steps out one level at a time: tool, then selection, then the project.
+    // A text, layer, sound or the music picked on the timeline. Clips have their own selection.
+    var selectedItem by remember { mutableStateOf<Selected?>(null) }
+    LaunchedEffect(vm.selectedClipId) {
+        if (vm.selectedClipId != null) selectedItem = null
+    }
+
     BackHandler {
         when {
             panel != null -> panel = null
+            selectedItem != null -> selectedItem = null
             vm.selectedClipId != null -> vm.selectedClipId = null
             else -> vm.closeProject()
         }
@@ -211,15 +219,32 @@ fun EditorScreen(vm: EditorViewModel) {
         Timeline(
             vm, project, modifier,
             addMedia = addMedia,
-            onEditText = editText,
-            onEditLayer = editLayer,
-            onOpenAudio = { panel = Panel.AUDIO },
-            onOpenMusic = { panel = Panel.MUSIC },
+            selectedId = selectedItem?.id,
+            onSelect = { kind, id ->
+                // Tapping a bar selects it (its actions show in the menu); tapping again clears it.
+                val picked = Selected(kind, id)
+                selectedItem = if (selectedItem == picked) null else picked
+                if (selectedItem != null) vm.selectedClipId = null
+            },
         )
     }
 
     val menu: @Composable (Modifier, Boolean) -> Unit = { modifier, showExport ->
-        EditorMenu(
+        val item = selectedItem?.takeIf { it.existsIn(project) }
+        if (item != null) {
+            ItemMenu(
+                vm, project, modifier, item,
+                onBack = { selectedItem = null },
+                onEdit = {
+                    when (item.kind) {
+                        ItemKind.TEXT -> editText(item.id)
+                        ItemKind.LAYER, ItemKind.VIDEO -> editLayer(item.id)
+                        ItemKind.SOUND -> panel = Panel.AUDIO
+                        ItemKind.MUSIC -> panel = Panel.MUSIC
+                    }
+                },
+            )
+        } else EditorMenu(
             vm, project, modifier,
             showExport = showExport,
             addMedia = addMedia,
@@ -569,6 +594,122 @@ private fun EditorMenu(
     }
 }
 
+/** The kinds of thing, other than clips, that can be selected on the timeline. */
+enum class ItemKind { TEXT, LAYER, VIDEO, SOUND, MUSIC }
+
+private const val MUSIC_ID = "background-music"
+
+private data class Selected(val kind: ItemKind, val id: String) {
+    fun existsIn(project: Project): Boolean = when (kind) {
+        ItemKind.TEXT -> project.texts.any { it.id == id }
+        ItemKind.LAYER -> project.layers.any { it.id == id }
+        ItemKind.VIDEO -> project.videoLayers.any { it.id == id }
+        ItemKind.SOUND -> project.audio.any { it.id == id }
+        ItemKind.MUSIC -> project.music != null
+    }
+}
+
+/**
+ * The menu for a text, layer, sound or the music selected on the timeline: cuts at the red line,
+ * Edit for everything else, and Delete in the corner.
+ */
+@Composable
+private fun ItemMenu(
+    vm: EditorViewModel,
+    project: Project,
+    modifier: Modifier,
+    item: Selected,
+    onBack: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    val id = item.id
+    // Title and the stretch of the timeline the item covers.
+    val (title, start, end) = when (item.kind) {
+        ItemKind.TEXT -> project.texts.first { it.id == id }.let {
+            Triple("Text · " + it.text.replace("\n", " ").take(16), it.startMs, it.endMs)
+        }
+        ItemKind.LAYER -> project.layers.first { it.id == id }.let {
+            Triple("Image layer", it.startMs, it.endMs)
+        }
+        ItemKind.VIDEO -> project.videoLayers.first { it.id == id }.let {
+            Triple("Video layer", it.startMs, it.startMs + it.durationMs)
+        }
+        ItemKind.SOUND -> project.audio.first { it.id == id }.let {
+            Triple("Sound · " + it.title.take(16), it.startMs, it.startMs + it.durationMs)
+        }
+        ItemKind.MUSIC -> project.music!!.let {
+            Triple("Music · " + it.title.take(16), it.startMs, it.windowEnd(project.durationMs))
+        }
+    }
+    val cut: (Cut) -> Unit = { which ->
+        when (item.kind) {
+            ItemKind.TEXT -> vm.cutText(id, which)
+            ItemKind.LAYER -> vm.cutLayer(id, which)
+            ItemKind.VIDEO -> vm.cutVideoLayer(id, which)
+            ItemKind.SOUND -> vm.cutAudio(id, which)
+            ItemKind.MUSIC -> vm.cutMusic(which)
+        }
+    }
+    val delete: () -> Unit = {
+        when (item.kind) {
+            ItemKind.TEXT -> vm.deleteText(id)
+            ItemKind.LAYER -> vm.deleteLayer(id)
+            ItemKind.VIDEO -> vm.deleteVideoLayer(id)
+            ItemKind.SOUND -> vm.deleteAudioClip(id)
+            ItemKind.MUSIC -> vm.removeMusic()
+        }
+    }
+    val canCut = vm.canCut(start, end)
+
+    Column(modifier) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 4.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to main menu")
+            }
+            Text(
+                title,
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            IconButton(onClick = delete) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete item")
+            }
+        }
+        Text(
+            if (canCut) {
+                "Trim left removes what is before the red line. Trim right removes what is after it."
+            } else {
+                "To trim, move the red line onto this bar. Long-press the bar to slide it."
+            },
+            modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+            Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp)
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            MenuTile("Trim left", enabled = canCut, accent = true, icon = CutKind.LEFT) { cut(Cut.LEFT) }
+            if (item.kind != ItemKind.MUSIC) {
+                MenuTile("Split", enabled = canCut, accent = true, icon = CutKind.SPLIT) { cut(Cut.SPLIT) }
+            }
+            MenuTile("Trim right", enabled = canCut, accent = true, icon = CutKind.RIGHT) { cut(Cut.RIGHT) }
+            MenuTile("Edit") { onEdit() }
+            if (item.kind == ItemKind.TEXT) MenuTile("Copy") { vm.duplicateText(id) }
+        }
+    }
+}
+
 @Composable
 private fun MenuTile(
     label: String,
@@ -625,10 +766,8 @@ private fun Timeline(
     project: Project,
     modifier: Modifier,
     addMedia: () -> Unit,
-    onEditText: (String) -> Unit,
-    onEditLayer: (String) -> Unit,
-    onOpenAudio: () -> Unit,
-    onOpenMusic: () -> Unit,
+    selectedId: String?,
+    onSelect: (ItemKind, String) -> Unit,
 ) {
     val density = LocalDensity.current
     val scroll = rememberScrollState()
@@ -746,7 +885,7 @@ private fun Timeline(
                         ProjectOps.snapStart(startMs + deltaMs, lengthMs, points, snapMs)
                     }
                 if (textBars.isNotEmpty()) {
-                    BarRow(textBars, pxPerMs, Color(0xFF7C4DFF), onEditText) { id, deltaMs ->
+                    BarRow(textBars, pxPerMs, Color(0xFF7C4DFF), selectedId, { onSelect(ItemKind.TEXT, it) }) { id, deltaMs ->
                         vm.updateText(id) {
                             val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
                             it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
@@ -754,14 +893,14 @@ private fun Timeline(
                     }
                 }
                 if (videoBars.isNotEmpty()) {
-                    BarRow(videoBars, pxPerMs, Color(0xFF1E88E5), onEditLayer) { id, deltaMs ->
+                    BarRow(videoBars, pxPerMs, Color(0xFF1E88E5), selectedId, { onSelect(ItemKind.VIDEO, it) }) { id, deltaMs ->
                         vm.updateVideoLayer(id) {
                             it.copy(startMs = dropAt(id, it.startMs, it.durationMs, deltaMs))
                         }
                     }
                 }
                 if (layerBars.isNotEmpty()) {
-                    BarRow(layerBars, pxPerMs, Color(0xFF009688), onEditLayer) { id, deltaMs ->
+                    BarRow(layerBars, pxPerMs, Color(0xFF009688), selectedId, { onSelect(ItemKind.LAYER, it) }) { id, deltaMs ->
                         vm.updateLayer(id) {
                             val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
                             it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
@@ -769,23 +908,15 @@ private fun Timeline(
                     }
                 }
                 if (audioBars.isNotEmpty()) {
-                    BarRow(audioBars, pxPerMs, Color(0xFF43A047), { onOpenAudio() }) { id, deltaMs ->
+                    BarRow(audioBars, pxPerMs, Color(0xFF43A047), selectedId, { onSelect(ItemKind.SOUND, it) }) { id, deltaMs ->
                         vm.updateAudioClip(id) { it.copy(startMs = dropAt(id, it.startMs, it.durationMs, deltaMs)) }
                     }
                 }
                 project.music?.let { music ->
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(ROW_HEIGHT)
-                            .padding(vertical = 2.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFFEF6C00))
-                            .clickable(onClick = onOpenMusic)
-                            .padding(horizontal = 6.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Text("♪ ${music.title}", fontSize = 11.sp, maxLines = 1, color = Color.White)
+                    // The music bar covers only the stretch of the video where the music plays.
+                    val bar = Bar(MUSIC_ID, "♪ ${music.title}", music.startMs, music.windowEnd(total))
+                    BarRow(listOf(bar), pxPerMs, Color(0xFFEF6C00), selectedId, { onSelect(ItemKind.MUSIC, it) }) { _, deltaMs ->
+                        vm.shiftMusic(deltaMs)
                     }
                 }
             }
@@ -1010,6 +1141,7 @@ private fun BarRow(
     bars: List<Bar>,
     pxPerMs: Float,
     color: Color,
+    selectedId: String?,
     onTap: (String) -> Unit,
     onMove: (id: String, deltaMs: Long) -> Unit,
 ) {
@@ -1030,6 +1162,11 @@ private fun BarRow(
                         .padding(vertical = 2.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(color.copy(alpha = if (drag != 0f) 0.6f else 0.9f))
+                        .then(
+                            if (bar.id == selectedId) {
+                                Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                            } else Modifier
+                        )
                         .clickable { onTap(bar.id) }
                         .pointerInput(bar.id) {
                             detectDragGesturesAfterLongPress(

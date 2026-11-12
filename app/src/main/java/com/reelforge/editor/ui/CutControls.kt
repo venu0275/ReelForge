@@ -82,7 +82,7 @@ fun CutIcon(kind: CutKind, modifier: Modifier = Modifier) {
  * buttons are greyed out unless the red line is on the item.
  */
 @Composable
-fun CutRow(enabled: Boolean, onCut: (Cut) -> Unit) {
+fun CutRow(enabled: Boolean, showSplit: Boolean = true, onCut: (Cut) -> Unit) {
     Column {
         Text("Cut at the red line", style = MaterialTheme.typography.labelLarge)
         Row(
@@ -90,7 +90,9 @@ fun CutRow(enabled: Boolean, onCut: (Cut) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             CutButton("Trim left", CutKind.LEFT, enabled, Modifier.weight(1f)) { onCut(Cut.LEFT) }
-            CutButton("Split", CutKind.SPLIT, enabled, Modifier.weight(1f)) { onCut(Cut.SPLIT) }
+            if (showSplit) {
+                CutButton("Split", CutKind.SPLIT, enabled, Modifier.weight(1f)) { onCut(Cut.SPLIT) }
+            }
             CutButton("Trim right", CutKind.RIGHT, enabled, Modifier.weight(1f)) { onCut(Cut.RIGHT) }
         }
         if (!enabled) {

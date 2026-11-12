@@ -197,6 +197,33 @@ object ProjectOps {
         return project.copy(audio = project.audio.flatMap { if (it.id == id) pieces else listOf(it) })
     }
 
+    /**
+     * Trims the background music at the playhead: [Cut.LEFT] makes it start there (carrying on
+     * from the same point in the song), [Cut.RIGHT] makes it stop there. Music is one track, so
+     * it cannot be split.
+     */
+    fun cutMusic(project: Project, playheadMs: Long, cut: Cut): Project? {
+        val music = project.music ?: return null
+        if (cut == Cut.SPLIT) return null
+        rangeCutPoint(music.startMs, music.windowEnd(project.durationMs), playheadMs) ?: return null
+        val trimmed = if (cut == Cut.LEFT) {
+            music.copy(startMs = playheadMs, offsetMs = music.filePosition(playheadMs), fadeInMs = music.fadeInMs)
+        } else {
+            music.copy(stopMs = playheadMs)
+        }
+        return project.copy(music = trimmed)
+    }
+
+    /** Slides the music along the timeline without changing which part of the song plays. */
+    fun shiftMusic(project: Project, deltaMs: Long): Project {
+        val music = project.music ?: return project
+        val start = (music.startMs + deltaMs).coerceAtLeast(0)
+        val moved = start - music.startMs
+        return project.copy(
+            music = music.copy(startMs = start, stopMs = if (music.stopMs > 0) music.stopMs + moved else 0)
+        )
+    }
+
     /** Shortest clip an edge drag can leave, in source time. */
     const val MIN_CLIP_MS = 300L
 
