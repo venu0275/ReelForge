@@ -28,6 +28,8 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
@@ -176,7 +178,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private var lastScrubSeekAt = 0L
 
     val player: ExoPlayer = ExoPlayer.Builder(app).build()
-    private val musicPlayer: ExoPlayer = ExoPlayer.Builder(app).build()
+    // Music files are often long MP3s with no seek table; without this setting the player cannot
+    // jump into the middle of them and keeps restarting from the beginning.
+    private val musicPlayer: ExoPlayer = ExoPlayer.Builder(app)
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(app, DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true))
+        )
+        .build()
+    private var lastMusicSeekAt = 0L
     private val voicePlayer: ExoPlayer = ExoPlayer.Builder(app).build()
     private var voiceClipId: String? = null
 
@@ -635,6 +644,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     title = MediaUtils.displayName(ctx, uri),
                     durationMs = MediaUtils.audioDurationMs(ctx, uri),
                 )
+            }
+            val videoMs: Long = project?.durationMs ?: 0L
+            if (videoMs > 0 && track.durationMs > videoMs + 1_000) {
+                // Longer than the video: it plays up to the end of the video and fades out there.
+                mutate { it.copy(music = track.copy(fadeOutMs = minOf(2_000L, videoMs / 4))) }
+                message = "Music is ${MediaUtils.formatTime(track.durationMs)}, video is " +
+                    "${MediaUtils.formatTime(videoMs)}. The music plays to the end of the video and fades out."
+                return@launch
             }
             mutate { it.copy(music = track) }
         }
@@ -1323,7 +1340,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val position = music.filePosition(playheadMs)
-        if (kotlin.math.abs(musicPlayer.currentPosition - position) > 300) {
+        val now = SystemClock.elapsedRealtime()
+        // Line the music up with the video, but never more than once a second: a long file can
+        // take a moment to load, and seeking again while it loads would stop it ever starting.
+        if (kotlin.math.abs(musicPlayer.currentPosition - position) > 300 && now - lastMusicSeekAt > 1_000) {
+            lastMusicSeekAt = now
             musicPlayer.seekTo(position)
         }
         musicPlayer.play()
@@ -1403,8 +1424,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             // Music plays only inside its own stretch of the timeline, fading at both ends.
             val end = music.windowEnd(p.durationMs)
             val inside = playheadMs >= music.startMs && playheadMs < end
-            if (inside && !musicPlayer.isPlaying) startMusic()
-            if (!inside && musicPlayer.isPlaying) musicPlayer.pause()
+            // "Asked to play" rather than "is playing": while a long file is still loading it is not
+            // playing yet, and it must be left alone to finish loading.
+            if (inside && !musicPlayer.playWhenReady) startMusic()
+            if (!inside && musicPlayer.playWhenReady) musicPlayer.pause()
             musicPlayer.volume = music.volume.coerceIn(0f, 1f) *
                 fadeAlpha(playheadMs - music.startMs, end - music.startMs, music.fadeInMs, music.fadeOutMs)
         }
