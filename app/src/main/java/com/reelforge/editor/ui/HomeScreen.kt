@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.LaunchedEffect
@@ -69,6 +72,8 @@ fun HomeScreen(vm: EditorViewModel) {
     var renaming by remember { mutableStateOf<String?>(null) }
     var newName by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<String?>(null) }
+    // The project whose three-dot menu is open.
+    var menuFor by remember { mutableStateOf<String?>(null) }
     // 0 = newest first, 1 = by name, 2 = longest first.
     var sort by remember { mutableIntStateOf(0) }
     val sortLabels = listOf("Date modified", "Name", "Length")
@@ -141,7 +146,6 @@ fun HomeScreen(vm: EditorViewModel) {
             }
 
             items(shown, key = { it.id }) { p ->
-                var menu by remember { mutableStateOf(false) }
                 val first = p.clips.firstOrNull()
                 if (first != null) LaunchedEffect(first.uri) { vm.requestThumb(first) }
                 val thumb = first?.let { vm.thumbs[vm.thumbKey(it)] }
@@ -189,28 +193,43 @@ fun HomeScreen(vm: EditorViewModel) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Box {
-                        IconButton(onClick = { menu = true }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Project options")
-                        }
-                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("Rename") }, onClick = {
-                                menu = false
-                                renaming = p.id
-                                newName = p.name
-                            })
-                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = {
-                                menu = false
-                                vm.duplicateProject(p)
-                            })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = {
-                                menu = false
-                                deleting = p.id
-                            })
-                        }
+                    IconButton(onClick = { menuFor = p.id }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Project options")
                     }
                 }
             }
+        }
+    }
+
+    // The three-dot menu slides up from the bottom, one action per row.
+    val menuTarget = vm.projects.firstOrNull { it.id == menuFor }
+    if (menuTarget != null) {
+        ModalBottomSheet(onDismissRequest = { menuFor = null }) {
+            Text(
+                menuTarget.name,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            SheetRow(Icons.Default.PlayArrow, "Open") {
+                menuFor = null
+                vm.openProject(menuTarget)
+            }
+            SheetRow(Icons.Default.Edit, "Rename") {
+                menuFor = null
+                renaming = menuTarget.id
+                newName = menuTarget.name
+            }
+            SheetRow(Icons.Default.Add, "Duplicate") {
+                menuFor = null
+                vm.duplicateProject(menuTarget)
+            }
+            SheetRow(Icons.Default.Delete, "Delete") {
+                menuFor = null
+                deleting = menuTarget.id
+            }
+            Spacer(Modifier.height(24.dp))
         }
     }
 
@@ -286,5 +305,20 @@ fun HomeScreen(vm: EditorViewModel) {
             },
             dismissButton = { TextButton(onClick = { showNew = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** One action in the project menu: an icon and a label across the full width. */
+@Composable
+private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null)
+        Text(label, Modifier.padding(start = 20.dp), style = MaterialTheme.typography.bodyLarge)
     }
 }
