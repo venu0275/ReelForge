@@ -839,7 +839,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             when {
                 duration <= 0 -> message = "Could not download \"${result.title}\". Try another one."
                 asMusic -> mutate { it.copy(music = MusicTrack(uri = uri, title = result.title, durationMs = duration)) }
-                    .also { if (result.needsCredit) message = "Put this in your video description: ${result.credit}" }
                 else -> mutate {
                     it.copy(audio = it.audio + AudioClip(uri = uri, title = result.title, startMs = start, durationMs = duration))
                 }

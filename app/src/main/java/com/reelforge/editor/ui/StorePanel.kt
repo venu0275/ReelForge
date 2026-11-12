@@ -169,7 +169,7 @@ private fun MusicFinder(vm: EditorViewModel) {
                 Text(
                     listOf(
                         if (result.durationMs > 0) MediaUtils.formatTime(result.durationMs) else "",
-                        result.creator, if (result.needsCredit) "credit the artist" else "free, no credit",
+                        result.creator, "free, no credit",
                     ).filter { it.isNotEmpty() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
@@ -182,8 +182,8 @@ private fun MusicFinder(vm: EditorViewModel) {
         }
     }
     Text(
-        "Results come from openverse.org. \"Free, no credit\" ones are public domain. \"Credit the artist\" ones " +
-            "(CC BY) are free too, but you must name the artist where you post the video. Each one downloads when you pick it.",
+        "Only public-domain (CC0) results from openverse.org are shown: free to use, no payment and no credit " +
+            "needed. Each one downloads when you pick it.",
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 6.dp),
     )

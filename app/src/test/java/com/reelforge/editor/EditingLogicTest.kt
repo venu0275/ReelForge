@@ -1106,15 +1106,12 @@ class StoreTest {
 class MusicSearchTest {
     private val search = com.reelforge.editor.data.MusicSearch
 
-    @Test fun `sounds are public domain only and music falls back to public domain`() {
-        val urls = search.searchUrls(" happy piano ", soundEffects = false)
-        assertEquals(2, urls.size)
-        assertTrue(urls[0], urls[0].startsWith("https://api.openverse.org/v1/audio/?q=happy+piano&"))
-        assertTrue("license=by&" in urls[0] && "category=music" in urls[0])
-        assertTrue("license=cc0,pdm" in urls[1])
-        val fx = search.searchUrls("rain", soundEffects = true)
-        assertEquals(1, fx.size)
-        assertTrue("license=cc0,pdm" in fx[0])
+    @Test fun `every search asks only for public domain audio`() {
+        val urls = search.searchUrls(" happy piano ", soundEffects = false) + search.searchUrls("rain", soundEffects = true)
+        assertEquals(3, urls.size)
+        assertTrue(urls[0], urls[0].startsWith("https://api.openverse.org/v1/audio/?q=happy+piano+music&"))
+        assertTrue(urls[1], "?q=happy+piano&" in urls[1])
+        for (url in urls) assertTrue(url, "license=cc0,pdm&" in url && "by" !in url.substringAfter("license="))
     }
 
     @Test fun `results that are not free or not playable are dropped`() {
@@ -1127,14 +1124,12 @@ class MusicSearchTest {
           {"id":"a-5","title":"","creator":null,"url":"https://x.org/e.ogg?download=1","duration":null,"license":"pdm"}
         ]}"""
         val found = search.parse(json)
-        assertEquals(listOf("a-1", "a-6", "a-5"), found.map { it.id })
-        assertTrue(found[1].needsCredit && "Asha" in found[1].credit && found[1].fileType == "mp3")
-        assertTrue(!found[0].needsCredit)
+        assertEquals("credit-required results must be dropped", listOf("a-1", "a-5"), found.map { it.id })
         assertEquals(61_000L, found[0].durationMs)
-        assertEquals("Untitled", found[2].title)
-        assertEquals("", found[2].creator)
-        assertEquals("ogg", found[2].fileType)
-        assertEquals("Public domain", found[2].licence)
+        assertEquals("Untitled", found[1].title)
+        assertEquals("", found[1].creator)
+        assertEquals("ogg", found[1].fileType)
+        assertEquals("Public domain", found[1].licence)
         assertTrue(search.parse("{}").isEmpty())
     }
 }
