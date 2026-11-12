@@ -260,6 +260,8 @@ class ScreenshotTest {
 
         // 9-11. The other text tabs.
         tap("Effects")
+        waitForText("Background")
+        tap("Background")
         waitForText("Background colour")
         save("09_text_background_landscape")
         tap("Motion")

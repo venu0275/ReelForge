@@ -414,6 +414,8 @@ fun TextPanel(
 
     val id = editing.id
     var tab by remember { mutableStateOf(TextTab.LOOK) }
+    // Which effect is open on the Effects tab: 0 outline, 1 shadow, 2 glow, 3 background, 4 opacity.
+    var effect by remember { mutableStateOf(0) }
 
     // The words stay at the top whichever tab is open.
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -468,11 +470,6 @@ fun TextPanel(
                 }
             }
             TextLookExtras(vm, editing)
-            if (editing.keyframes.isEmpty()) {
-                LabeledSlider("See-through (left) to solid (right)", editing.opacity, 0.1f..1f) { v ->
-                    vm.updateText(id) { it.copy(opacity = v) }
-                }
-            }
         }
 
         TextTab.FONT -> {
@@ -487,28 +484,61 @@ fun TextPanel(
         }
 
         TextTab.EFFECTS -> {
-            SwitchRow("Outline", editing.outline) { b -> vm.updateText(id) { it.copy(outline = b) } }
-            if (editing.outline) {
-                Text("Outline colour", style = MaterialTheme.typography.labelLarge)
-                ColorPicker(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
-            }
-            TextEffectExtras(vm, editing)
-            SwitchRow("Background box", editing.background) { b ->
-                vm.updateText(id) { it.copy(background = b) }
-            }
-            Text("Background colour", style = MaterialTheme.typography.labelLarge)
-            // Picking a colour turns the box on and keeps its current see-through level.
-            ColorPicker(editing.boxColor or (0xFF shl 24)) { c ->
-                vm.updateText(id) {
-                    it.copy(background = true, boxColor = (c and 0xFFFFFF) or (it.boxColor and (0xFF shl 24)))
+            // One effect at a time, so each has room for its own controls.
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("Outline", "Shadow", "Glow", "Background", "Opacity").forEachIndexed { i, name ->
+                    FilterChip(selected = effect == i, onClick = { effect = i }, label = { Text(name) })
                 }
             }
-            LabeledSlider("Background opacity", ((editing.boxColor ushr 24) and 0xFF) / 255f, 0.1f..1f) { v ->
-                vm.updateText(id) {
-                    it.copy(
-                        background = true,
-                        boxColor = (it.boxColor and 0xFFFFFF) or ((v * 255).toInt().coerceIn(0, 255) shl 24),
-                    )
+            when (effect) {
+                0 -> {
+                    SwitchRow("Outline", editing.outline) { b -> vm.updateText(id) { it.copy(outline = b) } }
+                    if (editing.outline) {
+                        Text("Outline colour", style = MaterialTheme.typography.labelLarge)
+                        ColorPicker(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
+                    }
+                    TextEffectExtras(vm, editing, 0)
+                }
+                1 -> TextEffectExtras(vm, editing, 1)
+                2 -> TextEffectExtras(vm, editing, 2)
+                3 -> {
+                    SwitchRow("Background box", editing.background) { b ->
+                        vm.updateText(id) { it.copy(background = b) }
+                    }
+                    Text("Background colour", style = MaterialTheme.typography.labelLarge)
+                    // Picking a colour turns the box on and keeps its current see-through level.
+                    ColorPicker(editing.boxColor or (0xFF shl 24)) { c ->
+                        vm.updateText(id) {
+                            it.copy(background = true, boxColor = (c and 0xFFFFFF) or (it.boxColor and (0xFF shl 24)))
+                        }
+                    }
+                    LabeledSlider("Background opacity", ((editing.boxColor ushr 24) and 0xFF) / 255f, 0.1f..1f) { v ->
+                        vm.updateText(id) {
+                            it.copy(
+                                background = true,
+                                boxColor = (it.boxColor and 0xFFFFFF) or ((v * 255).toInt().coerceIn(0, 255) shl 24),
+                            )
+                        }
+                    }
+                }
+                else -> {
+                    if (editing.keyframes.isEmpty()) {
+                        LabeledSlider(
+                            "Opacity (alpha): ${(editing.opacity * 100).toInt()}%", editing.opacity, 0.05f..1f,
+                        ) { v -> vm.updateText(id) { it.copy(opacity = v) } }
+                        Text(
+                            "100% is solid. Lower values let the video show through the text.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        Text(
+                            "This text is animated with keyframes, so its opacity is set in Place and time.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }
@@ -558,6 +588,10 @@ fun TextPanel(
                     onEditing(null)
                     vm.deleteText(id)
                 }) { Text("Delete") }
+                // Adds a spoken version of these words as a sound at the red line.
+                TextButton(onClick = { vm.speakText(editing.text) }, enabled = !vm.isSpeaking) {
+                    Text(if (vm.isSpeaking) "Speaking…" else "Read aloud")
+                }
             }
             CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutText(id, cut) }
             Text("Turn", style = MaterialTheme.typography.labelLarge)

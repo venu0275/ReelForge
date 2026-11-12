@@ -150,36 +150,44 @@ fun TextLookExtras(vm: EditorViewModel, text: TextItem) {
     )
 }
 
-/** Outline thickness, shadow and glow, shown on the Effects tab. */
+/**
+ * One part of the Effects tab: [section] 0 = outline thickness, 1 = shadow, 2 = glow.
+ */
 @Composable
-fun TextEffectExtras(vm: EditorViewModel, text: TextItem) {
+fun TextEffectExtras(vm: EditorViewModel, text: TextItem, section: Int) {
     val id = text.id
-    if (text.outline) {
-        Label("Outline thickness")
-        Slider(
-            value = text.outlineWidth.coerceIn(0.3f, 3f),
-            onValueChange = { v -> vm.updateText(id) { it.copy(outlineWidth = v) } },
-            valueRange = 0.3f..3f,
-        )
-    }
-    Toggle("Shadow", text.shadow) { on -> vm.updateText(id) { it.copy(shadow = on) } }
-    if (text.shadow) {
-        Label("Shadow colour")
-        ColourDots(text.shadowColor) { c ->
-            // Keep the shadow's own see-through level.
-            vm.updateText(id) { it.copy(shadowColor = (c and 0xFFFFFF) or (it.shadowColor and (0xFF shl 24))) }
+    when (section) {
+        0 -> if (text.outline) {
+            Label("Outline thickness")
+            Slider(
+                value = text.outlineWidth.coerceIn(0.3f, 3f),
+                onValueChange = { v -> vm.updateText(id) { it.copy(outlineWidth = v) } },
+                valueRange = 0.3f..3f,
+            )
         }
-        Label("Shadow size")
-        Slider(
-            value = text.shadowStrength.coerceIn(0.3f, 3f),
-            onValueChange = { v -> vm.updateText(id) { it.copy(shadowStrength = v) } },
-            valueRange = 0.3f..3f,
-        )
-    }
-    Toggle("Glow", text.glow) { on -> vm.updateText(id) { it.copy(glow = on) } }
-    if (text.glow) {
-        Label("Glow colour")
-        ColourDots(text.glowColor) { c -> vm.updateText(id) { it.copy(glowColor = c) } }
+        1 -> {
+            Toggle("Shadow", text.shadow) { on -> vm.updateText(id) { it.copy(shadow = on) } }
+            if (text.shadow) {
+                Label("Shadow colour")
+                ColourDots(text.shadowColor) { c ->
+                    // Keep the shadow's own see-through level.
+                    vm.updateText(id) { it.copy(shadowColor = (c and 0xFFFFFF) or (it.shadowColor and (0xFF shl 24))) }
+                }
+                Label("Shadow size")
+                Slider(
+                    value = text.shadowStrength.coerceIn(0.3f, 3f),
+                    onValueChange = { v -> vm.updateText(id) { it.copy(shadowStrength = v) } },
+                    valueRange = 0.3f..3f,
+                )
+            }
+        }
+        else -> {
+            Toggle("Glow", text.glow) { on -> vm.updateText(id) { it.copy(glow = on) } }
+            if (text.glow) {
+                Label("Glow colour")
+                ColourDots(text.glowColor) { c -> vm.updateText(id) { it.copy(glowColor = c) } }
+            }
+        }
     }
 }
 
