@@ -32,7 +32,8 @@ object MusicSearch {
     fun searchUrls(query: String, soundEffects: Boolean): List<String> {
         fun url(words: String) =
             "$BASE?q=${URLEncoder.encode(words.trim(), "UTF-8")}&license=cc0,pdm&page_size=20&mature=false"
-        return if (soundEffects) listOf(url(query)) else listOf(url("$query music"), url(query))
+        val words = query.trim().replace(Regex("\\s+"), " ")
+        return if (soundEffects) listOf(url(words)) else listOf(url("$words music"), url(words))
     }
 
     /** Reads a search answer. Entries that are not public domain or not playable are dropped. */
