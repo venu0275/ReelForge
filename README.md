@@ -1,4 +1,4 @@
-# ReelForge
+# CutMitra (repo: ReelForge)
 
 An open-source Android video editor written in Kotlin, built only on free libraries:
 Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetpack Compose.
@@ -67,7 +67,7 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Long-press and drag a clip to reorder it; Slip to choose which part of a video plays.
 - Portrait and landscape layouts: in landscape the video sits on the left and the timeline,
   tools and the open tool's controls sit in a side pane on the right.
-- Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.
+- Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/CutMitra`, with share.
 
 ## Not built yet
 

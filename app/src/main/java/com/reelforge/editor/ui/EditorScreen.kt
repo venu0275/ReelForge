@@ -1685,7 +1685,7 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    is ExportState.Done -> Text("Saved to Movies/ReelForge in your gallery.")
+                    is ExportState.Done -> Text("Saved to Movies/CutMitra in your gallery.")
                     is ExportState.Failed -> Text("Export failed: ${state.message}")
                 }
             }

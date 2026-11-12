@@ -67,7 +67,7 @@ class EditorUiTest {
     @Test
     fun createProject_emptyEditor_rotation_andToolPanel() {
         // Home → new project dialog → editor.
-        waitForText("ReelForge")
+        waitForText("CutMitra")
         tap("New project")
         waitForText("Create")
         tap("Create")

@@ -117,13 +117,13 @@ object MediaUtils {
         null
     }
 
-    /** Copies an exported file into the shared Movies/ReelForge folder and returns its Uri. */
+    /** Copies an exported file into the shared Movies/CutMitra folder and returns its Uri. */
     fun saveToGallery(context: Context, file: File, displayName: String): Uri {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
             put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
-            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/ReelForge")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/CutMitra")
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
         val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)

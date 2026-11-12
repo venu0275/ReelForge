@@ -82,7 +82,7 @@ fun SettingsScreen(vm: EditorViewModel) {
 
         Section("About")
         Note(
-            "ReelForge ${vm.appVersion}. Built only with free, open-source libraries (AndroidX Media3, Jetpack Compose). " +
+            "CutMitra ${vm.appVersion}. Built only with free, open-source libraries (AndroidX Media3, Jetpack Compose). " +
                 "Stickers: Noto Emoji (Apache 2.0). Fonts: Google Fonts (open licences). " +
                 "Music search: public-domain audio from openverse.org. Buttons and sound effects are made by the app."
         )

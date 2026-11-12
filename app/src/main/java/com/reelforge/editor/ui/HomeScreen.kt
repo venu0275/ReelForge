@@ -87,7 +87,7 @@ fun HomeScreen(vm: EditorViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("ReelForge") },
+                title = { Text("CutMitra") },
                 actions = { TextButton(onClick = { vm.showSettings = true }) { Text("Settings") } },
             )
         },

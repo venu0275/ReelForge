@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher foreground: a play triangle sliced in two (video + cut). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M37.88,30.40 L37.88,76.40 L47.97,70.60 L56.41,41.05 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M52.20,71.81 L82.12,54.60 L60.64,42.26 Z" />
+</vector>
