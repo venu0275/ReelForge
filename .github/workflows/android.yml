@@ -1,8 +1,9 @@
 name: Android build
 
+# Runs only when started by hand (Actions tab > Android build > Run workflow),
+# so pushes do not use up GitHub Actions minutes.
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
