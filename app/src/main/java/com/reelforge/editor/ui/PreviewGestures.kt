@@ -16,6 +16,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -102,3 +105,19 @@ fun Modifier.itemGestures(
 /** A thin white frame around the item while it is being moved. Put this after graphicsLayer. */
 fun Modifier.dragOutline(state: DragState): Modifier =
     if (state.active) border(1.dp, Color.White) else this
+
+/**
+ * Draws the faded "rest of the file" part of a timeline bar, from [startPx] for [widthPx].
+ * It may reach past the row's own width (for music that is longer than the video).
+ */
+fun Modifier.ghostBar(startPx: Float, widthPx: Float, color: Color): Modifier =
+    if (widthPx <= 0f) this else drawBehind {
+        val pad = 2.dp.toPx()
+        val corner = 4.dp.toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(startPx, pad),
+            size = Size(widthPx, (size.height - 2 * pad).coerceAtLeast(0f)),
+            cornerRadius = CornerRadius(corner, corner),
+        )
+    }

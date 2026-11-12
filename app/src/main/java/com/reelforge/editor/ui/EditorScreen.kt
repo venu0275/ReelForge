@@ -946,9 +946,20 @@ private fun Timeline(
                     }
                 }
                 project.music?.let { music ->
-                    // The music bar covers only the stretch of the video where the music plays.
-                    val bar = Bar(MUSIC_ID, "♪ ${music.title}", music.startMs, music.windowEnd(total))
-                    BarRow(listOf(bar), pxPerMs, Color(0xFFEF6C00), selectedId, { onSelect(ItemKind.MUSIC, it) }) { _, deltaMs ->
+                    // The solid bar is the part that is heard with the video. When the music file is
+                    // longer than the video, the rest of it is shown faded past the end of the video.
+                    val heardEnd = music.windowEnd(total)
+                    val length = if (music.durationMs > 0) "  ${MediaUtils.formatTime(music.durationMs)}" else ""
+                    val bar = Bar(MUSIC_ID, "♪ ${music.title}$length", music.startMs, heardEnd)
+                    val rest = Modifier.ghostBar(
+                        startPx = heardEnd * pxPerMs,
+                        widthPx = (music.fileEnd() - heardEnd).coerceAtLeast(0) * pxPerMs,
+                        color = Color(0xFFEF6C00).copy(alpha = 0.3f),
+                    )
+                    BarRow(
+                        listOf(bar), pxPerMs, Color(0xFFEF6C00), selectedId, { onSelect(ItemKind.MUSIC, it) },
+                        rowModifier = rest,
+                    ) { _, deltaMs ->
                         vm.shiftMusic(deltaMs)
                     }
                 }
@@ -1194,12 +1205,13 @@ private fun BarRow(
     color: Color,
     selectedId: String?,
     onTap: (String) -> Unit,
+    rowModifier: Modifier = Modifier,
     onMove: (id: String, deltaMs: Long) -> Unit,
 ) {
     val density = LocalDensity.current
     val move by rememberUpdatedState(onMove)
     val scale by rememberUpdatedState(pxPerMs)
-    Box(Modifier.fillMaxWidth().height(ROW_HEIGHT)) {
+    Box(Modifier.fillMaxWidth().height(ROW_HEIGHT).then(rowModifier)) {
         bars.forEach { bar ->
             key(bar.id) {
                 var drag by remember { mutableFloatStateOf(0f) }

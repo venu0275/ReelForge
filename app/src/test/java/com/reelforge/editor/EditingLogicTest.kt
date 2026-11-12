@@ -1203,3 +1203,22 @@ class DragOnPreviewTest {
         assertTrue(moved > 0.4f && moved <= 1f)
     }
 }
+
+class MusicLengthTest {
+    private fun track(ms: Long, loop: Boolean = true) =
+        com.reelforge.editor.model.MusicTrack(uri = "file:///m.mp3", title = "m", durationMs = ms, loop = loop)
+
+    @Test fun `music longer than the video is heard to the end of the video and shown to its own end`() {
+        val music = track(180_000)
+        assertEquals(120_000L, music.windowEnd(120_000))
+        assertEquals(180_000L, music.fileEnd())
+        assertEquals(60_000L, music.filePosition(60_000))
+    }
+
+    @Test fun `start, offset and cut move the end of the file on the timeline`() {
+        assertEquals(190_000L, track(180_000).copy(startMs = 10_000).fileEnd())
+        assertEquals(150_000L, track(180_000).copy(offsetMs = 30_000).fileEnd())
+        assertEquals(90_000L, track(180_000).copy(stopMs = 90_000).fileEnd())
+        assertEquals(0L, track(0).fileEnd())
+    }
+}

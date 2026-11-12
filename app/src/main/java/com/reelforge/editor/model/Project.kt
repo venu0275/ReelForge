@@ -263,6 +263,15 @@ data class MusicTrack(
         return if (stopMs > startMs) minOf(stopMs, natural) else natural
     }
 
+    /**
+     * Where on the timeline the music file itself runs out the first time through (or where it
+     * was cut with [stopMs]). This can be past the end of the video; that part is not heard.
+     */
+    fun fileEnd(): Long {
+        val whole = if (durationMs > 0) startMs + durationMs - offsetMs % durationMs else startMs
+        return if (stopMs > startMs) minOf(stopMs, whole) else whole
+    }
+
     /** The position in the audio file that plays at [timelineMs]. */
     fun filePosition(timelineMs: Long): Long {
         val raw = offsetMs + (timelineMs - startMs)
