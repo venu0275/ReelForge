@@ -295,6 +295,43 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         selectedClipId = if (selectedClipId == id) null else id
     }
 
+    /** True when the playhead is far enough inside the selected clip to cut it there. */
+    val canCutSelectedClip: Boolean
+        get() {
+            val p = project ?: return false
+            val id = selectedClipId ?: return false
+            return ProjectOps.cutPoint(p, id, playheadMs) != null
+        }
+
+    /** Removes everything in the selected clip before the playhead. */
+    fun trimLeftOfPlayhead() {
+        val p = project ?: return
+        val id = selectedClipId ?: return
+        val result = ProjectOps.trimLeftOfPlayhead(p, id, playheadMs)
+        if (result == null) {
+            message = "Move the red line onto the selected clip, away from its edges"
+            return
+        }
+        // The kept part now begins where the clip used to begin; stay on that first frame.
+        val clipStart = p.clipStartMs(p.clips.indexOfFirst { it.id == id })
+        mutate { result }
+        seekTo(clipStart)
+    }
+
+    /** Removes everything in the selected clip after the playhead. */
+    fun trimRightOfPlayhead() {
+        val p = project ?: return
+        val id = selectedClipId ?: return
+        val result = ProjectOps.trimRightOfPlayhead(p, id, playheadMs)
+        if (result == null) {
+            message = "Move the red line onto the selected clip, away from its edges"
+            return
+        }
+        mutate { result }
+        // Stay on the last frame that was kept.
+        seekTo((playheadMs - 34).coerceAtLeast(0))
+    }
+
     /** Edge drags on the timeline. [deltaMs] is timeline time; see [ProjectOps.trimStart]. */
     fun trimClipStart(id: String, deltaMs: Long) = mutate { ProjectOps.trimStart(it, id, deltaMs) }
 

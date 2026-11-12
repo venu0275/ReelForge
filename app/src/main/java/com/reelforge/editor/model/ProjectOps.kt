@@ -94,6 +94,34 @@ object ProjectOps {
         return (byEnd - lengthMs).coerceAtLeast(0)
     }
 
+    /**
+     * Where [playheadMs] falls inside clip [id], as time from the clip's start, or null when the
+     * playhead is outside the clip or too close to an edge for a cut to leave a usable piece.
+     */
+    fun cutPoint(project: Project, id: String, playheadMs: Long): Long? {
+        val index = project.clips.indexOfFirst { it.id == id }
+        if (index < 0) return null
+        val clip = project.clips[index]
+        val local = playheadMs - project.clipStartMs(index)
+        // Both sides of the cut must keep at least MIN_PIECE_MS of source footage.
+        val before = (local * clip.effectiveSpeed).toLong()
+        val after = (clip.trimEndMs - clip.trimStartMs) - before
+        return if (before >= MIN_PIECE_MS && after >= MIN_PIECE_MS) local else null
+    }
+
+    /** Removes the part of clip [id] before the playhead. Null when the playhead cannot cut it. */
+    fun trimLeftOfPlayhead(project: Project, id: String, playheadMs: Long): Project? {
+        val local = cutPoint(project, id, playheadMs) ?: return null
+        return trimStart(project, id, local)
+    }
+
+    /** Removes the part of clip [id] after the playhead. Null when the playhead cannot cut it. */
+    fun trimRightOfPlayhead(project: Project, id: String, playheadMs: Long): Project? {
+        val local = cutPoint(project, id, playheadMs) ?: return null
+        val clip = project.clips.first { it.id == id }
+        return trimEnd(project, id, local - clip.durationMs)
+    }
+
     /** Shortest clip an edge drag can leave, in source time. */
     const val MIN_CLIP_MS = 300L
 

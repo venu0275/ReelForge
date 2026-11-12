@@ -502,6 +502,18 @@ private fun EditorMenu(
                 }
             }
         }
+        if (clip != null) {
+            Text(
+                if (vm.canCutSelectedClip) {
+                    "Trim left removes what is before the red line. Trim right removes what is after it."
+                } else {
+                    "To trim or split, move the red line onto this clip."
+                },
+                modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         FlowRow(
             Modifier
@@ -523,8 +535,12 @@ private fun EditorMenu(
             } else {
                 val id = clip.id
                 val isVideo = clip.type == ClipType.VIDEO
-                MenuTile("Split", accent = true) { vm.splitAtPlayhead() }
-                MenuTile("Trim") { openPanel(Panel.TRIM) }
+                // Cuts at the red line. They light up when the line is on this clip.
+                val canCut = vm.canCutSelectedClip
+                MenuTile("Trim left", enabled = canCut, accent = true) { vm.trimLeftOfPlayhead() }
+                MenuTile("Split", enabled = canCut, accent = true) { vm.splitAtPlayhead() }
+                MenuTile("Trim right", enabled = canCut, accent = true) { vm.trimRightOfPlayhead() }
+                MenuTile("Fine trim") { openPanel(Panel.TRIM) }
                 MenuTile("Replace") { replace(id) }
                 if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
                 if (isVideo) MenuTile("Volume") { openPanel(Panel.VOLUME) }

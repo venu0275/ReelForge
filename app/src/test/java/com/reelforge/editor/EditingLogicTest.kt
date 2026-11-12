@@ -273,6 +273,55 @@ class EdgeTrimTest {
         assertSame(p, ProjectOps.trimEnd(p, "a", -100))
     }
 
+    @Test fun `trim left removes what is before the playhead`() {
+        val p = project(video("a", 4_000), video("b", 10_000), video("c", 2_000))
+        val out = ProjectOps.trimLeftOfPlayhead(p, "b", 7_000)!! // 3 s into clip b
+        assertEquals(3_000, out.clips[1].trimStartMs)
+        assertEquals(10_000, out.clips[1].trimEndMs)
+        assertEquals(7_000, out.clips[1].durationMs)
+        assertEquals(p.durationMs - 3_000, out.durationMs)
+        assertEquals(p.clips[0], out.clips[0])
+        assertEquals(p.clips[2], out.clips[2])
+    }
+
+    @Test fun `trim right removes what is after the playhead`() {
+        val p = project(video("a", 4_000), video("b", 10_000), video("c", 2_000))
+        val out = ProjectOps.trimRightOfPlayhead(p, "b", 7_000)!!
+        assertEquals(0, out.clips[1].trimStartMs)
+        assertEquals(3_000, out.clips[1].trimEndMs)
+        assertEquals(3_000, out.clips[1].durationMs)
+        assertEquals(p.durationMs - 7_000, out.durationMs)
+    }
+
+    @Test fun `trim left then right keeps exactly the middle`() {
+        val p = project(video("a", 10_000))
+        val left = ProjectOps.trimLeftOfPlayhead(p, "a", 2_000)!!
+        // After trimming left the clip starts at 0 again, so 5 s of it is the old 7 s mark.
+        val both = ProjectOps.trimRightOfPlayhead(left, "a", 5_000)!!
+        assertEquals(2_000, both.clips[0].trimStartMs)
+        assertEquals(7_000, both.clips[0].trimEndMs)
+    }
+
+    @Test fun `playhead trims follow speed and work on photos`() {
+        val fast = project(video("a", 10_000, speed = 2f)) // 5 s on the timeline
+        assertEquals(4_000, ProjectOps.trimLeftOfPlayhead(fast, "a", 2_000)!!.clips[0].trimStartMs)
+        assertEquals(4_000, ProjectOps.trimRightOfPlayhead(fast, "a", 2_000)!!.clips[0].trimEndMs)
+        val photo = project(image("p", 3_000))
+        assertEquals(2_000, ProjectOps.trimLeftOfPlayhead(photo, "p", 1_000)!!.clips[0].durationMs)
+        assertEquals(1_000, ProjectOps.trimRightOfPlayhead(photo, "p", 1_000)!!.clips[0].durationMs)
+    }
+
+    @Test fun `playhead trims are refused outside the clip or at its edges`() {
+        val p = project(video("a", 4_000), video("b", 10_000))
+        assertNull(ProjectOps.trimLeftOfPlayhead(p, "b", 2_000))   // playhead is on clip a
+        assertNull(ProjectOps.trimRightOfPlayhead(p, "a", 9_000))  // playhead is on clip b
+        assertNull(ProjectOps.trimLeftOfPlayhead(p, "b", 4_000))   // exactly at b's start
+        assertNull(ProjectOps.trimRightOfPlayhead(p, "b", 4_100))  // too close to b's start
+        assertNull(ProjectOps.trimLeftOfPlayhead(p, "b", 13_950))  // too close to b's end
+        assertNull(ProjectOps.trimLeftOfPlayhead(p, "missing", 5_000))
+        assertNull(ProjectOps.cutPoint(project(), "a", 0))
+    }
+
     @Test fun `replace keeps the edits and fits the new media`() {
         val styled = video("a", 10_000).copy(
             trimStartMs = 2_000, trimEndMs = 6_000, filter = FilterPreset.SEPIA, speed = 2f, fadeInMs = 300,
