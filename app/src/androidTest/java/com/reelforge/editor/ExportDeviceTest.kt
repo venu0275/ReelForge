@@ -804,7 +804,7 @@ class ExportDeviceTest {
 
     @Test
     fun store_buttonsAndSoundEffectsExport() {
-        val uri = solid(0xFF202020.toInt())
+        val uri = solid("store", 0xFF202020.toInt())
         val layers = com.reelforge.editor.data.SocialSticker.entries.take(3).mapIndexed { i, sticker ->
             val bitmap = sticker.render()
             assertTrue(sticker.name, bitmap.width > bitmap.height && bitmap.getPixel(bitmap.width / 2, 4) == sticker.background)
