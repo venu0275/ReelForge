@@ -1222,3 +1222,31 @@ class MusicLengthTest {
         assertEquals(0L, track(0).fileEnd())
     }
 }
+
+class TextStyleTest {
+    @Test fun `a ready-made style changes the look and nothing else`() {
+        val text = com.reelforge.editor.model.TextItem(
+            text = "Hello", x = 0.3f, y = -0.4f, startMs = 1_000, endMs = 4_000, rotation = 15f,
+            fontPath = "/x/custom.ttf", italic = true,
+        )
+        for (style in com.reelforge.editor.model.TextStyle.entries) {
+            val out = style.applyTo(text)
+            assertEquals(style.name, text.id, out.id)
+            assertEquals("Hello", out.text)
+            assertEquals(0.3f, out.x, 0f)
+            assertEquals(-0.4f, out.y, 0f)
+            assertEquals(1_000L, out.startMs)
+            assertEquals(4_000L, out.endMs)
+            assertEquals(15f, out.rotation, 0f)
+            assertEquals(style.name, null, out.fontPath)
+            assertTrue(style.name, out.size in 0.03f..0.2f)
+            assertTrue(style.name, style.label.isNotBlank() && style.hint.isNotBlank())
+        }
+    }
+
+    @Test fun `styles differ from each other`() {
+        val text = com.reelforge.editor.model.TextItem(text = "Hi")
+        val looks = com.reelforge.editor.model.TextStyle.entries.map { it.applyTo(text) }
+        assertEquals(looks.size, looks.toSet().size)
+    }
+}

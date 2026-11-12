@@ -182,6 +182,40 @@ data class TextItem(
     val keyframes: List<Keyframe> = emptyList(), // when set, these drive position / turn / opacity
 )
 
+/**
+ * Ready-made looks for a text. Applying one changes only how the text looks (colour, size, font,
+ * weight, outline, box); the words, place, timing and animation are kept.
+ */
+enum class TextStyle(val label: String, val hint: String) {
+    TITLE("Title", "Large white letters with a dark outline"),
+    SUBTITLE("Subtitle", "Small white letters on a dark box"),
+    CAPTION("Caption", "Yellow letters with a black outline"),
+    COMIC("Comic", "Big slanted yellow letters, thick black outline"),
+    VLOG("Vlog", "Thin white letters, no outline"),
+    ALERT("Alert", "White letters on a red box"),
+    NOTE("Note", "Dark letters on a pale yellow box"),
+    PLAIN("Plain", "White letters, nothing else");
+
+    fun applyTo(t: TextItem): TextItem {
+        val white = 0xFFFFFFFF.toInt()
+        val black = 0xFF000000.toInt()
+        val base = t.copy(
+            fontPath = null, italic = false, bold = true, outline = false, background = false,
+            outlineColor = black, boxColor = 0x99000000.toInt(),
+        )
+        return when (this) {
+            TITLE -> base.copy(color = white, size = 0.12f, font = TextFont.SANS, outline = true)
+            SUBTITLE -> base.copy(color = white, size = 0.055f, font = TextFont.SANS, bold = false, background = true)
+            CAPTION -> base.copy(color = 0xFFFFEB3B.toInt(), size = 0.07f, font = TextFont.SANS, outline = true)
+            COMIC -> base.copy(color = 0xFFFFEB3B.toInt(), size = 0.14f, font = TextFont.SANS, italic = true, outline = true)
+            VLOG -> base.copy(color = white, size = 0.08f, font = TextFont.THIN, bold = false)
+            ALERT -> base.copy(color = white, size = 0.08f, font = TextFont.SANS, background = true, boxColor = 0xE6D32F2F.toInt())
+            NOTE -> base.copy(color = 0xFF212121.toInt(), size = 0.06f, font = TextFont.SERIF, bold = false, background = true, boxColor = 0xF2FFF59D.toInt())
+            PLAIN -> base.copy(color = white, size = 0.08f, font = TextFont.SANS, bold = false)
+        }
+    }
+}
+
 /** A picture (photo, logo, watermark) drawn on top of the main track. */
 data class ImageLayer(
     val id: String = newId(),

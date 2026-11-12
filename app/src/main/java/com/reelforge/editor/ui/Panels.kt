@@ -412,15 +412,16 @@ fun TextPanel(
     }
 
     val id = editing.id
-    var tab by remember { mutableStateOf(TextTab.TEXT) }
+    var tab by remember { mutableStateOf(TextTab.LOOK) }
 
+    // The words stay at the top whichever tab is open.
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Edit text", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-        TextButton(onClick = { onEditing(vm.duplicateText(id)) }) { Text("Copy") }
-        TextButton(onClick = {
-            onEditing(null)
-            vm.deleteText(id)
-        }) { Text("Delete") }
+        OutlinedTextField(
+            value = editing.text,
+            onValueChange = { v -> vm.updateText(id) { it.copy(text = v) } },
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+        )
         TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
     Row(
@@ -434,17 +435,40 @@ fun TextPanel(
     Spacer(Modifier.height(8.dp))
 
     when (tab) {
-        TextTab.TEXT -> {
-            OutlinedTextField(
-                value = editing.text,
-                onValueChange = { v -> vm.updateText(id) { it.copy(text = v) } },
-                modifier = Modifier.fillMaxWidth(),
-                maxLines = 3,
-            )
-            Spacer(Modifier.height(8.dp))
+        TextTab.LOOK -> {
             Text("Colour", style = MaterialTheme.typography.labelLarge)
             ColorPicker(editing.color) { c -> vm.updateText(id) { it.copy(color = c) } }
             LabeledSlider("Size", editing.size, 0.02f..0.4f) { v -> vm.updateText(id) { it.copy(size = v) } }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterChip(
+                    selected = editing.bold,
+                    onClick = { vm.updateText(id) { it.copy(bold = !it.bold) } },
+                    label = { Text("Bold") },
+                )
+                FilterChip(
+                    selected = editing.italic,
+                    onClick = { vm.updateText(id) { it.copy(italic = !it.italic) } },
+                    label = { Text("Italic") },
+                )
+            }
+            Text("Line up", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextAlignH.entries.forEach { a ->
+                    FilterChip(
+                        selected = editing.align == a,
+                        onClick = { vm.updateText(id) { it.copy(align = a) } },
+                        label = { Text(a.label) },
+                    )
+                }
+            }
+            if (editing.keyframes.isEmpty()) {
+                LabeledSlider("See-through (left) to solid (right)", editing.opacity, 0.1f..1f) { v ->
+                    vm.updateText(id) { it.copy(opacity = v) }
+                }
+            }
         }
 
         TextTab.FONT -> {
@@ -461,45 +485,20 @@ fun TextPanel(
                     )
                 }
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilterChip(
-                    selected = editing.bold,
-                    onClick = { vm.updateText(id) { it.copy(bold = !it.bold) } },
-                    label = { Text("Bold") },
-                )
-                FilterChip(
-                    selected = editing.italic,
-                    onClick = { vm.updateText(id) { it.copy(italic = !it.italic) } },
-                    label = { Text("Italic") },
-                )
-                FilterChip(
-                    selected = editing.fontPath != null,
-                    onClick = { pickFont(id) },
-                    label = { Text(if (editing.fontPath == null) "Import font file" else "Imported font") },
-                )
-            }
+            FilterChip(
+                selected = editing.fontPath != null,
+                onClick = { pickFont(id) },
+                label = { Text(if (editing.fontPath == null) "Import font file" else "Imported font") },
+            )
             FontStore(vm, editing.fontPath, id)
-            Text("Alignment", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextAlignH.entries.forEach { a ->
-                    FilterChip(
-                        selected = editing.align == a,
-                        onClick = { vm.updateText(id) { it.copy(align = a) } },
-                        label = { Text(a.label) },
-                    )
-                }
-            }
+        }
+
+        TextTab.EFFECTS -> {
             SwitchRow("Outline", editing.outline) { b -> vm.updateText(id) { it.copy(outline = b) } }
             if (editing.outline) {
                 Text("Outline colour", style = MaterialTheme.typography.labelLarge)
                 ColorPicker(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
             }
-        }
-
-        TextTab.BACKGROUND -> {
             SwitchRow("Background box", editing.background) { b ->
                 vm.updateText(id) { it.copy(background = b) }
             }
@@ -520,7 +519,23 @@ fun TextPanel(
             }
         }
 
-        TextTab.ANIMATION -> {
+        TextTab.STYLES -> {
+            Text(
+                "Ready-made looks. Tap one to apply it; your words, place and timing stay as they are.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            com.reelforge.editor.model.TextStyle.entries.forEach { style ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(style.label)
+                        Text(style.hint, style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { vm.updateText(id) { style.applyTo(it) } }) { Text("Use") }
+                }
+            }
+        }
+
+        TextTab.MOTION -> {
             AnimChips("In animation (how it appears)", editing.animIn) { a ->
                 vm.updateText(id) { it.copy(animIn = a) }
             }
@@ -541,6 +556,13 @@ fun TextPanel(
         }
 
         TextTab.PLACE -> {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onEditing(vm.duplicateText(id)) }) { Text("Copy") }
+                TextButton(onClick = {
+                    onEditing(null)
+                    vm.deleteText(id)
+                }) { Text("Delete") }
+            }
             CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutText(id, cut) }
             Text("Turn", style = MaterialTheme.typography.labelLarge)
             Row(
@@ -572,11 +594,12 @@ fun TextPanel(
 }
 
 private enum class TextTab(val label: String) {
-    TEXT("Text"),
+    LOOK("Look"),
     FONT("Font"),
-    BACKGROUND("Background"),
-    ANIMATION("Animation"),
-    PLACE("Place"),
+    EFFECTS("Effects"),
+    STYLES("Styles"),
+    MOTION("Motion"),
+    PLACE("Place and time"),
 }
 
 /** Adds [by] degrees and keeps the angle within -180..180 (positive is counter-clockwise). */
