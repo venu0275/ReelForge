@@ -560,6 +560,7 @@ private fun EditorMenu(
                 MenuTile("Music") { openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
+                MenuTile("Settings") { vm.showSettings = true }
             } else {
                 val id = clip.id
                 val isVideo = clip.type == ClipType.VIDEO
@@ -859,7 +860,7 @@ private fun Timeline(
         val visibleFrom = window * tilePx - viewportPx
         val visibleTo = window * tilePx + viewportPx
         // How close (in time) a dragged edge or bar must be to a point to snap to it.
-        val snapMs = (with(density) { 10.dp.toPx() } / pxPerMs).toLong()
+        val snapMs = if (vm.settings.snap) (with(density) { 10.dp.toPx() } / pxPerMs).toLong() else 0L
 
         Row(Modifier.fillMaxHeight().horizontalScroll(scroll)) {
             Spacer(Modifier.width(half))
@@ -1448,10 +1449,10 @@ private fun glide(
 @Composable
 private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
     val state = vm.export
-    var shortSide by remember { mutableIntStateOf(720) }
-    var quality by remember { mutableIntStateOf(1) }
-    var fps by remember { mutableIntStateOf(30) }
-    var hevc by remember { mutableStateOf(false) }
+    var shortSide by remember { mutableIntStateOf(vm.settings.exportSide) }
+    var quality by remember { mutableIntStateOf(vm.settings.exportQuality) }
+    var fps by remember { mutableIntStateOf(vm.settings.exportFps) }
+    var hevc by remember { mutableStateOf(vm.settings.exportHevc) }
     val context = LocalContext.current
 
     // Only offer what this phone's encoder can actually produce.

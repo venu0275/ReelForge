@@ -1,6 +1,10 @@
 package com.reelforge.editor.ui
 
+import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.view.WindowManager
+import androidx.compose.runtime.LaunchedEffect
+import com.reelforge.editor.data.ScreenMode
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -18,7 +22,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             ReelForgeTheme {
                 val vm: EditorViewModel = viewModel()
-                if (vm.project == null) HomeScreen(vm) else EditorScreen(vm)
+                val settings = vm.settings
+                LaunchedEffect(settings.screen) {
+                    requestedOrientation = when (settings.screen) {
+                        ScreenMode.AUTO -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
+                        ScreenMode.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        ScreenMode.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    }
+                }
+                LaunchedEffect(settings.keepScreenOn) {
+                    if (settings.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                when {
+                    vm.showSettings -> SettingsScreen(vm)
+                    vm.project == null -> HomeScreen(vm)
+                    else -> EditorScreen(vm)
+                }
             }
         }
     }

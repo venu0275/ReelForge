@@ -41,6 +41,8 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Looping movement for stickers and pictures (bounce, shake, pulse, wobble, spin, float, blink),
   comic reaction stickers (LOL, OMG, FAIL ...) and comedy sounds (boing, sad trombone, ba-dum-tss ...),
   all made by the app.
+- Settings: screen direction (auto / portrait / landscape), keep screen on, default lengths, snapping,
+  export defaults, delete unused downloads.
 - Find music: search free public-domain (CC0) music and sounds from openverse.org and add them.
 - Custom fonts (import a .ttf / .otf) and a handwriting / drawing pad.
 - Two-point motion for text, stickers and image layers.

@@ -33,7 +33,9 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.reelforge.editor.data.AppSettings
 import com.reelforge.editor.data.AssetCatalog
+import com.reelforge.editor.data.SettingsStore
 import com.reelforge.editor.data.MusicResult
 import com.reelforge.editor.data.MusicSearch
 import com.reelforge.editor.data.SocialSticker
@@ -91,6 +93,60 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     private val ctx: Application get() = getApplication()
     private val repo = ProjectRepository(app)
+
+    // --------------------------------------------------------------- settings
+
+    private val settingsStore = SettingsStore(app)
+
+    var settings by mutableStateOf(settingsStore.load())
+        private set
+
+    var showSettings by mutableStateOf(false)
+
+    fun updateSettings(block: (AppSettings) -> AppSettings) {
+        settings = block(settings).sanitized()
+        settingsStore.save(settings)
+    }
+
+    val appVersion: String
+        get() = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: ""
+
+    var downloadSizeLabel by mutableStateOf("0 MB")
+        private set
+
+    private fun downloadFiles(): List<File> =
+        listOf("fonts", "stickers", "music").flatMap { File(ctx.filesDir, it).listFiles()?.toList().orEmpty() }
+            .filter { it.isFile && (it.parentFile?.name != "fonts" || it.name.startsWith("store_")) }
+
+    fun refreshDownloadSize() {
+        viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) { downloadFiles().sumOf { it.length() } }
+            downloadSizeLabel = if (bytes < 1024 * 1024) "${bytes / 1024} KB" else "${bytes / (1024 * 1024)} MB"
+        }
+    }
+
+    /** Deletes store downloads that no saved project refers to. */
+    fun deleteUnusedDownloads() {
+        viewModelScope.launch {
+            val removed = withContext(Dispatchers.IO) {
+                val used = HashSet<String>()
+                (repo.list() + listOfNotNull(project)).forEach { p ->
+                    p.layers.forEach { used += it.uri }
+                    p.audio.forEach { used += it.uri }
+                    p.music?.let { used += it.uri }
+                    p.texts.forEach { t -> t.fontPath?.let { used += it } }
+                }
+                downloadFiles().count { f ->
+                    val inUse = f.absolutePath in used || Uri.fromFile(f).toString() in used
+                    !inUse && f.delete()
+                }
+            }
+            refreshInstalledFonts()
+            refreshInstalledStickers()
+            refreshDownloadSize()
+            message = if (removed == 0) "Nothing to delete" else "Deleted $removed downloads"
+        }
+    }
 
     var projects by mutableStateOf(emptyList<Project>())
         private set
@@ -278,7 +334,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         Clip(
                             uri = uri.toString(),
                             type = info.type,
-                            sourceDurationMs = info.durationMs,
+                            sourceDurationMs = if (info.type == ClipType.IMAGE) settings.photoMs else info.durationMs,
                             hasAudio = info.hasAudio,
                         )
                     }
@@ -525,7 +581,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun addText(text: String = "Your text", size: Float = 0.08f): String {
         val p = project ?: return ""
         val start = playheadMs
-        val end = (start + 3000).coerceAtMost(maxOf(p.durationMs, start + 500))
+        val end = (start + settings.itemMs).coerceAtMost(maxOf(p.durationMs, start + 500))
         val item = TextItem(text = text, size = size, startMs = start, endMs = end)
         mutate { it.copy(texts = it.texts + item) }
         return item.id
@@ -587,7 +643,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         val start = playheadMs
-        val end = (start + 3000).coerceAtMost(maxOf(p.durationMs, start + 500))
+        val end = (start + settings.itemMs).coerceAtMost(maxOf(p.durationMs, start + 500))
         val layer = ImageLayer(uri = uri.toString(), startMs = start, endMs = end)
         mutate { it.copy(layers = it.layers + layer) }
         return layer.id
@@ -638,7 +694,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 message = "Could not save the drawing"
                 return@launch
             }
-            val end = (start + 3000).coerceAtMost(maxOf(p.durationMs, start + 500))
+            val end = (start + settings.itemMs).coerceAtMost(maxOf(p.durationMs, start + 500))
             val layer = ImageLayer(
                 uri = Uri.fromFile(file).toString(), scale = 1f, startMs = start, endMs = end,
             )

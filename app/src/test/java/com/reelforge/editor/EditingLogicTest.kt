@@ -1164,3 +1164,23 @@ class LoopFxTest {
         assertEquals(com.reelforge.editor.model.LoopFx.WOBBLE, saved.layers.single().loop)
     }
 }
+
+class SettingsTest {
+    private val base = com.reelforge.editor.data.AppSettings()
+
+    @Test fun `defaults are sensible`() {
+        assertEquals(com.reelforge.editor.data.ScreenMode.AUTO, base.screen)
+        assertEquals(base, base.sanitized())
+        assertTrue(base.exportSide in com.reelforge.editor.data.AppSettings.SIDES)
+        assertTrue(base.exportFps in com.reelforge.editor.data.AppSettings.FPS)
+    }
+
+    @Test fun `bad stored values are put back in range`() {
+        val fixed = base.copy(photoMs = -5, itemMs = 9_999_999, exportSide = 999, exportFps = 7, exportQuality = 9).sanitized()
+        assertEquals(500L, fixed.photoMs)
+        assertEquals(20_000L, fixed.itemMs)
+        assertEquals(720, fixed.exportSide)
+        assertEquals(30, fixed.exportFps)
+        assertEquals(2, fixed.exportQuality)
+    }
+}

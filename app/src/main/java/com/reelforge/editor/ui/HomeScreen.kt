@@ -54,7 +54,12 @@ fun HomeScreen(vm: EditorViewModel) {
     var newName by remember { mutableStateOf("") }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("ReelForge") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("ReelForge") },
+                actions = { TextButton(onClick = { vm.showSettings = true }) { Text("Settings") } },
+            )
+        },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showNew = true },

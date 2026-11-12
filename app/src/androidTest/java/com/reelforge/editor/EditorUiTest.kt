@@ -42,6 +42,29 @@ class EditorUiTest {
     }
 
     @Test
+    fun settings_screenDirectionIsAppliedAndRemembered() {
+        waitForText("Settings")
+        tap("Settings")
+        waitForText("Screen direction")
+        tap("Landscape")
+        rule.waitUntil(10_000) {
+            rule.activity.requestedOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        val stored = com.reelforge.editor.data.SettingsStore(rule.activity).load()
+        org.junit.Assert.assertEquals(com.reelforge.editor.data.ScreenMode.LANDSCAPE, stored.screen)
+        tap("Portrait")
+        rule.waitUntil(10_000) {
+            rule.activity.requestedOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        tap("Auto")
+        rule.waitUntil(10_000) {
+            rule.activity.requestedOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        }
+        tap("Done")
+        waitForText("New project")
+    }
+
+    @Test
     fun createProject_emptyEditor_rotation_andToolPanel() {
         // Home → new project dialog → editor.
         waitForText("ReelForge")
