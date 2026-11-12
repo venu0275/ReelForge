@@ -587,6 +587,61 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ text + music
 
+    // ----------------------------------------------------------- text styles
+
+    /** Looks the user saved with "Save my style"; kept on the phone for every project. */
+    var savedStyles by mutableStateOf(emptyList<TextItem>())
+        private set
+
+    private fun stylePrefs() = ctx.getSharedPreferences("text_styles", android.content.Context.MODE_PRIVATE)
+
+    init {
+        savedStyles = runCatching {
+            val array = org.json.JSONArray(stylePrefs().getString("styles", null) ?: "[]")
+            (0 until array.length()).mapNotNull { i ->
+                runCatching {
+                    com.reelforge.editor.data.ProjectJson.decode(array.getString(i)).texts.firstOrNull()
+                }.getOrNull()
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun storeSavedStyles() {
+        val array = org.json.JSONArray()
+        savedStyles.forEach { style ->
+            array.put(com.reelforge.editor.data.ProjectJson.encode(Project(name = "style", texts = listOf(style))))
+        }
+        stylePrefs().edit().putString("styles", array.toString()).apply()
+    }
+
+    /** Remembers the look of text [id] so it can be used again later, in any project. */
+    fun saveTextStyle(id: String) {
+        val source = project?.texts?.firstOrNull { it.id == id } ?: return
+        val named = TextItem(text = "My style ${savedStyles.size + 1}").withLookOf(source)
+        savedStyles = (savedStyles + named).takeLast(12)
+        storeSavedStyles()
+        message = "Style saved"
+    }
+
+    fun useSavedStyle(id: String, style: TextItem) = updateText(id) { it.withLookOf(style) }
+
+    fun deleteSavedStyle(style: TextItem) {
+        savedStyles = savedStyles.filterNot { it.id == style.id }
+        storeSavedStyles()
+    }
+
+    /** Gives every text in the project the look of text [id]. */
+    fun applyLookToAllTexts(id: String) = mutate { p ->
+        val source = p.texts.firstOrNull { it.id == id }
+        if (source == null) p else p.copy(texts = p.texts.map { it.withLookOf(source) })
+    }
+
+    /** Gives every text in the project the movement of text [id]. */
+    fun applyMotionToAllTexts(id: String) = mutate { p ->
+        val source = p.texts.firstOrNull { it.id == id }
+        if (source == null) p else p.copy(texts = p.texts.map { it.withMotionOf(source) })
+    }
+
     /** Adds a text written in the full-screen editor; it starts at the playhead. */
     fun addTextItem(draft: TextItem): String {
         val p = project ?: return ""

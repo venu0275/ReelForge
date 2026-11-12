@@ -294,6 +294,10 @@ fun EditorScreen(vm: EditorViewModel) {
                     composeTarget = null
                     composing = true
                 },
+                retype = { textId ->
+                    composeTarget = textId
+                    composing = true
+                },
             )
             Panel.BACKGROUND -> BackgroundPanel(vm, project)
             Panel.DRAW -> Unit
@@ -441,12 +445,13 @@ fun EditorScreen(vm: EditorViewModel) {
                 composeTarget = null
             },
             onSaved = { id ->
-                // Close the tool so the text is in view, selected, and can be dragged into place.
+                // A new text closes the tool so it is in view, selected, and can be dragged into
+                // place. Changing the words of an existing one leaves the screen as it was.
+                if (composeTarget == null) panel = null
                 composing = false
                 composeTarget = null
                 editingTextId = id
                 previewPick = id
-                panel = null
             },
         )
     }
@@ -1506,7 +1511,7 @@ private fun PreviewArea(
                 .filter { now >= it.startMs && now < it.endMs }
                 .forEach { t ->
                     key(t.id) {
-                        val anim = overlayAnim(now - t.startMs, t.endMs - t.startMs, t.animIn, t.animOut)
+                        val anim = overlayAnim(now - t.startMs, t.endMs - t.startMs, t.animIn, t.animOut, t.loop)
                         val look = t.copy(
                             x = 0f, y = 0f, x2 = 0f, y2 = 0f, startMs = 0, endMs = 0, moving = false,
                             animIn = OverlayAnim.NONE, animOut = OverlayAnim.NONE,
@@ -1515,8 +1520,15 @@ private fun PreviewArea(
                         val pose = if (t.keyframes.isEmpty()) null
                         else ProjectOps.poseAt(t.keyframes, now - t.startMs, t.keyframes.first())
                         val heightPx = frameHeightPx.toInt().coerceAtLeast(16)
-                        val bitmap = remember(look, heightPx) {
-                            EffectFactory.renderText(look, heightPx).asImageBitmap()
+                        // While a text is being revealed, only the letters that have appeared are drawn.
+                        val revealSteps = remember(t.text, t.reveal) {
+                            com.reelforge.editor.model.revealSteps(t.reveal, t.text)
+                        }
+                        val showing = com.reelforge.editor.model.revealCount(
+                            revealSteps, now - t.startMs, t.endMs - t.startMs,
+                        ) ?: Int.MAX_VALUE
+                        val bitmap = remember(look, heightPx, showing) {
+                            EffectFactory.renderText(look, heightPx, showing).asImageBitmap()
                         }
                         val gesture = rememberDragState()
                         val textWidthPx = bitmap.width.toFloat()

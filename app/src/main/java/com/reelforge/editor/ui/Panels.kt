@@ -368,6 +368,7 @@ fun TextPanel(
     onEditing: (String?) -> Unit,
     pickFont: (String) -> Unit,
     newText: () -> Unit,
+    retype: (String) -> Unit,
 ) {
     val editing = project.texts.firstOrNull { it.id == editingId }
 
@@ -422,6 +423,8 @@ fun TextPanel(
             modifier = Modifier.weight(1f),
             maxLines = 2,
         )
+        // Opens the full typing screen.
+        TextButton(onClick = { retype(id) }) { Text("\u270E") }
         TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
     Row(
@@ -464,6 +467,7 @@ fun TextPanel(
                     )
                 }
             }
+            TextLookExtras(vm, editing)
             if (editing.keyframes.isEmpty()) {
                 LabeledSlider("See-through (left) to solid (right)", editing.opacity, 0.1f..1f) { v ->
                     vm.updateText(id) { it.copy(opacity = v) }
@@ -473,18 +477,7 @@ fun TextPanel(
 
         TextTab.FONT -> {
             Text("Font", style = MaterialTheme.typography.labelLarge)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextFont.entries.forEach { f ->
-                    FilterChip(
-                        selected = editing.fontPath == null && editing.font == f,
-                        onClick = { vm.updateText(id) { it.copy(font = f, fontPath = null) } },
-                        label = { Text(f.label) },
-                    )
-                }
-            }
+            FontTiles(editing) { f -> vm.updateText(id) { it.copy(font = f, fontPath = null) } }
             FilterChip(
                 selected = editing.fontPath != null,
                 onClick = { pickFont(id) },
@@ -499,6 +492,7 @@ fun TextPanel(
                 Text("Outline colour", style = MaterialTheme.typography.labelLarge)
                 ColorPicker(editing.outlineColor) { c -> vm.updateText(id) { it.copy(outlineColor = c) } }
             }
+            TextEffectExtras(vm, editing)
             SwitchRow("Background box", editing.background) { b ->
                 vm.updateText(id) { it.copy(background = b) }
             }
@@ -520,6 +514,7 @@ fun TextPanel(
         }
 
         TextTab.STYLES -> {
+            TextStyleExtras(vm, editing)
             Text(
                 "Ready-made looks. Tap one to apply it; your words, place and timing stay as they are.",
                 style = MaterialTheme.typography.bodySmall,
@@ -553,6 +548,7 @@ fun TextPanel(
                 onX = { v -> vm.updateText(id) { it.copy(x2 = v) } },
                 onY = { v -> vm.updateText(id) { it.copy(y2 = v) } },
             )
+            TextMotionExtras(vm, editing)
         }
 
         TextTab.PLACE -> {

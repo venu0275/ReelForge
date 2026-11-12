@@ -180,7 +180,71 @@ data class TextItem(
     val x2: Float = 0f,
     val y2: Float = 0f,
     val keyframes: List<Keyframe> = emptyList(), // when set, these drive position / turn / opacity
-)
+    val underline: Boolean = false,
+    val letterSpacing: Float = 0f,   // extra space between letters, in letter widths (em)
+    val lineSpacing: Float = 1f,     // 1 = normal distance between lines
+    val shadow: Boolean = true,
+    val shadowColor: Int = 0xB0000000.toInt(),
+    val shadowStrength: Float = 1f,  // 1 = normal; scales how far and how soft the shadow is
+    val glow: Boolean = false,
+    val glowColor: Int = 0xFF40C4FF.toInt(),
+    val outlineWidth: Float = 1f,    // 1 = normal thickness
+    val loop: LoopFx = LoopFx.NONE,  // movement that repeats while the text is showing
+    val reveal: TextReveal = TextReveal.NONE,
+) {
+    /** This text with the look (colour, font, effects) of [other]; words, place and timing stay. */
+    fun withLookOf(other: TextItem): TextItem = copy(
+        color = other.color, size = other.size, font = other.font, fontPath = other.fontPath,
+        bold = other.bold, italic = other.italic, underline = other.underline, align = other.align,
+        letterSpacing = other.letterSpacing, lineSpacing = other.lineSpacing,
+        outline = other.outline, outlineColor = other.outlineColor, outlineWidth = other.outlineWidth,
+        background = other.background, boxColor = other.boxColor,
+        shadow = other.shadow, shadowColor = other.shadowColor, shadowStrength = other.shadowStrength,
+        glow = other.glow, glowColor = other.glowColor,
+    )
+
+    /** This text with the movement (in, out, keep moving, reveal) of [other]. */
+    fun withMotionOf(other: TextItem): TextItem = copy(
+        animIn = other.animIn, animOut = other.animOut, loop = other.loop, reveal = other.reveal,
+    )
+}
+
+/** How the words of a text appear. */
+enum class TextReveal(val label: String) {
+    NONE("All at once"), LETTERS("Letter by letter"), WORDS("Word by word"),
+}
+
+/**
+ * How many characters of [text] are showing at each step of a reveal; the last step shows all of
+ * it. Empty when there is nothing to reveal. Long texts are grouped into at most [maxSteps] steps.
+ */
+fun revealSteps(reveal: TextReveal, text: String, maxSteps: Int = 24): List<Int> {
+    if (reveal == TextReveal.NONE || text.isEmpty() || maxSteps < 1) return emptyList()
+    val ends = ArrayList<Int>()
+    for (i in text.indices) {
+        val c = text[i]
+        if (c.isWhitespace() || Character.isHighSurrogate(c)) continue
+        val endsWord = i == text.lastIndex || text[i + 1].isWhitespace()
+        if (reveal == TextReveal.LETTERS || endsWord) ends += i + 1
+    }
+    if (ends.isEmpty()) return emptyList()
+    val steps = if (ends.size <= maxSteps) ends
+    else ArrayList((1..maxSteps).map { ends[it * ends.size / maxSteps - 1] })
+    steps[steps.lastIndex] = text.length
+    return steps
+}
+
+/** How long a reveal takes for a text that is on screen for [durationMs]. */
+fun revealDurationMs(durationMs: Long): Long = minOf(1500L, durationMs * 6 / 10).coerceAtLeast(1L)
+
+/** Characters showing [tMs] after the text appeared, or null once everything is showing. */
+fun revealCount(steps: List<Int>, tMs: Long, durationMs: Long): Int? {
+    if (steps.isEmpty()) return null
+    val span = revealDurationMs(durationMs)
+    if (tMs >= span) return null
+    val index = (tMs.coerceAtLeast(0) * steps.size / span).toInt().coerceIn(0, steps.lastIndex)
+    return steps[index]
+}
 
 /**
  * Ready-made looks for a text. Applying one changes only how the text looks (colour, size, font,
@@ -194,6 +258,7 @@ enum class TextStyle(val label: String, val hint: String) {
     VLOG("Vlog", "Thin white letters, no outline"),
     ALERT("Alert", "White letters on a red box"),
     NOTE("Note", "Dark letters on a pale yellow box"),
+    NEON("Neon", "Bright letters with a blue glow"),
     PLAIN("Plain", "White letters, nothing else");
 
     fun applyTo(t: TextItem): TextItem {
@@ -202,6 +267,8 @@ enum class TextStyle(val label: String, val hint: String) {
         val base = t.copy(
             fontPath = null, italic = false, bold = true, outline = false, background = false,
             outlineColor = black, boxColor = 0x99000000.toInt(),
+            underline = false, letterSpacing = 0f, lineSpacing = 1f, outlineWidth = 1f,
+            shadow = true, shadowColor = 0xB0000000.toInt(), shadowStrength = 1f, glow = false,
         )
         return when (this) {
             TITLE -> base.copy(color = white, size = 0.12f, font = TextFont.SANS, outline = true)
@@ -211,6 +278,10 @@ enum class TextStyle(val label: String, val hint: String) {
             VLOG -> base.copy(color = white, size = 0.08f, font = TextFont.THIN, bold = false)
             ALERT -> base.copy(color = white, size = 0.08f, font = TextFont.SANS, background = true, boxColor = 0xE6D32F2F.toInt())
             NOTE -> base.copy(color = 0xFF212121.toInt(), size = 0.06f, font = TextFont.SERIF, bold = false, background = true, boxColor = 0xF2FFF59D.toInt())
+            NEON -> base.copy(
+                color = white, size = 0.1f, font = TextFont.SANS, shadow = false, glow = true,
+                glowColor = 0xFF40C4FF.toInt(),
+            )
             PLAIN -> base.copy(color = white, size = 0.08f, font = TextFont.SANS, bold = false)
         }
     }

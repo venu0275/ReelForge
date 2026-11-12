@@ -781,6 +781,38 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun text_newOptionsRenderAndExport() {
+        val plain = TextItem(text = "Hello world", size = 0.1f)
+        val base = EffectFactory.renderText(plain, 720)
+        val spaced = EffectFactory.renderText(plain.copy(letterSpacing = 0.4f), 720)
+        assertTrue("letter spacing must widen the text", spaced.width > base.width)
+        val twoLines = plain.copy(text = "Hello\nworld")
+        val tall = EffectFactory.renderText(twoLines.copy(lineSpacing = 2f), 720)
+        assertTrue("line spacing must make it taller", tall.height > EffectFactory.renderText(twoLines, 720).height)
+        val glowing = EffectFactory.renderText(plain.copy(glow = true, underline = true, outline = true, outlineWidth = 2.5f), 720)
+        assertTrue("glow needs room around the letters", glowing.width > base.width)
+        // A partly revealed text keeps its full size, so the letters do not jump.
+        val half = EffectFactory.renderText(plain, 720, 5)
+        assertEquals(base.width, half.width)
+        assertEquals(base.height, half.height)
+
+        val uri = solid("textopts", 0xFF101010.toInt())
+        val project = Project(
+            name = "textopts",
+            clips = listOf(imageClip(uri, 3_000)),
+            texts = listOf(
+                plain.copy(
+                    startMs = 0, endMs = 3_000, glow = true, underline = true, letterSpacing = 0.1f,
+                    loop = com.reelforge.editor.model.LoopFx.PULSE,
+                    reveal = com.reelforge.editor.model.TextReveal.LETTERS,
+                ),
+                twoLines.copy(startMs = 500, endMs = 2_500, y = -0.5f, reveal = com.reelforge.editor.model.TextReveal.WORDS),
+            ),
+        )
+        assertNear("length", 3_000, inspect(exportOk(project).file!!).durationMs, 600)
+    }
+
+    @Test
     fun store_musicSearchFindsAPlayableFreeTrack() {
         val search = com.reelforge.editor.data.MusicSearch
         var results = emptyList<com.reelforge.editor.data.MusicResult>()

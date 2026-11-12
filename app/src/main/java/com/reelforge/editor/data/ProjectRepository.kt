@@ -190,6 +190,17 @@ object ProjectJson {
         put("x2", t.x2.toDouble())
         put("y2", t.y2.toDouble())
         put("keyframes", keysToJson(t.keyframes))
+        put("underline", t.underline)
+        put("letterSpacing", t.letterSpacing.toDouble())
+        put("lineSpacing", t.lineSpacing.toDouble())
+        put("shadow", t.shadow)
+        put("shadowColor", t.shadowColor)
+        put("shadowStrength", t.shadowStrength.toDouble())
+        put("glow", t.glow)
+        put("glowColor", t.glowColor)
+        put("outlineWidth", t.outlineWidth.toDouble())
+        put("loop", t.loop.name)
+        put("reveal", t.reveal.name)
     }
 
     private fun keysToJson(keys: List<Keyframe>) = JSONArray().apply {
@@ -289,6 +300,19 @@ object ProjectJson {
                 x2 = t.optDouble("x2", 0.0).toFloat(),
                 y2 = t.optDouble("y2", 0.0).toFloat(),
                 keyframes = keysFromJson(t.optJSONArray("keyframes")),
+                underline = t.optBoolean("underline", false),
+                letterSpacing = t.optDouble("letterSpacing", 0.0).toFloat(),
+                lineSpacing = t.optDouble("lineSpacing", 1.0).toFloat(),
+                shadow = t.optBoolean("shadow", true),
+                shadowColor = t.optInt("shadowColor", 0xB0000000.toInt()),
+                shadowStrength = t.optDouble("shadowStrength", 1.0).toFloat(),
+                glow = t.optBoolean("glow", false),
+                glowColor = t.optInt("glowColor", 0xFF40C4FF.toInt()),
+                outlineWidth = t.optDouble("outlineWidth", 1.0).toFloat(),
+                loop = runCatching { com.reelforge.editor.model.LoopFx.valueOf(t.optString("loop")) }
+                    .getOrDefault(com.reelforge.editor.model.LoopFx.NONE),
+                reveal = runCatching { com.reelforge.editor.model.TextReveal.valueOf(t.optString("reveal")) }
+                    .getOrDefault(com.reelforge.editor.model.TextReveal.NONE),
             )
         }
         val music = o.optJSONObject("music")?.let { m ->

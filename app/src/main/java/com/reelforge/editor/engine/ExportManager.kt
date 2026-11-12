@@ -130,6 +130,8 @@ object ExportManager {
         val rotation: Float,
         val keyframes: List<Keyframe>,
         val loop: com.reelforge.editor.model.LoopFx = com.reelforge.editor.model.LoopFx.NONE,
+        val reveal: List<Bitmap> = emptyList(),
+        val revealMs: Long = 0,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -155,12 +157,17 @@ object ExportManager {
                 layer.loop,
             )
         } + project.texts.map { text ->
+            // A text that appears letter by letter is drawn once per step (fewer steps at large sizes).
+            val steps = com.reelforge.editor.model.revealSteps(text.reveal, text.text, if (height > 1200) 12 else 24)
             OverlaySpec(
                 EffectFactory.renderText(text, height),
                 text.startMs, text.endMs, text.x, text.y, text.opacity, text.animIn, text.animOut,
                 if (text.moving) text.x2 else text.x, if (text.moving) text.y2 else text.y,
                 text.rotation,
                 text.keyframes,
+                text.loop,
+                steps.map { EffectFactory.renderText(text, height, it) },
+                com.reelforge.editor.model.revealDurationMs(text.endMs - text.startMs),
             )
         }
 
@@ -193,6 +200,8 @@ object ExportManager {
                         rotation = s.rotation,
                         keyframes = s.keyframes,
                     loop = s.loop,
+                    reveal = s.reveal,
+                    revealUs = s.revealMs * 1000,
                     )
                 }
             buildClipItem(
@@ -269,6 +278,8 @@ object ExportManager {
                     rotation = s.rotation,
                     keyframes = s.keyframes,
                     loop = s.loop,
+                    reveal = s.reveal,
+                    revealUs = s.revealMs * 1000,
                 )
             }
             if (onTop.isNotEmpty()) {

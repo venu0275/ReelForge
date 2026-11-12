@@ -177,6 +177,9 @@ class TimedBitmapOverlay(
     private val rotation: Float = 0f,
     private val keyframes: List<Keyframe> = emptyList(),
     private val loop: LoopFx = LoopFx.NONE,
+    /** Pictures of a text being revealed, in order, shown during the first [revealUs]. */
+    private val reveal: List<Bitmap> = emptyList(),
+    private val revealUs: Long = 0,
 ) : BitmapOverlay() {
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
     private var baseUs = C.TIME_UNSET
@@ -187,7 +190,10 @@ class TimedBitmapOverlay(
     }
 
     override fun getBitmap(presentationTimeUs: Long): Bitmap {
-        relative(presentationTimeUs)
+        val since = relative(presentationTimeUs) - startUs
+        if (reveal.isNotEmpty() && revealUs > 0 && since >= 0 && since < revealUs) {
+            return reveal[(since * reveal.size / revealUs).toInt().coerceIn(0, reveal.lastIndex)]
+        }
         return bitmap
     }
 
@@ -657,48 +663,76 @@ object EffectFactory {
      * Renders a text item to a transparent bitmap sized for a frame [frameHeight] pixels tall.
      * The preview and the export both draw this bitmap, so they look the same.
      */
-    fun renderText(item: TextItem, frameHeight: Int): Bitmap {
+    fun renderText(item: TextItem, frameHeight: Int, visibleChars: Int = Int.MAX_VALUE): Bitmap {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = item.color
             textSize = max(8f, item.size * frameHeight)
             typeface = typeface(item)
-            textAlign = when (item.align) {
-                TextAlignH.LEFT -> Paint.Align.LEFT
-                TextAlignH.CENTER -> Paint.Align.CENTER
-                TextAlignH.RIGHT -> Paint.Align.RIGHT
+            // Lines are placed by hand (see below) so that a partly revealed line does not shift.
+            textAlign = Paint.Align.LEFT
+            isUnderlineText = item.underline
+            letterSpacing = item.letterSpacing.coerceIn(-0.1f, 1f)
+            if (item.shadow) {
+                val strength = item.shadowStrength.coerceIn(0.2f, 4f)
+                setShadowLayer(textSize * 0.08f * strength, 0f, textSize * 0.04f * strength, item.shadowColor)
             }
-            setShadowLayer(textSize * 0.08f, 0f, textSize * 0.04f, 0xB0000000.toInt())
         }
         val lines = item.text.ifBlank { " " }.split("\n")
-        val pad = paint.textSize * 0.25f
-        val lineHeight = paint.fontSpacing
-        val width = ceil((lines.maxOf { paint.measureText(it) }) + pad * 2).toInt().coerceAtLeast(2)
-        val height = ceil(lineHeight * lines.size + pad * 2).toInt().coerceAtLeast(2)
+        val outlineWidth = paint.textSize * 0.12f * item.outlineWidth.coerceIn(0.2f, 4f)
+        // Room around the letters for the box, a thick outline and the glow.
+        val pad = paint.textSize * 0.25f +
+            (if (item.glow) paint.textSize * 0.3f else 0f) +
+            (if (item.outline) (outlineWidth - paint.textSize * 0.12f).coerceAtLeast(0f) / 2f else 0f)
+        val lineHeight = paint.fontSpacing * item.lineSpacing.coerceIn(0.5f, 3f)
+        val widths = lines.map { paint.measureText(it) }
+        val width = ceil(widths.max() + pad * 2).toInt().coerceAtLeast(2)
+        val height = ceil(lineHeight * (lines.size - 1) + paint.fontSpacing + pad * 2).toInt().coerceAtLeast(2)
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         if (item.background) {
             val box = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = item.boxColor }
-            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), pad, pad, box)
+            val corner = paint.textSize * 0.25f
+            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), corner, corner, box)
         }
+        val glow = if (item.glow) {
+            Paint(paint).apply {
+                clearShadowLayer()
+                color = item.glowColor
+                maskFilter = android.graphics.BlurMaskFilter(
+                    paint.textSize * 0.22f, android.graphics.BlurMaskFilter.Blur.NORMAL,
+                )
+            }
+        } else null
         val stroke = if (item.outline) {
             Paint(paint).apply {
                 clearShadowLayer()
                 style = Paint.Style.STROKE
                 strokeJoin = Paint.Join.ROUND
-                strokeWidth = textSize * 0.12f
+                strokeWidth = outlineWidth
                 color = item.outlineColor
             }
         } else null
-        val x = when (item.align) {
-            TextAlignH.LEFT -> pad
-            TextAlignH.CENTER -> width / 2f
-            TextAlignH.RIGHT -> width - pad
-        }
         var baseline = pad - paint.fontMetrics.ascent
-        for (line in lines) {
-            if (stroke != null) canvas.drawText(line, x, baseline, stroke)
-            canvas.drawText(line, x, baseline, paint)
+        var lineStart = 0
+        lines.forEachIndexed { index, line ->
+            val left = when (item.align) {
+                TextAlignH.LEFT -> pad
+                TextAlignH.CENTER -> (width - widths[index]) / 2f
+                TextAlignH.RIGHT -> width - pad - widths[index]
+            }
+            // During a reveal only the first [visibleChars] characters are drawn, in their final place.
+            val showing = (visibleChars.toLong() - lineStart).coerceIn(0L, line.length.toLong()).toInt()
+            val shown = if (showing >= line.length) line else line.substring(0, showing)
+            if (shown.isNotEmpty()) {
+                if (glow != null) {
+                    canvas.drawText(shown, left, baseline, glow)
+                    canvas.drawText(shown, left, baseline, glow)
+                }
+                if (stroke != null) canvas.drawText(shown, left, baseline, stroke)
+                canvas.drawText(shown, left, baseline, paint)
+            }
             baseline += lineHeight
+            lineStart += line.length + 1
         }
         return bitmap
     }

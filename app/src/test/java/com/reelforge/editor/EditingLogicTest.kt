@@ -1250,3 +1250,64 @@ class TextStyleTest {
         assertEquals(looks.size, looks.toSet().size)
     }
 }
+
+class TextOptionsTest {
+    private fun steps(reveal: com.reelforge.editor.model.TextReveal, text: String, max: Int = 24) =
+        com.reelforge.editor.model.revealSteps(reveal, text, max)
+
+    @Test fun `letter by letter shows one more letter each step and ends with everything`() {
+        val letters = steps(com.reelforge.editor.model.TextReveal.LETTERS, "Hi yo")
+        assertEquals(listOf(1, 2, 4, 5), letters)
+        assertEquals(listOf(2, 5), steps(com.reelforge.editor.model.TextReveal.WORDS, "Hi yo"))
+        assertTrue(steps(com.reelforge.editor.model.TextReveal.NONE, "Hi yo").isEmpty())
+        assertTrue(steps(com.reelforge.editor.model.TextReveal.LETTERS, "   ").isEmpty())
+    }
+
+    @Test fun `long texts are grouped into a limited number of steps`() {
+        val text = "abcdefghij".repeat(10)
+        val out = steps(com.reelforge.editor.model.TextReveal.LETTERS, text, 8)
+        assertEquals(8, out.size)
+        assertEquals(text.length, out.last())
+        assertEquals(out.sorted(), out)
+    }
+
+    @Test fun `the reveal runs at the start and then shows everything`() {
+        val s = steps(com.reelforge.editor.model.TextReveal.LETTERS, "abcd")
+        assertEquals(1, com.reelforge.editor.model.revealCount(s, 0, 3_000))
+        assertEquals(1, com.reelforge.editor.model.revealCount(s, -50, 3_000))
+        assertEquals(3, com.reelforge.editor.model.revealCount(s, 800, 3_000))
+        assertEquals(null, com.reelforge.editor.model.revealCount(s, 1_500, 3_000))
+        assertEquals(null, com.reelforge.editor.model.revealCount(emptyList(), 10, 3_000))
+        assertEquals(600L, com.reelforge.editor.model.revealDurationMs(1_000))
+    }
+
+    @Test fun `copying a look or a motion leaves words, place and timing alone`() {
+        val a = com.reelforge.editor.model.TextItem(text = "A", x = 0.2f, startMs = 100, endMs = 900)
+        val b = com.reelforge.editor.model.TextItem(
+            text = "B", color = 0xFFFF0000.toInt(), underline = true, glow = true, letterSpacing = 0.2f,
+            loop = com.reelforge.editor.model.LoopFx.PULSE, reveal = com.reelforge.editor.model.TextReveal.WORDS,
+        )
+        val look = a.withLookOf(b)
+        assertEquals("A", look.text)
+        assertEquals(0.2f, look.x, 0f)
+        assertEquals(100L, look.startMs)
+        assertTrue(look.underline && look.glow && look.color == b.color && look.letterSpacing == 0.2f)
+        assertEquals(com.reelforge.editor.model.LoopFx.NONE, look.loop)
+        val motion = a.withMotionOf(b)
+        assertEquals(com.reelforge.editor.model.LoopFx.PULSE, motion.loop)
+        assertEquals(com.reelforge.editor.model.TextReveal.WORDS, motion.reveal)
+        assertTrue(!motion.underline && motion.color == a.color)
+    }
+
+    @Test fun `the new text options survive saving`() {
+        val text = com.reelforge.editor.model.TextItem(
+            text = "Saved", underline = true, letterSpacing = 0.15f, lineSpacing = 1.4f, shadow = false,
+            shadowStrength = 2f, glow = true, glowColor = 0xFF00FF00.toInt(), outlineWidth = 2.5f,
+            loop = com.reelforge.editor.model.LoopFx.SHAKE, reveal = com.reelforge.editor.model.TextReveal.LETTERS,
+        )
+        val saved = com.reelforge.editor.data.ProjectJson.decode(
+            com.reelforge.editor.data.ProjectJson.encode(Project(name = "p", texts = listOf(text)))
+        ).texts.single()
+        assertEquals(text, saved)
+    }
+}
