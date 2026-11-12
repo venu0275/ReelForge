@@ -290,13 +290,17 @@ fun EditorScreen(vm: EditorViewModel) {
                     fontTarget = textId
                     pickFont.launch(arrayOf("*/*"))
                 },
+                // The tool closes first: in portrait it is a sheet that would sit on top of the
+                // typing screen.
                 newText = {
                     composeTarget = null
                     composing = true
+                    panel = null
                 },
                 retype = { textId ->
                     composeTarget = textId
                     composing = true
+                    panel = null
                 },
             )
             Panel.BACKGROUND -> BackgroundPanel(vm, project)
