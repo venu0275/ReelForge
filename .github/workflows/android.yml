@@ -65,13 +65,15 @@ jobs:
           target: google_apis
           profile: pixel_6
           disk-size: 3072M
-          ram-size: 4096M
-          cores: 3
+          ram-size: 3072M
+          cores: 2
           disable-animations: true
           script: |
             adb logcat -G 32M
             adb logcat -c
-            timeout 1500 ./gradlew connectedDebugAndroidTest --stacktrace || touch tests-failed
+            timeout 1500 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.notClass=com.reelforge.editor.ScreenshotTest || touch tests-failed
+            ./gradlew --stop || true
+            timeout 600 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.reelforge.editor.ScreenshotTest || touch tests-failed
             timeout 120 adb logcat -d -s ReelForgeTest:V TestRunner:I || true
             mkdir -p screenshots
             timeout 120 adb pull /sdcard/Pictures/ReelForgeTest/. screenshots/ || true
