@@ -23,6 +23,8 @@ import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.ExportManager
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.AudioFx
+import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
@@ -36,6 +38,7 @@ import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.util.MediaUtils
+import com.reelforge.editor.util.SpeechMaker
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -501,6 +504,104 @@ class ExportDeviceTest {
         assertColour("top layer in the middle", green, pixel(file, 700, 0.5f, 0.5f), tolerance = 90)
         assertColour("lower layer around it", blue, pixel(file, 700, 0.5f, 0.27f))
         assertColour("main picture at the edge", red, pixel(file, 700, 0.05f, 0.5f))
+    }
+
+    @Test
+    fun keyframedImageLayer_movesAcrossTheFrame() {
+        // A small blue square glides from the left edge (0 s) to the right edge (2 s).
+        val square = ImageLayer(
+            uri = solid("key_square", blue).toString(), scale = 0.3f, startMs = 0, endMs = 2_000,
+            keyframes = listOf(Keyframe(0, -1f, 0f), Keyframe(2_000, 1f, 0f)),
+        )
+        val project = Project(
+            name = "keyframes",
+            clips = listOf(imageClip(solid("key_base", red), 2_000)),
+            layers = listOf(square),
+        )
+        val file = exportOk(project).file!!
+        assertColour("starts on the left", blue, pixel(file, 100, 0.08f, 0.5f))
+        assertColour("right side is empty at the start", red, pixel(file, 100, 0.92f, 0.5f))
+        assertColour("passes the middle half way", blue, pixel(file, 1_000, 0.5f, 0.5f))
+        assertColour("ends on the right", blue, pixel(file, 1_900, 0.92f, 0.5f))
+        assertColour("left side is empty at the end", red, pixel(file, 1_900, 0.08f, 0.5f))
+    }
+
+    @Test
+    fun keyframedVideoLayer_movesAndFadesOut() {
+        val layer = layerOf(solidVideo("keyv_blue", blue, 2_000)).copy(
+            startMs = 0, scale = 0.3f,
+            keyframes = listOf(
+                Keyframe(0, -1f, 1f, opacity = 1f),      // top left
+                Keyframe(1_000, 1f, -1f, opacity = 1f),  // bottom right
+                Keyframe(1_900, 1f, -1f, opacity = 0f),  // faded away
+            ),
+        )
+        val project = Project(
+            name = "keyframes-video",
+            clips = listOf(imageClip(solid("keyv_base", red), 2_000)),
+            videoLayers = listOf(layer),
+        )
+        val file = exportOk(project).file!!
+        assertColour("starts top left", blue, pixel(file, 100, 0.08f, 0.12f))
+        assertColour("bottom right is empty at the start", red, pixel(file, 100, 0.92f, 0.88f))
+        assertColour("reaches bottom right", blue, pixel(file, 1_050, 0.92f, 0.88f))
+        assertColour("top left is empty by then", red, pixel(file, 1_050, 0.08f, 0.12f))
+        assertColour("has faded out at the end", red, pixel(file, 1_950, 0.92f, 0.88f), tolerance = 90)
+    }
+
+    @Test
+    fun everySoundEffect_exportsOnClipsAndSounds() {
+        val source = videoClip(baseVideo(1_200))
+        val clips = AudioFx.entries.map { source.copy(audioFx = it, trimEndMs = 600) }
+        val project = Project(
+            name = "fx",
+            clips = clips,
+            audio = listOf(
+                AudioClip(
+                    uri = source.uri, title = "fx", startMs = 300, durationMs = 1_000,
+                    audioFx = AudioFx.ECHO, fadeOutMs = 300,
+                ),
+            ),
+        )
+        val info = inspect(exportOk(project).file!!)
+        assertNear("duration", 600L * clips.size, info.durationMs, 900)
+        assertTrue(info.hasAudio)
+
+        // The same clips in a layered export take the separate audio-track path.
+        val layered = project.copy(
+            clips = clips.take(3),
+            videoLayers = listOf(layerOf(File(Uri.parse(source.uri).path!!)).copy(scale = 0.3f)),
+        )
+        assertNear("layered duration", 1_800, inspect(exportOk(layered).file!!).durationMs, 700)
+    }
+
+    @Test
+    fun textToSpeech_makesAPlayableSoundWhenTheDeviceHasAVoice() {
+        val file = File(context.cacheDir, "speech_test.wav")
+        file.delete()
+        val latch = CountDownLatch(1)
+        var ok = false
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            SpeechMaker.speak(context, "Hello from Reel Forge", file) { result ->
+                ok = result
+                latch.countDown()
+            }
+        }
+        assertTrue("speech neither finished nor failed", latch.await(45, TimeUnit.SECONDS))
+        if (!ok) {
+            log("SKIP text to speech: this device has no speech voice installed")
+            return
+        }
+        val duration = MediaUtils.audioDurationMs(context, Uri.fromFile(file))
+        log("SPEECH ok: ${file.length() / 1024} KB, $duration ms")
+        assertTrue("speech file has no length", duration > 200)
+        // The spoken clip exports like any other sound.
+        val project = Project(
+            name = "speech",
+            clips = listOf(imageClip(photo("speech_bg", 320, 180, Color.DKGRAY), 1_500)),
+            audio = listOf(AudioClip(uri = Uri.fromFile(file).toString(), title = "Speech", startMs = 200, durationMs = duration)),
+        )
+        assertNear("duration", 1_500, inspect(exportOk(project).file!!).durationMs, 600)
     }
 
     @Test

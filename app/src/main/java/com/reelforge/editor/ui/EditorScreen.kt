@@ -873,6 +873,19 @@ private fun Timeline(
                                 vm, clip, clipStartPx, pxPerMs, tilePx, visibleFrom, visibleTo,
                                 selected = clip.id == vm.selectedClipId,
                                 snapMs = snapMs,
+                                onReorder = { dragPx ->
+                                    // Drop position: count the other clips whose middle is to
+                                    // the left of where this clip's middle was let go.
+                                    val middle = clipStartPx + clip.durationMs * pxPerMs / 2 + dragPx
+                                    var edge = 0f
+                                    var target = 0
+                                    project.clips.forEach { other ->
+                                        val width = other.durationMs * pxPerMs
+                                        if (other.id != clip.id && edge + width / 2 < middle) target++
+                                        edge += width
+                                    }
+                                    vm.moveClipTo(clip.id, target)
+                                },
                             )
                         }
                     }
@@ -1025,6 +1038,7 @@ private fun ClipBlock(
     visibleTo: Float,
     selected: Boolean,
     snapMs: Long,
+    onReorder: (dragPx: Float) -> Unit,
 ) {
     val density = LocalDensity.current
     val widthPx = clip.durationMs * pxPerMs
@@ -1049,11 +1063,28 @@ private fun ClipBlock(
 
     val shape = RoundedCornerShape(6.dp)
     val outline = MaterialTheme.colorScheme.primary
+    // Long-press and drag a clip sideways to move it to another place in the video.
+    var reorderDrag by remember { mutableFloatStateOf(0f) }
+    val drop by rememberUpdatedState(onReorder)
     Box(
         Modifier
             .width(with(density) { widthPx.toDp() })
             .fillMaxHeight()
-            .zIndex(if (selected) 1f else 0f)
+            .zIndex(if (reorderDrag != 0f) 2f else if (selected) 1f else 0f)
+            .offset { IntOffset(reorderDrag.roundToInt(), 0) }
+            .alpha(if (reorderDrag != 0f) 0.75f else 1f)
+            .pointerInput(clip.id) {
+                detectDragGesturesAfterLongPress(
+                    onDragEnd = {
+                        drop(reorderDrag)
+                        reorderDrag = 0f
+                    },
+                    onDragCancel = { reorderDrag = 0f },
+                ) { change, amount ->
+                    change.consume()
+                    reorderDrag += amount.x
+                }
+            }
     ) {
         Box(
             Modifier
@@ -1294,6 +1325,8 @@ private fun PreviewArea(
                     LaunchedEffect(layer.id) { vm.resyncLayers() }
                     val local = now - layer.startMs
                     val active = local >= 0 && local < layer.durationMs
+                    val pose = if (layer.keyframes.isEmpty()) null
+                    else ProjectOps.poseAt(layer.keyframes, local, layer.keyframes.first())
                     val layerHeight = frameHeight * layer.scale
                     AndroidView(
                         factory = { context ->
@@ -1304,12 +1337,14 @@ private fun PreviewArea(
                         },
                         onRelease = { layerPlayer.clearVideoTextureView(it) },
                         modifier = Modifier
-                            .align(BiasAlignment(layer.x, -layer.y))
+                            .align(BiasAlignment(pose?.x ?: layer.x, -(pose?.y ?: layer.y)))
                             .height(layerHeight)
                             .width(layerHeight * layer.aspect)
                             .graphicsLayer(
-                                alpha = if (active) layer.opacity.coerceIn(0f, 1f) else 0f,
-                                rotationZ = -layer.rotation,
+                                alpha = if (active) (pose?.opacity ?: layer.opacity).coerceIn(0f, 1f) else 0f,
+                                scaleX = pose?.scale ?: 1f,
+                                scaleY = pose?.scale ?: 1f,
+                                rotationZ = -(pose?.rotation ?: layer.rotation),
                             )
                             .clickable(enabled = active) { onEditLayer(layer.id) },
                     )
@@ -1325,6 +1360,8 @@ private fun PreviewArea(
                         val anim = overlayAnim(
                             now - layer.startMs, layer.endMs - layer.startMs, layer.animIn, layer.animOut
                         )
+                        val pose = if (layer.keyframes.isEmpty()) null
+                        else ProjectOps.poseAt(layer.keyframes, now - layer.startMs, layer.keyframes.first())
                         if (still != null) {
                             Image(
                                 bitmap = still,
@@ -1332,19 +1369,20 @@ private fun PreviewArea(
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
                                     .align(
-                                        glide(
+                                        if (pose != null) BiasAlignment(pose.x, -pose.y)
+                                        else glide(
                                             layer.x, layer.y, layer.x2, layer.y2, layer.moving,
                                             now - layer.startMs, layer.endMs - layer.startMs,
                                         )
                                     )
                                     .height(frameHeight * layer.scale)
                                     .graphicsLayer(
-                                        alpha = (anim.alpha * layer.opacity).coerceIn(0f, 1f),
-                                        scaleX = anim.scale,
-                                        scaleY = anim.scale,
+                                        alpha = (anim.alpha * (pose?.opacity ?: layer.opacity)).coerceIn(0f, 1f),
+                                        scaleX = anim.scale * (pose?.scale ?: 1f),
+                                        scaleY = anim.scale * (pose?.scale ?: 1f),
                                         translationX = anim.dx * frameWidthPx / 2f,
                                         translationY = -anim.dy * frameHeightPx / 2f,
-                                        rotationZ = -(layer.rotation + anim.rotation),
+                                        rotationZ = -((pose?.rotation ?: layer.rotation) + anim.rotation),
                                     )
                                     .clickable { onEditLayer(layer.id) },
                             )
@@ -1361,8 +1399,10 @@ private fun PreviewArea(
                         val look = t.copy(
                             x = 0f, y = 0f, x2 = 0f, y2 = 0f, startMs = 0, endMs = 0, moving = false,
                             animIn = OverlayAnim.NONE, animOut = OverlayAnim.NONE,
-                            opacity = 1f, rotation = 0f,
+                            opacity = 1f, rotation = 0f, keyframes = emptyList(),
                         )
+                        val pose = if (t.keyframes.isEmpty()) null
+                        else ProjectOps.poseAt(t.keyframes, now - t.startMs, t.keyframes.first())
                         val heightPx = frameHeightPx.toInt().coerceAtLeast(16)
                         val bitmap = remember(look, heightPx) {
                             EffectFactory.renderText(look, heightPx).asImageBitmap()
@@ -1372,15 +1412,16 @@ private fun PreviewArea(
                             contentDescription = t.text,
                             modifier = Modifier
                                 .align(
-                                    glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
+                                    if (pose != null) BiasAlignment(pose.x, -pose.y)
+                                    else glide(t.x, t.y, t.x2, t.y2, t.moving, now - t.startMs, t.endMs - t.startMs)
                                 )
                                 .graphicsLayer(
-                                    alpha = (anim.alpha * t.opacity).coerceIn(0f, 1f),
-                                    scaleX = anim.scale,
-                                    scaleY = anim.scale,
+                                    alpha = (anim.alpha * (pose?.opacity ?: t.opacity)).coerceIn(0f, 1f),
+                                    scaleX = anim.scale * (pose?.scale ?: 1f),
+                                    scaleY = anim.scale * (pose?.scale ?: 1f),
                                     translationX = anim.dx * frameWidthPx / 2f,
                                     translationY = -anim.dy * frameHeightPx / 2f,
-                                    rotationZ = -(t.rotation + anim.rotation),
+                                    rotationZ = -((pose?.rotation ?: t.rotation) + anim.rotation),
                                 )
                                 .clickable { onEditText(t.id) },
                         )

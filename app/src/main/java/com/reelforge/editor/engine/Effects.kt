@@ -35,8 +35,10 @@ import androidx.media3.effect.VideoCompositorSettings
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.FilterPreset
+import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
+import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.model.TextAlignH
 import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.TransitionStyle
@@ -165,6 +167,7 @@ class TimedBitmapOverlay(
     private val x2: Float = x,
     private val y2: Float = y,
     private val rotation: Float = 0f,
+    private val keyframes: List<Keyframe> = emptyList(),
 ) : BitmapOverlay() {
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
     private var baseUs = C.TIME_UNSET
@@ -182,16 +185,32 @@ class TimedBitmapOverlay(
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         val t = relative(presentationTimeUs)
         if (t < startUs || t >= endUs) return hidden
-        val anim = overlayAnim((t - startUs) / 1000, (endUs - startUs) / 1000, animIn, animOut)
-        val progress = ((t - startUs).toFloat() / (endUs - startUs).coerceAtLeast(1)).coerceIn(0f, 1f)
-        val px = (x + (x2 - x) * progress + anim.dx).coerceIn(-1f, 1f)
-        val py = (y + (y2 - y) * progress).coerceIn(-1f, 1f)
+        val sinceStartMs = (t - startUs) / 1000
+        val anim = overlayAnim(sinceStartMs, (endUs - startUs) / 1000, animIn, animOut)
+        val px: Float
+        val py: Float
+        var scale = anim.scale
+        var turn = rotation
+        var alpha = opacity
+        if (keyframes.isNotEmpty()) {
+            // Keyframes decide place, size, turn and opacity.
+            val pose = ProjectOps.poseAt(keyframes, sinceStartMs, keyframes.first())
+            px = (pose.x + anim.dx).coerceIn(-1f, 1f)
+            py = pose.y.coerceIn(-1f, 1f)
+            scale *= pose.scale.coerceIn(0.05f, 10f)
+            turn = pose.rotation
+            alpha = pose.opacity
+        } else {
+            val progress = ((t - startUs).toFloat() / (endUs - startUs).coerceAtLeast(1)).coerceIn(0f, 1f)
+            px = (x + (x2 - x) * progress + anim.dx).coerceIn(-1f, 1f)
+            py = (y + (y2 - y) * progress).coerceIn(-1f, 1f)
+        }
         return OverlaySettings.Builder()
             .setBackgroundFrameAnchor(px, (py + anim.dy).coerceIn(-1f, 1f))
             .setOverlayFrameAnchor(px, py)
-            .setScale(anim.scale, anim.scale)
-            .setRotationDegrees(rotation + anim.rotation)
-            .setAlphaScale((anim.alpha * opacity).coerceIn(0f, 1f))
+            .setScale(scale, scale)
+            .setRotationDegrees(turn + anim.rotation)
+            .setAlphaScale((anim.alpha * alpha).coerceIn(0f, 1f))
             .build()
     }
 }
@@ -484,6 +503,7 @@ class LayerPlacement(
     val y: Float,
     val opacity: Float,
     val rotation: Float,
+    val keyframes: List<Keyframe> = emptyList(),
 )
 
 /**
@@ -513,9 +533,20 @@ class LayerCompositorSettings(
     override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
         if (inputId == layers.size + 1) return base
         val layer = layers.getOrNull(inputId - 1) ?: return hidden // also hides input 0
-        return if (presentationTimeUs >= layer.startUs && presentationTimeUs < layer.endUs) {
-            shown[inputId - 1]
-        } else hidden
+        if (presentationTimeUs < layer.startUs || presentationTimeUs >= layer.endUs) return hidden
+        if (layer.keyframes.isEmpty()) return shown[inputId - 1]
+        // Keyframed layer: work out where it is at this moment.
+        val pose = ProjectOps.poseAt(
+            layer.keyframes, (presentationTimeUs - layer.startUs) / 1000, layer.keyframes.first()
+        )
+        val scale = pose.scale.coerceIn(0.05f, 10f)
+        return OverlaySettings.Builder()
+            .setBackgroundFrameAnchor(pose.x.coerceIn(-1f, 1f), pose.y.coerceIn(-1f, 1f))
+            .setOverlayFrameAnchor(pose.x.coerceIn(-1f, 1f), pose.y.coerceIn(-1f, 1f))
+            .setScale(scale, scale)
+            .setAlphaScale(pose.opacity.coerceIn(0f, 1f))
+            .setRotationDegrees(pose.rotation)
+            .build()
     }
 }
 

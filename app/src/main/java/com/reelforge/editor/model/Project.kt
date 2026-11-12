@@ -57,6 +57,7 @@ data class Clip(
     val fill: Boolean = false,    // true = crop to fill the frame, false = fit with bars
     val transition: TransitionStyle = TransitionStyle.FADE,
     val pitch: Float = 1f,        // voice changer: <1 deeper, >1 higher
+    val audioFx: AudioFx = AudioFx.NONE,
 ) {
     val effectiveSpeed: Float get() = if (type == ClipType.IMAGE) 1f else speed
 
@@ -69,6 +70,30 @@ enum class Background(val label: String) { BLACK("Black"), COLOR("Colour"), BLUR
 
 /** How a clip's fade-in / fade-out time is animated. */
 enum class TransitionStyle(val label: String) { FADE("Fade"), SLIDE("Slide"), ZOOM("Zoom") }
+
+/**
+ * One point of a keyframe animation: where an item is, how big, how turned and how see-through
+ * at [tMs] after the item appears. Between keyframes the values glide evenly.
+ */
+data class Keyframe(
+    val tMs: Long,
+    val x: Float,
+    val y: Float,
+    val scale: Float = 1f,      // multiplies the item's own size
+    val rotation: Float = 0f,
+    val opacity: Float = 1f,
+)
+
+/** A sound effect applied to a clip's audio on export. */
+enum class AudioFx(val label: String) {
+    NONE("None"),
+    ECHO("Echo"),
+    REVERB("Hall"),
+    BASS("Bass boost"),
+    TREBLE("Treble boost"),
+    PHONE("Telephone"),
+    ROBOT("Robot"),
+}
 
 /** Entry / exit animation for text, stickers and image layers. */
 enum class OverlayAnim(val label: String) {
@@ -127,6 +152,7 @@ data class TextItem(
     val moving: Boolean = false,  // glide from (x, y) to (x2, y2) while visible
     val x2: Float = 0f,
     val y2: Float = 0f,
+    val keyframes: List<Keyframe> = emptyList(), // when set, these drive position / turn / opacity
 )
 
 /** A picture (photo, logo, watermark) drawn on top of the main track. */
@@ -145,6 +171,7 @@ data class ImageLayer(
     val moving: Boolean = false,
     val x2: Float = 0f,
     val y2: Float = 0f,
+    val keyframes: List<Keyframe> = emptyList(),
 )
 
 /**
@@ -170,6 +197,7 @@ data class VideoLayer(
     val chromaKey: Boolean = false,
     val keyColor: Int = 0xFF00FF00.toInt(),
     val keyTolerance: Float = 0.18f,
+    val keyframes: List<Keyframe> = emptyList(),
 ) {
     val durationMs: Long get() = trimEndMs - trimStartMs
 }
@@ -185,6 +213,7 @@ data class AudioClip(
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
     val offsetMs: Long = 0,   // where in the audio file this clip starts playing
+    val audioFx: AudioFx = AudioFx.NONE,
 )
 
 data class MusicTrack(

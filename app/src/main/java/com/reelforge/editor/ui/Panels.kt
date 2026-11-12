@@ -36,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.reelforge.editor.model.AudioFx
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
@@ -127,6 +128,17 @@ fun TrimPanel(vm: EditorViewModel, clip: Clip) {
             MediaUtils.formatTime(clip.sourceDurationMs),
         style = MaterialTheme.typography.bodySmall,
     )
+    // Slip: keep the clip's length and place, but show an earlier or later part of the video.
+    val slack = clip.sourceDurationMs - (clip.trimEndMs - clip.trimStartMs)
+    if (slack > 0) {
+        Spacer(Modifier.height(8.dp))
+        CommitSlider(
+            label = "Slip (which part of the video plays)",
+            value = clip.trimStartMs.toFloat(),
+            range = 0f..slack.toFloat(),
+            format = { "from " + MediaUtils.formatTime(it.toLong()) },
+        ) { v -> vm.slipClip(clip.id, v.toLong()) }
+    }
 }
 
 private fun Clip.clampFades(): Clip = ProjectOps.clampFades(this)
@@ -197,6 +209,8 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
                 )
             }
     }
+    Spacer(Modifier.height(8.dp))
+    FxChips(clip.audioFx) { fx -> vm.updateClip(clip.id) { it.copy(audioFx = fx) } }
 }
 
 @Composable
@@ -430,9 +444,6 @@ fun TextPanel(
             Text("Colour", style = MaterialTheme.typography.labelLarge)
             ColorPicker(editing.color) { c -> vm.updateText(id) { it.copy(color = c) } }
             LabeledSlider("Size", editing.size, 0.02f..0.4f) { v -> vm.updateText(id) { it.copy(size = v) } }
-            LabeledSlider("Opacity", editing.opacity, 0f..1f) { v ->
-                vm.updateText(id) { it.copy(opacity = v) }
-            }
         }
 
         TextTab.FONT -> {
@@ -537,25 +548,21 @@ fun TextPanel(
             ) {
                 FilterChip(
                     selected = false,
-                    onClick = { vm.updateText(id) { it.copy(rotation = turned(it.rotation, 90f)) } },
+                    onClick = { vm.editPose(ItemKind.TEXT, id) { it.copy(rotation = turned(it.rotation, 90f)) } },
                     label = { Text("Turn left 90°") },
                 )
                 FilterChip(
                     selected = false,
-                    onClick = { vm.updateText(id) { it.copy(rotation = turned(it.rotation, -90f)) } },
+                    onClick = { vm.editPose(ItemKind.TEXT, id) { it.copy(rotation = turned(it.rotation, -90f)) } },
                     label = { Text("Turn right 90°") },
                 )
                 FilterChip(
-                    selected = editing.rotation == 0f,
-                    onClick = { vm.updateText(id) { it.copy(rotation = 0f) } },
+                    selected = false,
+                    onClick = { vm.editPose(ItemKind.TEXT, id) { it.copy(rotation = 0f) } },
                     label = { Text("Straight") },
                 )
             }
-            LabeledSlider("Angle: ${editing.rotation.roundToInt()}°", editing.rotation, -180f..180f) { v ->
-                vm.updateText(id) { it.copy(rotation = v) }
-            }
-            LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateText(id) { it.copy(x = v) } }
-            LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateText(id) { it.copy(y = v) } }
+            PoseControls(vm, ItemKind.TEXT, id)
             TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
                 vm.updateText(id) { it.copy(startMs = s, endMs = e) }
             }
@@ -741,12 +748,7 @@ fun LayerPanel(
     }
     CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutLayer(id, cut) }
     LabeledSlider("Size", editing.scale, 0.05f..1f) { v -> vm.updateLayer(id) { it.copy(scale = v) } }
-    LabeledSlider("Opacity", editing.opacity, 0f..1f) { v -> vm.updateLayer(id) { it.copy(opacity = v) } }
-    LabeledSlider("Rotation", editing.rotation, -180f..180f) { v ->
-        vm.updateLayer(id) { it.copy(rotation = v) }
-    }
-    LabeledSlider("Left ↔ Right", editing.x, -1f..1f) { v -> vm.updateLayer(id) { it.copy(x = v) } }
-    LabeledSlider("Bottom ↔ Top", editing.y, -1f..1f) { v -> vm.updateLayer(id) { it.copy(y = v) } }
+    PoseControls(vm, ItemKind.LAYER, id)
     TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
         vm.updateLayer(id) { it.copy(startMs = s, endMs = e) }
     }
@@ -779,6 +781,19 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
         "Use headphones while recording so the microphone does not pick up the video sound.",
         style = MaterialTheme.typography.bodySmall,
     )
+    Spacer(Modifier.height(8.dp))
+    var speech by remember { mutableStateOf("") }
+    OutlinedTextField(
+        value = speech,
+        onValueChange = { speech = it },
+        label = { Text("Type words to be spoken") },
+        modifier = Modifier.fillMaxWidth(),
+        maxLines = 3,
+    )
+    Button(
+        onClick = { vm.speakText(speech) },
+        enabled = speech.isNotBlank() && !vm.isSpeaking,
+    ) { Text(if (vm.isSpeaking) "Creating voice…" else "Add as spoken voice") }
     project.audio.forEach { clip ->
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -792,6 +807,7 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
         }
         CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
+        FxChips(clip.audioFx) { fx -> vm.updateAudioClip(clip.id) { it.copy(audioFx = fx) } }
         CommitSlider(
             label = "Starts at",
             value = clip.startMs.toFloat(),
@@ -915,12 +931,7 @@ private fun VideoLayerEditor(vm: EditorViewModel, project: Project, layer: Video
     }
     CutRow(vm.canCut(layer.startMs, layer.startMs + layer.durationMs)) { cut -> vm.cutVideoLayer(id, cut) }
     LabeledSlider("Size", layer.scale, 0.1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(scale = v) } }
-    LabeledSlider("Opacity", layer.opacity, 0f..1f) { v -> vm.updateVideoLayer(id) { it.copy(opacity = v) } }
-    LabeledSlider("Rotation", layer.rotation, -180f..180f) { v ->
-        vm.updateVideoLayer(id) { it.copy(rotation = v) }
-    }
-    LabeledSlider("Left ↔ Right", layer.x, -1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(x = v) } }
-    LabeledSlider("Bottom ↔ Top", layer.y, -1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(y = v) } }
+    PoseControls(vm, ItemKind.VIDEO, id)
 
     CommitSlider(
         label = "Starts at",
@@ -977,4 +988,65 @@ private fun VideoLayerEditor(vm: EditorViewModel, project: Project, layer: Video
             style = MaterialTheme.typography.bodySmall,
         )
     }
+}
+
+/** Sound effect choices. They are added when the video is exported. */
+@Composable
+private fun FxChips(current: AudioFx, onChange: (AudioFx) -> Unit) {
+    Text("Sound effect", style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AudioFx.entries.forEach { fx ->
+            FilterChip(selected = current == fx, onClick = { onChange(fx) }, label = { Text(fx.label) })
+        }
+    }
+    if (current != AudioFx.NONE) {
+        Text(
+            "You will hear this effect in the exported video; the preview plays the original sound.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+/**
+ * Place, angle and opacity of a text, image layer or video layer at the red line, with optional
+ * keyframe animation. With animation on, changing a value saves a keyframe at the red line.
+ */
+@Composable
+private fun PoseControls(vm: EditorViewModel, kind: ItemKind, id: String) {
+    val pose = vm.poseOf(kind, id) ?: return
+    val keys = vm.keyframesOf(kind, id)
+    val animated = keys.isNotEmpty()
+
+    SwitchRow("Animate with keyframes", animated) { on -> vm.setKeyframing(kind, id, on) }
+    if (animated) {
+        Text(
+            "Move the red line to another moment, then change the place, zoom, angle or opacity. " +
+                "A keyframe is saved there and the item glides between keyframes.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            keys.forEach { key ->
+                FilterChip(
+                    selected = kotlin.math.abs(key.tMs - pose.tMs) <= ProjectOps.KEYFRAME_MERGE_MS,
+                    onClick = { vm.deleteKeyframe(kind, id, key.tMs) },
+                    label = { Text(MediaUtils.formatTime(key.tMs.coerceAtLeast(0)) + "  ✕") },
+                )
+            }
+        }
+        LabeledSlider("Zoom: %.1fx".format(pose.scale), pose.scale, 0.2f..3f) { v ->
+            vm.editPose(kind, id) { it.copy(scale = v) }
+        }
+    }
+    LabeledSlider("Left ↔ Right", pose.x, -1f..1f) { v -> vm.editPose(kind, id) { it.copy(x = v) } }
+    LabeledSlider("Bottom ↔ Top", pose.y, -1f..1f) { v -> vm.editPose(kind, id) { it.copy(y = v) } }
+    LabeledSlider("Angle: ${pose.rotation.roundToInt()}°", pose.rotation, -180f..180f) { v ->
+        vm.editPose(kind, id) { it.copy(rotation = v) }
+    }
+    LabeledSlider("Opacity", pose.opacity, 0f..1f) { v -> vm.editPose(kind, id) { it.copy(opacity = v) } }
 }

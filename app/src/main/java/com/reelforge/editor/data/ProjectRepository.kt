@@ -3,6 +3,8 @@ package com.reelforge.editor.data
 import android.content.Context
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.AudioFx
+import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.TransitionStyle
 import com.reelforge.editor.model.VideoLayer
@@ -73,6 +75,7 @@ object ProjectJson {
                     put("moving", l.moving)
                     put("x2", l.x2.toDouble())
                     put("y2", l.y2.toDouble())
+                    put("keyframes", keysToJson(l.keyframes))
                 })
             }
         })
@@ -97,6 +100,7 @@ object ProjectJson {
                     put("chromaKey", v.chromaKey)
                     put("keyColor", v.keyColor)
                     put("keyTolerance", v.keyTolerance.toDouble())
+                    put("keyframes", keysToJson(v.keyframes))
                 })
             }
         })
@@ -112,6 +116,7 @@ object ProjectJson {
                     put("fadeInMs", a.fadeInMs)
                     put("fadeOutMs", a.fadeOutMs)
                     put("offsetMs", a.offsetMs)
+                    put("audioFx", a.audioFx.name)
                 })
             }
         })
@@ -155,6 +160,7 @@ object ProjectJson {
         put("fill", c.fill)
         put("transition", c.transition.name)
         put("pitch", c.pitch.toDouble())
+        put("audioFx", c.audioFx.name)
     }
 
     private fun textToJson(t: TextItem) = JSONObject().apply {
@@ -182,7 +188,38 @@ object ProjectJson {
         put("moving", t.moving)
         put("x2", t.x2.toDouble())
         put("y2", t.y2.toDouble())
+        put("keyframes", keysToJson(t.keyframes))
     }
+
+    private fun keysToJson(keys: List<Keyframe>) = JSONArray().apply {
+        keys.forEach { k ->
+            put(JSONObject().apply {
+                put("t", k.tMs)
+                put("x", k.x.toDouble())
+                put("y", k.y.toDouble())
+                put("scale", k.scale.toDouble())
+                put("rotation", k.rotation.toDouble())
+                put("opacity", k.opacity.toDouble())
+            })
+        }
+    }
+
+    private fun keysFromJson(array: JSONArray?): List<Keyframe> {
+        if (array == null) return emptyList()
+        return (0 until array.length()).map { i ->
+            val k = array.getJSONObject(i)
+            Keyframe(
+                tMs = k.getLong("t"),
+                x = k.optDouble("x", 0.0).toFloat(),
+                y = k.optDouble("y", 0.0).toFloat(),
+                scale = k.optDouble("scale", 1.0).toFloat(),
+                rotation = k.optDouble("rotation", 0.0).toFloat(),
+                opacity = k.optDouble("opacity", 1.0).toFloat(),
+            )
+        }.sortedBy { it.tMs }
+    }
+
+    private fun fx(name: String): AudioFx = runCatching { AudioFx.valueOf(name) }.getOrDefault(AudioFx.NONE)
 
     private fun anim(name: String): OverlayAnim =
         runCatching { OverlayAnim.valueOf(name) }.getOrDefault(OverlayAnim.NONE)
@@ -218,6 +255,7 @@ object ProjectJson {
                 transition = runCatching { TransitionStyle.valueOf(c.optString("transition")) }
                     .getOrDefault(TransitionStyle.FADE),
                 pitch = c.optDouble("pitch", 1.0).toFloat(),
+                audioFx = fx(c.optString("audioFx")),
             )
         }
         val texts = (0 until textsJson.length()).map { i ->
@@ -249,6 +287,7 @@ object ProjectJson {
                 moving = t.optBoolean("moving", false),
                 x2 = t.optDouble("x2", 0.0).toFloat(),
                 y2 = t.optDouble("y2", 0.0).toFloat(),
+                keyframes = keysFromJson(t.optJSONArray("keyframes")),
             )
         }
         val music = o.optJSONObject("music")?.let { m ->
@@ -283,6 +322,7 @@ object ProjectJson {
                 moving = l.optBoolean("moving", false),
                 x2 = l.optDouble("x2", 0.0).toFloat(),
                 y2 = l.optDouble("y2", 0.0).toFloat(),
+                keyframes = keysFromJson(l.optJSONArray("keyframes")),
             )
         }
         val videoJson = o.optJSONArray("videoLayers") ?: JSONArray()
@@ -307,6 +347,7 @@ object ProjectJson {
                 chromaKey = v.optBoolean("chromaKey", false),
                 keyColor = v.optInt("keyColor", 0xFF00FF00.toInt()),
                 keyTolerance = v.optDouble("keyTolerance", 0.18).toFloat(),
+                keyframes = keysFromJson(v.optJSONArray("keyframes")),
             )
         }
         val audioJson = o.optJSONArray("audio") ?: JSONArray()
@@ -322,6 +363,7 @@ object ProjectJson {
                 fadeInMs = a.optLong("fadeInMs", 0),
                 fadeOutMs = a.optLong("fadeOutMs", 0),
                 offsetMs = a.optLong("offsetMs", 0),
+                audioFx = fx(a.optString("audioFx")),
             )
         }
         return Project(

@@ -122,6 +122,73 @@ object ProjectOps {
         return trimEnd(project, id, local - clip.durationMs)
     }
 
+    // ------------------------------------------------------------------ keyframes
+
+    /** Keyframes closer together than this count as the same moment. */
+    const val KEYFRAME_MERGE_MS = 80L
+
+    /**
+     * The pose at [tMs]: [base] when there are no keyframes, the first / last keyframe outside
+     * their range, and an even glide between the two neighbours otherwise.
+     */
+    fun poseAt(keyframes: List<Keyframe>, tMs: Long, base: Keyframe): Keyframe {
+        if (keyframes.isEmpty()) return base.copy(tMs = tMs)
+        val first = keyframes.first()
+        val last = keyframes.last()
+        if (tMs <= first.tMs) return first.copy(tMs = tMs)
+        if (tMs >= last.tMs) return last.copy(tMs = tMs)
+        val after = keyframes.indexOfFirst { it.tMs >= tMs }
+        val a = keyframes[after - 1]
+        val b = keyframes[after]
+        val p = (tMs - a.tMs).toFloat() / (b.tMs - a.tMs).coerceAtLeast(1)
+        fun mix(from: Float, to: Float) = from + (to - from) * p
+        return Keyframe(
+            tMs = tMs,
+            x = mix(a.x, b.x),
+            y = mix(a.y, b.y),
+            scale = mix(a.scale, b.scale),
+            rotation = mix(a.rotation, b.rotation),
+            opacity = mix(a.opacity, b.opacity),
+        )
+    }
+
+    /** Adds [key], replacing a keyframe at (nearly) the same moment. The list stays in time order. */
+    fun upsertKeyframe(keyframes: List<Keyframe>, key: Keyframe): List<Keyframe> {
+        val near = keyframes.firstOrNull { kotlin.math.abs(it.tMs - key.tMs) <= KEYFRAME_MERGE_MS }
+        val kept = keyframes.filterNot { it === near }
+        return (kept + key.copy(tMs = near?.tMs ?: key.tMs)).sortedBy { it.tMs }
+    }
+
+    /** Moves every keyframe [byMs] earlier, for the second half of a split or a left trim. */
+    private fun shiftKeyframes(keyframes: List<Keyframe>, byMs: Long): List<Keyframe> =
+        keyframes.map { it.copy(tMs = it.tMs - byMs) }
+
+    // --------------------------------------------------------------- clip order, slip
+
+    /** Moves clip [id] so that it sits at [index] among the clips (0 = first). */
+    fun moveTo(project: Project, id: String, index: Int): Project {
+        val from = project.clips.indexOfFirst { it.id == id }
+        if (from < 0) return project
+        val to = index.coerceIn(0, project.clips.lastIndex)
+        if (to == from) return project
+        return project.copy(clips = project.clips.toMutableList().apply { add(to, removeAt(from)) })
+    }
+
+    /**
+     * Slip: plays a different part of the source video without changing the clip's length or
+     * place. [newTrimStartMs] is clamped so the window stays inside the source.
+     */
+    fun slip(project: Project, id: String, newTrimStartMs: Long): Project {
+        val clip = project.clips.firstOrNull { it.id == id } ?: return project
+        if (clip.type != ClipType.VIDEO) return project
+        val length = clip.trimEndMs - clip.trimStartMs
+        val start = newTrimStartMs.coerceIn(0, (clip.sourceDurationMs - length).coerceAtLeast(0))
+        if (start == clip.trimStartMs) return project
+        return project.copy(clips = project.clips.map {
+            if (it.id == id) it.copy(trimStartMs = start, trimEndMs = start + length) else it
+        })
+    }
+
     /**
      * Time from [startMs] at which the playhead cuts an item lasting until [endMs], or null when
      * the playhead is outside it or too close to an edge to leave a usable piece.
@@ -135,12 +202,13 @@ object ProjectOps {
     fun cutText(project: Project, id: String, playheadMs: Long, cut: Cut, newItemId: String = newId()): Project? {
         val item = project.texts.firstOrNull { it.id == id } ?: return null
         rangeCutPoint(item.startMs, item.endMs, playheadMs) ?: return null
+        val shifted = shiftKeyframes(item.keyframes, playheadMs - item.startMs)
         val pieces = when (cut) {
-            Cut.LEFT -> listOf(item.copy(startMs = playheadMs))
+            Cut.LEFT -> listOf(item.copy(startMs = playheadMs, keyframes = shifted))
             Cut.RIGHT -> listOf(item.copy(endMs = playheadMs))
             Cut.SPLIT -> listOf(
                 item.copy(endMs = playheadMs, animOut = OverlayAnim.NONE),
-                item.copy(id = newItemId, startMs = playheadMs, animIn = OverlayAnim.NONE),
+                item.copy(id = newItemId, startMs = playheadMs, animIn = OverlayAnim.NONE, keyframes = shifted),
             )
         }
         return project.copy(texts = project.texts.flatMap { if (it.id == id) pieces else listOf(it) })
@@ -150,12 +218,13 @@ object ProjectOps {
     fun cutLayer(project: Project, id: String, playheadMs: Long, cut: Cut, newItemId: String = newId()): Project? {
         val item = project.layers.firstOrNull { it.id == id } ?: return null
         rangeCutPoint(item.startMs, item.endMs, playheadMs) ?: return null
+        val shifted = shiftKeyframes(item.keyframes, playheadMs - item.startMs)
         val pieces = when (cut) {
-            Cut.LEFT -> listOf(item.copy(startMs = playheadMs))
+            Cut.LEFT -> listOf(item.copy(startMs = playheadMs, keyframes = shifted))
             Cut.RIGHT -> listOf(item.copy(endMs = playheadMs))
             Cut.SPLIT -> listOf(
                 item.copy(endMs = playheadMs, animOut = OverlayAnim.NONE),
-                item.copy(id = newItemId, startMs = playheadMs, animIn = OverlayAnim.NONE),
+                item.copy(id = newItemId, startMs = playheadMs, animIn = OverlayAnim.NONE, keyframes = shifted),
             )
         }
         return project.copy(layers = project.layers.flatMap { if (it.id == id) pieces else listOf(it) })
@@ -168,7 +237,11 @@ object ProjectOps {
         val item = project.videoLayers.firstOrNull { it.id == id } ?: return null
         val local = rangeCutPoint(item.startMs, item.startMs + item.durationMs, playheadMs) ?: return null
         val firstPart = item.copy(trimEndMs = item.trimStartMs + local)
-        val secondPart = item.copy(trimStartMs = item.trimStartMs + local, startMs = playheadMs)
+        val secondPart = item.copy(
+            trimStartMs = item.trimStartMs + local,
+            startMs = playheadMs,
+            keyframes = shiftKeyframes(item.keyframes, local),
+        )
         val pieces = when (cut) {
             Cut.LEFT -> listOf(secondPart)
             Cut.RIGHT -> listOf(firstPart)

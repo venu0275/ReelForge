@@ -28,6 +28,8 @@ import androidx.media3.transformer.Transformer
 import com.google.common.collect.ImmutableList
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.AudioFx
+import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
@@ -126,6 +128,7 @@ object ExportManager {
         val x2: Float,
         val y2: Float,
         val rotation: Float,
+        val keyframes: List<Keyframe>,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -147,6 +150,7 @@ object ExportManager {
                 layer.startMs, layer.endMs, layer.x, layer.y, layer.opacity, layer.animIn, layer.animOut,
                 if (layer.moving) layer.x2 else layer.x, if (layer.moving) layer.y2 else layer.y,
                 layer.rotation,
+                layer.keyframes,
             )
         } + project.texts.map { text ->
             OverlaySpec(
@@ -154,6 +158,7 @@ object ExportManager {
                 text.startMs, text.endMs, text.x, text.y, text.opacity, text.animIn, text.animOut,
                 if (text.moving) text.x2 else text.x, if (text.moving) text.y2 else text.y,
                 text.rotation,
+                text.keyframes,
             )
         }
 
@@ -184,6 +189,7 @@ object ExportManager {
                         x2 = s.x2,
                         y2 = s.y2,
                         rotation = s.rotation,
+                        keyframes = s.keyframes,
                     )
                 }
             buildClipItem(
@@ -258,6 +264,7 @@ object ExportManager {
                     x2 = s.x2,
                     y2 = s.y2,
                     rotation = s.rotation,
+                    keyframes = s.keyframes,
                 )
             }
             if (onTop.isNotEmpty()) {
@@ -322,6 +329,7 @@ object ExportManager {
             y = layer.y,
             opacity = layer.opacity,
             rotation = layer.rotation,
+            keyframes = layer.keyframes,
         )
         return EditedMediaItemSequence(items) to placement
     }
@@ -366,6 +374,7 @@ object ExportManager {
             }
         }
         if (clip.volume != 1f) audio += volumeProcessor(clip.volume)
+        if (clip.audioFx != AudioFx.NONE) audio += AudioFxProcessor(clip.audioFx)
         if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) {
             audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
         }
@@ -425,7 +434,13 @@ object ExportManager {
             .build()
         items += EditedMediaItem.Builder(media)
             .setRemoveVideo(true)
-            .setEffects(Effects(audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs), emptyList()))
+            .setEffects(
+                Effects(
+                    (if (clip.audioFx != AudioFx.NONE) listOf(AudioFxProcessor(clip.audioFx)) else emptyList()) +
+                        audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs),
+                    emptyList(),
+                )
+            )
             .build()
         return EditedMediaItemSequence(items)
     }
@@ -503,6 +518,9 @@ object ExportManager {
             video += FadeEffect(
                 durationUs, if (dims) inUs else 0L, if (dims) outUs else 0L, clip.opacity
             )
+        }
+        if (!isImage && !clip.muted && clip.hasAudio && clip.audioFx != AudioFx.NONE) {
+            audio += AudioFxProcessor(clip.audioFx)
         }
         val hasFade = clip.fadeInMs > 0 || clip.fadeOutMs > 0
         if (!isImage && !clip.muted && clip.hasAudio && hasFade) {

@@ -47,14 +47,20 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
   demand, so the app install stays small.
 - Video layers: up to three videos on top of the main track (picture-in-picture) with size,
   position, rotation, opacity, timing, trim, volume and chroma key (green / blue screen).
+- Keyframe animation for text, image layers and video layers: place, zoom, angle and opacity
+  glide between keyframes saved at the red line.
+- Sound effects per clip and per sound (echo, hall, bass / treble boost, telephone, robot),
+  added on export; text-to-speech voice using the phone's own speech engine.
+- Long-press and drag a clip to reorder it; Slip to choose which part of a video plays.
 - Portrait and landscape layouts: in landscape the video sits on the left and the timeline,
   tools and the open tool's controls sit in a side pane on the right.
 - Export to MP4 (H.264 + AAC) at 480p / 720p / 1080p with three quality levels, saved to `Movies/ReelForge`, with share.
 
 ## Not built yet
 
-Blend modes, corner pin, true crossfade / wipe
-transitions, multi-point keyframes, reverse, speed curves, equaliser, auto captions, asset store.
+Blend modes, corner pin, true crossfade / wipe transitions, reverse, speed curves, drawn volume
+curves, AI tools (background remover, auto captions, noise remover, super resolution, vocal
+separation, tracking), sticker and sound packs, a signed release build.
 
 ## Build
 

@@ -45,6 +45,7 @@ import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.ImageLayer
+import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.Cut
@@ -56,6 +57,7 @@ import com.reelforge.editor.model.TextItem
 import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.model.newId
 import com.reelforge.editor.util.MediaUtils
+import com.reelforge.editor.util.SpeechMaker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -332,6 +334,98 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // Stay on the last frame that was kept.
         seekTo((playheadMs - 34).coerceAtLeast(0))
     }
+
+    // ------------------------------------------------------------------ keyframes
+
+    private class PoseAccess(val startMs: Long, val endMs: Long, val keys: List<Keyframe>, val base: Keyframe)
+
+    private fun poseAccess(p: Project, kind: ItemKind, id: String): PoseAccess? = when (kind) {
+        ItemKind.TEXT -> p.texts.firstOrNull { it.id == id }?.let {
+            PoseAccess(it.startMs, it.endMs, it.keyframes, Keyframe(0, it.x, it.y, 1f, it.rotation, it.opacity))
+        }
+        ItemKind.LAYER -> p.layers.firstOrNull { it.id == id }?.let {
+            PoseAccess(it.startMs, it.endMs, it.keyframes, Keyframe(0, it.x, it.y, 1f, it.rotation, it.opacity))
+        }
+        ItemKind.VIDEO -> p.videoLayers.firstOrNull { it.id == id }?.let {
+            PoseAccess(
+                it.startMs, it.startMs + it.durationMs, it.keyframes,
+                Keyframe(0, it.x, it.y, 1f, it.rotation, it.opacity),
+            )
+        }
+        else -> null
+    }
+
+    /** Writes new keyframes and / or a new resting pose to a text, image layer or video layer. */
+    private fun writePose(kind: ItemKind, id: String, keys: List<Keyframe>?, base: Keyframe?) = mutate { p ->
+        when (kind) {
+            ItemKind.TEXT -> p.copy(texts = p.texts.map {
+                if (it.id != id) it else it.copy(
+                    keyframes = keys ?: it.keyframes, x = base?.x ?: it.x, y = base?.y ?: it.y,
+                    rotation = base?.rotation ?: it.rotation, opacity = base?.opacity ?: it.opacity,
+                )
+            })
+            ItemKind.LAYER -> p.copy(layers = p.layers.map {
+                if (it.id != id) it else it.copy(
+                    keyframes = keys ?: it.keyframes, x = base?.x ?: it.x, y = base?.y ?: it.y,
+                    rotation = base?.rotation ?: it.rotation, opacity = base?.opacity ?: it.opacity,
+                )
+            })
+            ItemKind.VIDEO -> p.copy(videoLayers = p.videoLayers.map {
+                if (it.id != id) it else it.copy(
+                    keyframes = keys ?: it.keyframes, x = base?.x ?: it.x, y = base?.y ?: it.y,
+                    rotation = base?.rotation ?: it.rotation, opacity = base?.opacity ?: it.opacity,
+                )
+            })
+            else -> p
+        }
+    }
+
+    private fun localTime(access: PoseAccess): Long =
+        (playheadMs - access.startMs).coerceIn(0, (access.endMs - access.startMs).coerceAtLeast(0))
+
+    /** The item's place, turn, zoom and opacity at the red line. */
+    fun poseOf(kind: ItemKind, id: String): Keyframe? {
+        val access = poseAccess(project ?: return null, kind, id) ?: return null
+        return ProjectOps.poseAt(access.keys, localTime(access), access.base)
+    }
+
+    fun keyframesOf(kind: ItemKind, id: String): List<Keyframe> =
+        project?.let { poseAccess(it, kind, id) }?.keys ?: emptyList()
+
+    /**
+     * Changes the item's pose. Without keyframes this changes it for its whole time; with
+     * keyframes it saves (or updates) a keyframe at the red line.
+     */
+    fun editPose(kind: ItemKind, id: String, change: (Keyframe) -> Keyframe) {
+        val access = poseAccess(project ?: return, kind, id) ?: return
+        val local = localTime(access)
+        val changed = change(ProjectOps.poseAt(access.keys, local, access.base)).copy(tMs = local)
+        if (access.keys.isEmpty()) writePose(kind, id, keys = null, base = changed)
+        else writePose(kind, id, keys = ProjectOps.upsertKeyframe(access.keys, changed), base = null)
+    }
+
+    /** Turns keyframe animation on (first keyframe at the red line) or off (keeps the current pose). */
+    fun setKeyframing(kind: ItemKind, id: String, on: Boolean) {
+        val access = poseAccess(project ?: return, kind, id) ?: return
+        val pose = ProjectOps.poseAt(access.keys, localTime(access), access.base)
+        if (on && access.keys.isEmpty()) writePose(kind, id, keys = listOf(pose), base = null)
+        if (!on && access.keys.isNotEmpty()) writePose(kind, id, keys = emptyList(), base = pose)
+    }
+
+    fun deleteKeyframe(kind: ItemKind, id: String, tMs: Long) {
+        val access = poseAccess(project ?: return, kind, id) ?: return
+        val kept = access.keys.filterNot { it.tMs == tMs }
+        // Removing the last keyframe leaves the item where that keyframe had it.
+        writePose(kind, id, keys = kept, base = if (kept.isEmpty()) access.keys.first() else null)
+    }
+
+    // ------------------------------------------------------------ clip order, slip
+
+    /** Drops a dragged clip at [index] among the clips. */
+    fun moveClipTo(id: String, index: Int) = mutate { ProjectOps.moveTo(it, id, index) }
+
+    /** Slip: plays a different part of the source without moving or resizing the clip. */
+    fun slipClip(id: String, newTrimStartMs: Long) = mutate { ProjectOps.slip(it, id, newTrimStartMs) }
 
     // -------------------------------------------------- cuts on layers, text, sounds
 
@@ -737,6 +831,36 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 )
             }
             mutate { it.copy(audio = it.audio + clip) }
+        }
+    }
+
+    var isSpeaking by mutableStateOf(false)
+        private set
+
+    /** Turns typed text into a spoken sound clip at the playhead, using the phone's own voice. */
+    fun speakText(text: String) {
+        val words = text.trim()
+        if (words.isEmpty() || isSpeaking || project == null) return
+        val start = playheadMs
+        val dir = File(ctx.filesDir, "voice").apply { mkdirs() }
+        val file = File(dir, "speech_${System.currentTimeMillis()}.wav")
+        isSpeaking = true
+        SpeechMaker.speak(ctx, words, file) { ok ->
+            if (!ok) {
+                isSpeaking = false
+                file.delete()
+                message = "This phone has no text-to-speech voice installed"
+                return@speak
+            }
+            viewModelScope.launch {
+                val uri = Uri.fromFile(file)
+                val duration = withContext(Dispatchers.IO) { MediaUtils.audioDurationMs(ctx, uri) }
+                isSpeaking = false
+                val clip = AudioClip(
+                    uri = uri.toString(), title = "Speech: " + words.take(18), startMs = start, durationMs = duration,
+                )
+                mutate { it.copy(audio = it.audio + clip) }
+            }
         }
     }
 

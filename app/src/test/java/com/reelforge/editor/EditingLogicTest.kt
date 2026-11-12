@@ -2,10 +2,13 @@ package com.reelforge.editor
 
 import com.reelforge.editor.data.ProjectJson
 import com.reelforge.editor.engine.ExportManager
+import com.reelforge.editor.engine.FxChannel
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.engine.overlayAnim
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
+import com.reelforge.editor.model.AudioFx
+import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
@@ -556,6 +559,163 @@ class SnapAndCatalogTest {
     }
 }
 
+// ------------------------------------------- keyframes, clip order, slip, sound fx
+
+class KeyframeAndFxTest {
+
+    private val base = Keyframe(0, x = 0.1f, y = 0.2f, scale = 1f, rotation = 5f, opacity = 0.9f)
+    private val keys = listOf(
+        Keyframe(1_000, x = -1f, y = 0f, scale = 1f, rotation = 0f, opacity = 1f),
+        Keyframe(3_000, x = 1f, y = 0.5f, scale = 2f, rotation = 90f, opacity = 0f),
+    )
+
+    @Test fun `without keyframes the item keeps its resting pose`() {
+        val pose = ProjectOps.poseAt(emptyList(), 2_500, base)
+        assertEquals(base.copy(tMs = 2_500), pose)
+    }
+
+    @Test fun `between keyframes every value glides evenly`() {
+        val half = ProjectOps.poseAt(keys, 2_000, base)
+        assertEquals(0f, half.x, 0.001f)
+        assertEquals(0.25f, half.y, 0.001f)
+        assertEquals(1.5f, half.scale, 0.001f)
+        assertEquals(45f, half.rotation, 0.001f)
+        assertEquals(0.5f, half.opacity, 0.001f)
+        val quarter = ProjectOps.poseAt(keys, 1_500, base)
+        assertEquals(-0.5f, quarter.x, 0.001f)
+    }
+
+    @Test fun `before the first and after the last keyframe the item holds still`() {
+        assertEquals(-1f, ProjectOps.poseAt(keys, 0, base).x, 0f)
+        assertEquals(-1f, ProjectOps.poseAt(keys, -5_000, base).x, 0f)
+        assertEquals(1f, ProjectOps.poseAt(keys, 9_000, base).x, 0f)
+        assertEquals(90f, ProjectOps.poseAt(keys, 3_000, base).rotation, 0f)
+        // A single keyframe simply pins the pose.
+        assertEquals(1f, ProjectOps.poseAt(keys.takeLast(1), 100, base).x, 0f)
+    }
+
+    @Test fun `saving a keyframe adds one in order or updates a nearby one`() {
+        val added = ProjectOps.upsertKeyframe(keys, Keyframe(2_000, 0.3f, 0.3f))
+        assertEquals(listOf(1_000L, 2_000L, 3_000L), added.map { it.tMs })
+        val updated = ProjectOps.upsertKeyframe(keys, Keyframe(1_050, 0.7f, 0.7f))
+        assertEquals(listOf(1_000L, 3_000L), updated.map { it.tMs })
+        assertEquals(0.7f, updated[0].x, 0f)
+        val first = ProjectOps.upsertKeyframe(emptyList(), Keyframe(500, 0f, 0f))
+        assertEquals(1, first.size)
+    }
+
+    @Test fun `cutting an animated item keeps the motion in step`() {
+        val item = TextItem(id = "t", text = "Go", startMs = 1_000, endMs = 5_000, keyframes = keys)
+        val p = project(video("a", 10_000)).copy(texts = listOf(item))
+        val parts = ProjectOps.cutText(p, "t", 3_000, Cut.SPLIT, newItemId = "t2")!!.texts
+        // The second half starts 2 s into the animation, so its keyframes move 2 s earlier.
+        assertEquals(listOf(-1_000L, 1_000L), parts[1].keyframes.map { it.tMs })
+        val before = ProjectOps.poseAt(item.keyframes, 2_000, base)
+        val after = ProjectOps.poseAt(parts[1].keyframes, 0, base)
+        assertEquals(before.x, after.x, 0.001f)
+        assertEquals(before.rotation, after.rotation, 0.001f)
+        assertEquals(item.keyframes, parts[0].keyframes)
+    }
+
+    @Test fun `a dragged clip lands at the chosen place`() {
+        val p = project(video("a", 1_000), video("b", 1_000), video("c", 1_000), video("d", 1_000))
+        assertEquals(listOf("b", "c", "a", "d"), ProjectOps.moveTo(p, "a", 2).clips.map { it.id })
+        assertEquals(listOf("d", "a", "b", "c"), ProjectOps.moveTo(p, "d", 0).clips.map { it.id })
+        assertEquals(listOf("a", "c", "d", "b"), ProjectOps.moveTo(p, "b", 99).clips.map { it.id })
+        assertSame(p, ProjectOps.moveTo(p, "b", 1))
+        assertSame(p, ProjectOps.moveTo(p, "missing", 0))
+    }
+
+    @Test fun `slip shows another part of the video without changing the clip`() {
+        val clip = video("a", 10_000).copy(trimStartMs = 2_000, trimEndMs = 5_000)
+        val p = project(clip, video("b", 4_000))
+        val out = ProjectOps.slip(p, "a", 6_000).clips[0]
+        assertEquals(6_000, out.trimStartMs)
+        assertEquals(9_000, out.trimEndMs)
+        assertEquals(clip.durationMs, out.durationMs)
+        // It cannot slip past either end of the source.
+        assertEquals(7_000, ProjectOps.slip(p, "a", 99_000).clips[0].trimStartMs)
+        assertEquals(0, ProjectOps.slip(p, "a", -500).clips[0].trimStartMs)
+        assertSame(p, ProjectOps.slip(p, "a", 2_000))
+        val photos = project(image("p", 3_000))
+        assertSame(photos, ProjectOps.slip(photos, "p", 500))
+    }
+
+    // ---- sound effects, checked by measuring how loud a pure tone comes out
+
+    private fun loudness(fx: AudioFx, hz: Double, rate: Int = 44_100): Double {
+        val channel = FxChannel(fx, rate)
+        var sum = 0.0
+        var count = 0
+        for (n in 0 until rate) {
+            val y = channel.process((0.5 * kotlin.math.sin(2 * Math.PI * hz * n / rate)).toFloat())
+            assertFalse("$fx produced a non-number", y.isNaN() || y.isInfinite())
+            if (n > rate / 2) { // skip the start while the effect settles
+                sum += y * y
+                count++
+            }
+        }
+        return kotlin.math.sqrt(sum / count)
+    }
+
+    @Test fun `no effect leaves the sound untouched`() {
+        val channel = FxChannel(AudioFx.NONE, 44_100)
+        for (x in listOf(-1f, -0.3f, 0f, 0.42f, 1f)) assertEquals(x, channel.process(x), 0f)
+    }
+
+    @Test fun `bass boost lifts low notes more than high notes`() {
+        val low = loudness(AudioFx.BASS, 60.0) / loudness(AudioFx.NONE, 60.0)
+        val high = loudness(AudioFx.BASS, 5_000.0) / loudness(AudioFx.NONE, 5_000.0)
+        assertTrue("low $low high $high", low > high * 2)
+    }
+
+    @Test fun `treble boost lifts high notes more than low notes`() {
+        val low = loudness(AudioFx.TREBLE, 100.0) / loudness(AudioFx.NONE, 100.0)
+        val high = loudness(AudioFx.TREBLE, 9_000.0) / loudness(AudioFx.NONE, 9_000.0)
+        assertTrue("low $low high $high", high > low * 2)
+    }
+
+    @Test fun `telephone keeps the voice range and removes rumble and hiss`() {
+        val voice = loudness(AudioFx.PHONE, 1_200.0)
+        assertTrue(voice > loudness(AudioFx.PHONE, 60.0) * 8)
+        assertTrue(voice > loudness(AudioFx.PHONE, 12_000.0) * 8)
+    }
+
+    @Test fun `echo repeats a sound after a short delay`() {
+        val rate = 44_100
+        val channel = FxChannel(AudioFx.ECHO, rate)
+        val out = FloatArray(rate) { n -> channel.process(if (n == 0) 1f else 0f) }
+        val delay = (0.28 * rate).toInt()
+        assertTrue("the original click is kept", out[0] > 0.5f)
+        assertTrue("an echo arrives after 0.28 s", out[delay] > 0.2f)
+        assertTrue("a quieter second echo follows", out[2 * delay] > 0.05f && out[2 * delay] < out[delay])
+        assertEquals("silence between the echoes", 0f, out[delay / 2], 0.0001f)
+    }
+
+    @Test fun `hall and robot change the sound but stay within range`() {
+        for (fx in listOf(AudioFx.REVERB, AudioFx.ROBOT, AudioFx.ECHO)) {
+            val channel = FxChannel(fx, 48_000)
+            var peak = 0f
+            var different = false
+            for (n in 0 until 48_000) {
+                val x = (0.5 * kotlin.math.sin(2 * Math.PI * 440.0 * n / 48_000)).toFloat()
+                val y = channel.process(x)
+                peak = maxOf(peak, kotlin.math.abs(y))
+                if (kotlin.math.abs(y - x) > 0.05f) different = true
+            }
+            assertTrue("$fx should change the sound", different)
+            assertTrue("$fx is too loud: $peak", peak < 1.5f)
+        }
+    }
+
+    @Test fun `every effect works at common sample rates and on silence`() {
+        for (fx in AudioFx.entries) for (rate in listOf(8_000, 22_050, 44_100, 48_000)) {
+            val channel = FxChannel(fx, rate)
+            repeat(2_000) { assertEquals("$fx at $rate", 0f, channel.process(0f), 0.0001f) }
+        }
+    }
+}
+
 // --------------------------------------------------------------------- undo redo
 
 class HistoryTest {
@@ -750,6 +910,7 @@ class ProjectJsonTest {
                 rotation = 90, filter = FilterPreset.SEPIA, brightness = 0.2f, contrast = -0.3f,
                 saturation = 40f, fadeInMs = 300, fadeOutMs = 500, opacity = 0.8f, zoom = 1.7f,
                 flipH = true, fill = true, transition = TransitionStyle.SLIDE, pitch = 1.25f,
+                audioFx = AudioFx.REVERB,
             ),
             image("b", 3_000),
         ),
@@ -761,6 +922,7 @@ class ProjectJsonTest {
                 bold = false, italic = true, align = TextAlignH.RIGHT, opacity = 0.6f, rotation = 15f,
                 outlineColor = 0xFFFF0000.toInt(), boxColor = 0xCC00FF00.toInt(),
                 fontPath = "/data/fonts/x.ttf", moving = true, x2 = 0.9f, y2 = -0.9f,
+                keyframes = listOf(Keyframe(0, -1f, 0.5f), Keyframe(1_500, 1f, -0.5f, 2f, 45f, 0.25f)),
             )
         ),
         music = MusicTrack(
@@ -774,13 +936,14 @@ class ProjectJsonTest {
                 animOut = OverlayAnim.FADE, moving = true, x2 = 1f, y2 = 1f,
             )
         ),
-        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f, 400, 600, 250)),
+        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f, 400, 600, 250, AudioFx.ECHO)),
         videoLayers = listOf(
             VideoLayer(
                 id = "pip", uri = "content://video/9", sourceDurationMs = 9_000, trimStartMs = 1_000,
                 trimEndMs = 4_000, startMs = 2_500, aspect = 0.5625f, scale = 0.3f, x = -0.7f, y = 0.6f,
                 opacity = 0.9f, rotation = 12f, volume = 0.5f, muted = true, hasAudio = false,
                 chromaKey = true, keyColor = 0xFF0000FF.toInt(), keyTolerance = 0.3f,
+                keyframes = listOf(Keyframe(200, 0f, 0f, 0.5f, -10f, 0.75f)),
             )
         ),
         background = Background.BLUR,
