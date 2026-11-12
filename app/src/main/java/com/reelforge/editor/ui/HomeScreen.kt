@@ -3,6 +3,22 @@
 package com.reelforge.editor.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +68,16 @@ fun HomeScreen(vm: EditorViewModel) {
     var showNew by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<String?>(null) }
     var newName by remember { mutableStateOf("") }
+    var deleting by remember { mutableStateOf<String?>(null) }
+    // 0 = newest first, 1 = by name, 2 = longest first.
+    var sort by remember { mutableIntStateOf(0) }
+    val sortLabels = listOf("Date modified", "Name", "Length")
+    val shown = when (sort) {
+        1 -> vm.projects.sortedBy { it.name.lowercase() }
+        2 -> vm.projects.sortedByDescending { it.durationMs }
+        else -> vm.projects.sortedByDescending { it.updatedAt }
+    }
+    val dateFormat = remember { SimpleDateFormat("d MMM yyyy, h:mm a", Locale.getDefault()) }
 
     Scaffold(
         topBar = {
@@ -60,56 +86,148 @@ fun HomeScreen(vm: EditorViewModel) {
                 actions = { TextButton(onClick = { vm.showSettings = true }) { Text("Settings") } },
             )
         },
-        floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = { showNew = true },
-                icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("New project") },
-            )
-        },
     ) { padding ->
-        if (vm.projects.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(
-                    "No projects yet.\nTap “New project” to start editing.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        // One column on a portrait phone, two or more in landscape and on tablets.
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 300.dp),
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            // The big "start here" tile.
+            item(key = "new", span = { GridItemSpan(maxLineSpan) }) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(96.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable { showNew = true },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                    Text(
+                        "New project",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                }
             }
-        } else {
-            // One column on a portrait phone, two or more in landscape and on tablets.
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 300.dp),
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(vm.projects, key = { it.id }) { p ->
-                    Card(Modifier.fillMaxWidth().clickable { vm.openProject(p) }) {
-                        Row(
-                            Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(p.name, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    "${p.aspect.label} · ${p.clips.size} clips · " +
-                                        MediaUtils.formatTime(p.durationMs),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            IconButton(onClick = { renaming = p.id; newName = p.name }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Rename project")
-                            }
-                            IconButton(onClick = { vm.deleteProject(p.id) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete project")
-                            }
+
+            item(key = "sort", span = { GridItemSpan(maxLineSpan) }) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { sort = (sort + 1) % sortLabels.size }) {
+                        Text("Sort: ${sortLabels[sort]}")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        if (vm.projects.size == 1) "1 project" else "${vm.projects.size} projects",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (vm.projects.isEmpty()) {
+                item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        "No projects yet.\nTap “New project” to start editing.",
+                        modifier = Modifier.padding(vertical = 32.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            items(shown, key = { it.id }) { p ->
+                var menu by remember { mutableStateOf(false) }
+                val first = p.clips.firstOrNull()
+                if (first != null) LaunchedEffect(first.uri) { vm.requestThumb(first) }
+                val thumb = first?.let { vm.thumbs[vm.thumbKey(it)] }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { vm.openProject(p) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // A picture of the first clip.
+                    Box(
+                        Modifier
+                            .size(72.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (thumb != null) {
+                            Image(
+                                bitmap = thumb,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text(
+                            p.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            dateFormat.format(Date(p.updatedAt)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "${p.aspect.label}  |  ${MediaUtils.formatTime(p.durationMs)}  |  " +
+                                if (p.clips.size == 1) "1 clip" else "${p.clips.size} clips",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Box {
+                        IconButton(onClick = { menu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Project options")
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(text = { Text("Rename") }, onClick = {
+                                menu = false
+                                renaming = p.id
+                                newName = p.name
+                            })
+                            DropdownMenuItem(text = { Text("Duplicate") }, onClick = {
+                                menu = false
+                                vm.duplicateProject(p)
+                            })
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = {
+                                menu = false
+                                deleting = p.id
+                            })
                         }
                     }
                 }
             }
         }
+    }
+
+    val deleteTarget = vm.projects.firstOrNull { it.id == deleting }
+    if (deleteTarget != null) {
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Delete project?") },
+            text = { Text("“${deleteTarget.name}” will be removed. Your videos and photos stay on the phone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteProject(deleteTarget.id)
+                    deleting = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+        )
     }
 
     val renameTarget = vm.projects.firstOrNull { it.id == renaming }

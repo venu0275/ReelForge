@@ -238,7 +238,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun createProject(name: String, aspect: AspectRatio) {
-        val p = Project(name = name.ifBlank { "Untitled" }, aspect = aspect)
+        val p = Project(name = name.trim().ifBlank { defaultProjectName() }, aspect = aspect)
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.save(p) }
             openProject(p)
@@ -281,6 +281,27 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) { repo.save(p.copy(name = name.trim())) }
             projects = withContext(Dispatchers.IO) { repo.list() }
         }
+    }
+
+    /** Makes a separate copy of a project, listed first. */
+    fun duplicateProject(p: Project) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                repo.save(p.copy(id = newId(), name = p.name + " copy", updatedAt = System.currentTimeMillis()))
+            }
+            projects = withContext(Dispatchers.IO) { repo.list() }
+        }
+    }
+
+    /** A dated name for a project created without one, like "12 Nov project 2". */
+    private fun defaultProjectName(): String {
+        val day = java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault()).format(java.util.Date())
+        val base = "$day project"
+        val taken = projects.map { it.name }.toSet()
+        if (base !in taken) return base
+        var n = 2
+        while ("$base $n" in taken) n++
+        return "$base $n"
     }
 
     fun deleteProject(id: String) {
