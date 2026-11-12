@@ -14,7 +14,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.text.style.TextOverflow
+import com.reelforge.editor.util.MediaUtils
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +49,7 @@ import com.reelforge.editor.data.SoundEffect
 fun StorePanel(vm: EditorViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Stickers", "Subscribe and like", "Sound effects").forEachIndexed { i, name ->
+        listOf("Stickers", "Subscribe and like", "Sound effects", "Find music").forEachIndexed { i, name ->
             FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(name) })
         }
     }
@@ -116,6 +123,7 @@ fun StorePanel(vm: EditorViewModel) {
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
+        3 -> MusicFinder(vm)
         else -> {
             Text("Tap a sound to add it at the red line. No download needed.", style = MaterialTheme.typography.bodySmall)
             FlowRow(
@@ -129,4 +137,54 @@ fun StorePanel(vm: EditorViewModel) {
             }
         }
     }
+}
+
+/** Search for free, public-domain music and sounds online and drop one into the project. */
+@Composable
+private fun MusicFinder(vm: EditorViewModel) {
+    var query by remember { mutableStateOf("") }
+    var effects by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = !effects, onClick = { effects = false }, label = { Text("Music") })
+        FilterChip(selected = effects, onClick = { effects = true }, label = { Text("Sounds") })
+    }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it.take(60) },
+            label = { Text("Search, e.g. happy, piano, rain") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Button(onClick = { vm.searchMusic(query, effects) }, enabled = query.isNotBlank() && !vm.musicSearching) {
+            Text(if (vm.musicSearching) "…" else "Search")
+        }
+    }
+    if (vm.musicSearchNote.isNotEmpty()) Text(vm.musicSearchNote, style = MaterialTheme.typography.bodySmall)
+    vm.musicResults.forEach { result ->
+        val progress = vm.musicProgress[result.id]
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(result.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    listOf(
+                        if (result.durationMs > 0) MediaUtils.formatTime(result.durationMs) else "",
+                        result.creator, result.licence,
+                    ).filter { it.isNotEmpty() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (progress != null) Text("$progress%", Modifier.padding(horizontal = 12.dp))
+            else {
+                TextButton(onClick = { vm.useMusicResult(result, asMusic = true) }) { Text("As music") }
+                TextButton(onClick = { vm.useMusicResult(result, asMusic = false) }) { Text("As sound") }
+            }
+        }
+    }
+    Text(
+        "Results come from openverse.org and are public domain (CC0), so they are free to use in any video. " +
+            "Each one downloads when you pick it.",
+        style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.padding(top = 6.dp),
+    )
 }

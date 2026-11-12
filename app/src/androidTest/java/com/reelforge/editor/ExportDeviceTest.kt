@@ -781,6 +781,42 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun store_musicSearchFindsAPlayableFreeTrack() {
+        val search = com.reelforge.editor.data.MusicSearch
+        var results = emptyList<com.reelforge.editor.data.MusicResult>()
+        var lastError = ""
+        for (attempt in 1..3) {
+            try {
+                results = search.search("piano", soundEffects = false)
+                break
+            } catch (e: Exception) {
+                lastError = e.message.orEmpty()
+                log("MUSIC search attempt $attempt failed: $lastError")
+                Thread.sleep(4_000)
+            }
+        }
+        // The shared test machine can be turned away by the service; that is not an app fault.
+        org.junit.Assume.assumeTrue("search service unavailable: $lastError", lastError.isEmpty() || results.isNotEmpty())
+        log("MUSIC found ${results.size} results")
+        assertTrue("no results for a common word", results.isNotEmpty())
+        var playable = 0
+        for (result in results.take(4)) {
+            val file = File(context.cacheDir, "musictest.${result.fileType}")
+            try {
+                AssetDownloader.download(result.url, file)
+                val ms = MediaUtils.audioDurationMs(context, Uri.fromFile(file))
+                log("MUSIC ${result.fileType} ${file.length() / 1024} KB ${ms} ms ${result.licence}")
+                if (ms > 0) playable++
+            } catch (e: Exception) {
+                log("MUSIC download failed: ${e.message}")
+            } finally {
+                file.delete()
+            }
+        }
+        assertTrue("none of the first results could be downloaded and played", playable > 0)
+    }
+
+    @Test
     fun store_everyStickerDownloadsAndDecodes() {
         val stickers = com.reelforge.editor.data.StickerCatalog.stickers(context)
         assertTrue("catalog is empty", stickers.size >= 60)

@@ -38,6 +38,7 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Voice changer (pitch presets) per clip.
 - Store: emoji stickers downloaded on demand (Noto Emoji, Apache 2.0), built-in Subscribe / Like /
   Follow buttons and built-in sound effects (pop, ding, whoosh ...).
+- Find music: search free public-domain (CC0) music and sounds from openverse.org and add them.
 - Custom fonts (import a .ttf / .otf) and a handwriting / drawing pad.
 - Two-point motion for text, stickers and image layers.
 - Background music: any audio file, volume, loop.

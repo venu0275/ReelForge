@@ -34,6 +34,8 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.reelforge.editor.data.AssetCatalog
+import com.reelforge.editor.data.MusicResult
+import com.reelforge.editor.data.MusicSearch
 import com.reelforge.editor.data.SocialSticker
 import com.reelforge.editor.data.SoundEffect
 import com.reelforge.editor.data.SoundMaker
@@ -785,6 +787,62 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 uri = Uri.fromFile(file).toString(), title = effect.title, startMs = start, durationMs = duration,
             )
             mutate { it.copy(audio = it.audio + clip) }
+        }
+    }
+
+    // ----------------------------------------------------------- music search
+
+    var musicResults by mutableStateOf(emptyList<MusicResult>())
+        private set
+    var musicSearching by mutableStateOf(false)
+        private set
+    var musicSearchNote by mutableStateOf("")
+        private set
+
+    /** Ids of search results that are downloading right now, with progress 0..100. */
+    val musicProgress = mutableStateMapOf<String, Int>()
+
+    /** Looks for free (public-domain) music or sound effects online. */
+    fun searchMusic(query: String, soundEffects: Boolean) {
+        if (query.isBlank() || musicSearching) return
+        musicSearching = true
+        musicSearchNote = ""
+        viewModelScope.launch {
+            val found = withContext(Dispatchers.IO) { runCatching { MusicSearch.search(query, soundEffects) } }
+            musicSearching = false
+            musicResults = found.getOrDefault(emptyList())
+            musicSearchNote = when {
+                found.isFailure -> "Search did not work. Check the internet connection and try again."
+                musicResults.isEmpty() -> "Nothing found. Try a simpler word, in English."
+                else -> ""
+            }
+        }
+    }
+
+    /** Downloads a search result, then uses it as the background music or as a sound at the playhead. */
+    fun useMusicResult(result: MusicResult, asMusic: Boolean) {
+        if (project == null || musicProgress.containsKey(result.id)) return
+        val start = playheadMs
+        val file = File(File(ctx.filesDir, "music").apply { mkdirs() }, "${result.id}.${result.fileType}")
+        musicProgress[result.id] = 0
+        viewModelScope.launch {
+            val duration = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (file.length() == 0L) AssetDownloader.download(result.url, file) { percent ->
+                        viewModelScope.launch { if (musicProgress.containsKey(result.id)) musicProgress[result.id] = percent }
+                    }
+                    MediaUtils.audioDurationMs(ctx, Uri.fromFile(file)).also { check(it > 0) { "not playable" } }
+                }.onFailure { file.delete() }.getOrDefault(0L)
+            }
+            musicProgress.remove(result.id)
+            val uri = Uri.fromFile(file).toString()
+            when {
+                duration <= 0 -> message = "Could not download \"${result.title}\". Try another one."
+                asMusic -> mutate { it.copy(music = MusicTrack(uri = uri, title = result.title, durationMs = duration)) }
+                else -> mutate {
+                    it.copy(audio = it.audio + AudioClip(uri = uri, title = result.title, startMs = start, durationMs = duration))
+                }
+            }
         }
     }
 

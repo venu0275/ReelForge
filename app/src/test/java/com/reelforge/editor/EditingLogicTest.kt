@@ -1102,3 +1102,32 @@ class StoreTest {
         }
     }
 }
+
+class MusicSearchTest {
+    private val search = com.reelforge.editor.data.MusicSearch
+
+    @Test fun `the search address asks only for public domain audio`() {
+        val url = search.searchUrl(" happy piano ", soundEffects = false)
+        assertTrue(url, url.startsWith("https://api.openverse.org/v1/audio/?q=happy+piano&"))
+        assertTrue(url, "license=cc0,pdm" in url && "category=music" in url)
+        assertTrue("category=sound_effect" in search.searchUrl("rain", soundEffects = true))
+    }
+
+    @Test fun `results that are not free or not playable are dropped`() {
+        val json = """{"results":[
+          {"id":"a-1","title":"Good","creator":"Me","url":"https://x.org/a.mp3","duration":61000,"license":"cc0","filetype":"mp3"},
+          {"id":"a-2","title":"Needs credit","url":"https://x.org/b.mp3","license":"by","filetype":"mp3"},
+          {"id":"a-3","title":"Not secure","url":"http://x.org/c.mp3","license":"cc0","filetype":"mp3"},
+          {"id":"a-4","title":"Odd file","url":"https://x.org/d.exe","license":"cc0","filetype":"exe"},
+          {"id":"a-5","title":"","creator":null,"url":"https://x.org/e.ogg?download=1","duration":null,"license":"pdm"}
+        ]}"""
+        val found = search.parse(json)
+        assertEquals(listOf("a-1", "a-5"), found.map { it.id })
+        assertEquals(61_000L, found[0].durationMs)
+        assertEquals("Untitled", found[1].title)
+        assertEquals("", found[1].creator)
+        assertEquals("ogg", found[1].fileType)
+        assertEquals("Public domain", found[1].licence)
+        assertTrue(search.parse("{}").isEmpty())
+    }
+}
