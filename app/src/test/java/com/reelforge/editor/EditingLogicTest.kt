@@ -329,8 +329,8 @@ class EdgeTrimTest {
                 animIn = OverlayAnim.FADE, animOut = OverlayAnim.POP)),
             layers = listOf(ImageLayer(id = "l", uri = "u", startMs = 1_000, endMs = 5_000)),
         )
-        assertEquals(3_000 to 5_000, ProjectOps.cutText(p, "t", 3_000, Cut.LEFT)!!.texts[0].let { it.startMs to it.endMs })
-        assertEquals(1_000 to 3_000, ProjectOps.cutText(p, "t", 3_000, Cut.RIGHT)!!.texts[0].let { it.startMs to it.endMs })
+        assertEquals(3_000L to 5_000L, ProjectOps.cutText(p, "t", 3_000, Cut.LEFT)!!.texts[0].let { it.startMs to it.endMs })
+        assertEquals(1_000L to 3_000L, ProjectOps.cutText(p, "t", 3_000, Cut.RIGHT)!!.texts[0].let { it.startMs to it.endMs })
         val split = ProjectOps.cutText(p, "t", 3_000, Cut.SPLIT, newItemId = "t2")!!.texts
         assertEquals(listOf("t", "t2"), split.map { it.id })
         assertEquals(listOf(1_000L to 3_000L, 3_000L to 5_000L), split.map { it.startMs to it.endMs })
