@@ -1106,16 +1106,15 @@ class StoreTest {
 class MusicSearchTest {
     private val search = com.reelforge.editor.data.MusicSearch
 
-    @Test fun `public domain is searched first and credit-only music last`() {
+    @Test fun `sounds are public domain only and music falls back to public domain`() {
         val urls = search.searchUrls(" happy piano ", soundEffects = false)
-        assertEquals(3, urls.size)
+        assertEquals(2, urls.size)
         assertTrue(urls[0], urls[0].startsWith("https://api.openverse.org/v1/audio/?q=happy+piano&"))
-        assertTrue("license=cc0,pdm" in urls[0] && "category=music" in urls[0])
-        assertTrue("license=cc0,pdm" in urls[1] && "category" !in urls[1])
-        assertTrue("license=by&" in urls[2])
+        assertTrue("license=by&" in urls[0] && "category=music" in urls[0])
+        assertTrue("license=cc0,pdm" in urls[1])
         val fx = search.searchUrls("rain", soundEffects = true)
-        assertEquals(2, fx.size)
-        assertTrue("category=sound_effect" in fx[0] && fx.none { "license=by" in it })
+        assertEquals(1, fx.size)
+        assertTrue("license=cc0,pdm" in fx[0])
     }
 
     @Test fun `results that are not free or not playable are dropped`() {

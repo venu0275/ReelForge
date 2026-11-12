@@ -31,18 +31,15 @@ object MusicSearch {
     private val SAFE_TYPES = setOf("mp3", "mp32", "ogg", "oga", "wav", "flac", "m4a", "aac")
 
     /**
-     * The addresses to try, in order; the first one that returns anything wins. Public-domain
-     * results come first. For music, tracks that only ask for a credit (CC BY) are the last resort.
+     * The addresses to try, in order; the first one that returns anything wins.
+     * Sounds: public domain only (no credit needed). Music: full songs that ask for a credit
+     * (CC BY) first, because the public-domain catalogue holds almost no real songs.
      */
     fun searchUrls(query: String, soundEffects: Boolean): List<String> {
         val q = URLEncoder.encode(query.trim(), "UTF-8")
-        val category = if (soundEffects) "sound_effect" else "music"
         val tail = "&page_size=20&mature=false"
-        return listOfNotNull(
-            "$BASE?q=$q&license=cc0,pdm&category=$category$tail",
-            "$BASE?q=$q&license=cc0,pdm$tail",
-            if (soundEffects) null else "$BASE?q=$q&license=by&category=music$tail",
-        )
+        val free = "$BASE?q=$q&license=cc0,pdm$tail"
+        return if (soundEffects) listOf(free) else listOf("$BASE?q=$q&license=by&category=music$tail", free)
     }
 
     /** Reads a search answer. Entries that are not public domain or not playable are dropped. */
