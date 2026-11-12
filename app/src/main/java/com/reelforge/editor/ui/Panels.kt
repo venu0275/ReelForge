@@ -754,6 +754,19 @@ fun LayerPanel(
     }
     AnimChips("Animate in", editing.animIn) { a -> vm.updateLayer(id) { it.copy(animIn = a) } }
     AnimChips("Animate out", editing.animOut) { a -> vm.updateLayer(id) { it.copy(animOut = a) } }
+    Text("Keep moving (like a GIF)", style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        com.reelforge.editor.model.LoopFx.entries.forEach { fx ->
+            FilterChip(
+                selected = editing.loop == fx,
+                onClick = { vm.updateLayer(id) { it.copy(loop = fx) } },
+                label = { Text(fx.label) },
+            )
+        }
+    }
     MotionControls(editing.moving, editing.x2, editing.y2,
         onToggle = { on ->
             vm.updateLayer(id) { if (on) it.copy(moving = true, x2 = it.x, y2 = it.y) else it.copy(moving = false) }

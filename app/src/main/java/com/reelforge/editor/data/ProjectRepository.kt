@@ -72,6 +72,7 @@ object ProjectJson {
                     put("endMs", l.endMs)
                     put("animIn", l.animIn.name)
                     put("animOut", l.animOut.name)
+                    put("loop", l.loop.name)
                     put("moving", l.moving)
                     put("x2", l.x2.toDouble())
                     put("y2", l.y2.toDouble())
@@ -319,6 +320,8 @@ object ProjectJson {
                 endMs = l.optLong("endMs", 3000),
                 animIn = anim(l.optString("animIn")),
                 animOut = anim(l.optString("animOut")),
+                loop = runCatching { com.reelforge.editor.model.LoopFx.valueOf(l.optString("loop")) }
+                    .getOrDefault(com.reelforge.editor.model.LoopFx.NONE),
                 moving = l.optBoolean("moving", false),
                 x2 = l.optDouble("x2", 0.0).toFloat(),
                 y2 = l.optDouble("y2", 0.0).toFloat(),

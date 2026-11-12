@@ -129,6 +129,7 @@ object ExportManager {
         val y2: Float,
         val rotation: Float,
         val keyframes: List<Keyframe>,
+        val loop: com.reelforge.editor.model.LoopFx = com.reelforge.editor.model.LoopFx.NONE,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -151,6 +152,7 @@ object ExportManager {
                 if (layer.moving) layer.x2 else layer.x, if (layer.moving) layer.y2 else layer.y,
                 layer.rotation,
                 layer.keyframes,
+                layer.loop,
             )
         } + project.texts.map { text ->
             OverlaySpec(
@@ -190,6 +192,7 @@ object ExportManager {
                         y2 = s.y2,
                         rotation = s.rotation,
                         keyframes = s.keyframes,
+                    loop = s.loop,
                     )
                 }
             buildClipItem(
@@ -265,6 +268,7 @@ object ExportManager {
                     y2 = s.y2,
                     rotation = s.rotation,
                     keyframes = s.keyframes,
+                    loop = s.loop,
                 )
             }
             if (onTop.isNotEmpty()) {

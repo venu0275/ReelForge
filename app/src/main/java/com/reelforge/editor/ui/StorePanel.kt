@@ -49,7 +49,7 @@ import com.reelforge.editor.data.SoundEffect
 fun StorePanel(vm: EditorViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Stickers", "Subscribe and like", "Sound effects", "Find music").forEachIndexed { i, name ->
+        listOf("Stickers", "Buttons and reactions", "Sound effects", "Find music").forEachIndexed { i, name ->
             FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(name) })
         }
     }
@@ -105,7 +105,7 @@ fun StorePanel(vm: EditorViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SocialSticker.entries.forEach { sticker ->
+                SocialSticker.entries.filter { !it.burst }.forEach { sticker ->
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(10.dp))
@@ -117,8 +117,27 @@ fun StorePanel(vm: EditorViewModel) {
                     }
                 }
             }
+            Text("Comedy reactions", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(
+                Modifier.padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SocialSticker.entries.filter { it.burst }.forEach { sticker ->
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF37474F))
+                            .clickable { vm.addSocialSticker(sticker) }
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    ) {
+                        Text(sticker.label, color = Color(sticker.foreground), fontWeight = FontWeight.Black)
+                    }
+                }
+            }
             Text(
-                "After adding, select its bar on the timeline to move, resize or animate it.",
+                "Some of these move on their own. Select the bar on the timeline, then Layers, to change " +
+                    "\"Keep moving\", size or place.",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 6.dp),
             )
@@ -131,10 +150,23 @@ fun StorePanel(vm: EditorViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SoundEffect.entries.forEach { effect ->
+                SoundEffect.entries.filter { !it.comedy }.forEach { effect ->
                     FilterChip(selected = false, onClick = { vm.addSoundEffect(effect) }, label = { Text(effect.title) })
                 }
             }
+            Text("Comedy sounds", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SoundEffect.entries.filter { it.comedy }.forEach { effect ->
+                    FilterChip(selected = false, onClick = { vm.addSoundEffect(effect) }, label = { Text(effect.title) })
+                }
+            }
+            Text(
+                "For laughs, applause and crowds, use Find music and tap a quick search.",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
@@ -158,6 +190,19 @@ private fun MusicFinder(vm: EditorViewModel) {
         )
         Button(onClick = { vm.searchMusic(query, effects) }, enabled = query.isNotBlank() && !vm.musicSearching) {
             Text(if (vm.musicSearching) "…" else "Search")
+        }
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf("laugh", "applause", "crowd cheer", "crickets", "scream", "boo", "funny", "cartoon").forEach { word ->
+            FilterChip(
+                selected = false,
+                onClick = {
+                    query = word
+                    effects = true
+                    vm.searchMusic(word, true)
+                },
+                label = { Text(word) },
+            )
         }
     }
     if (vm.musicSearchNote.isNotEmpty()) Text(vm.musicSearchNote, style = MaterialTheme.typography.bodySmall)

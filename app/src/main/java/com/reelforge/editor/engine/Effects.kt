@@ -36,6 +36,8 @@ import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.Keyframe
+import com.reelforge.editor.model.LoopFx
+import com.reelforge.editor.model.loopPose
 import com.reelforge.editor.model.OverlayAnim
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.ProjectOps
@@ -101,7 +103,9 @@ data class AnimState(
 private const val ANIM_MS = 400f
 
 /** Entry / exit animation state at [tMs] into an overlay that lasts [durationMs]. */
-fun overlayAnim(tMs: Long, durationMs: Long, animIn: OverlayAnim, animOut: OverlayAnim): AnimState {
+fun overlayAnim(
+    tMs: Long, durationMs: Long, animIn: OverlayAnim, animOut: OverlayAnim, loop: LoopFx = LoopFx.NONE,
+): AnimState {
     val window = minOf(ANIM_MS, durationMs / 2f).coerceAtLeast(1f)
     var alpha = 1f
     var scale = 1f
@@ -147,6 +151,10 @@ fun overlayAnim(tMs: Long, durationMs: Long, animIn: OverlayAnim, animOut: Overl
     if (tMs < window) blend(animIn, tMs / window)
     val remaining = durationMs - tMs
     if (remaining < window) blend(animOut, remaining / window)
+    if (loop != LoopFx.NONE) {
+        val l = loopPose(loop, tMs)
+        return AnimState(alpha * l.alpha, scale * l.scale, dy + l.dy, dx + l.dx, rotation + l.rotation)
+    }
     return AnimState(alpha, scale, dy, dx, rotation)
 }
 
@@ -168,6 +176,7 @@ class TimedBitmapOverlay(
     private val y2: Float = y,
     private val rotation: Float = 0f,
     private val keyframes: List<Keyframe> = emptyList(),
+    private val loop: LoopFx = LoopFx.NONE,
 ) : BitmapOverlay() {
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
     private var baseUs = C.TIME_UNSET
@@ -186,7 +195,7 @@ class TimedBitmapOverlay(
         val t = relative(presentationTimeUs)
         if (t < startUs || t >= endUs) return hidden
         val sinceStartMs = (t - startUs) / 1000
-        val anim = overlayAnim(sinceStartMs, (endUs - startUs) / 1000, animIn, animOut)
+        val anim = overlayAnim(sinceStartMs, (endUs - startUs) / 1000, animIn, animOut, loop)
         val px: Float
         val py: Float
         var scale = anim.scale

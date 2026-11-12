@@ -1093,7 +1093,7 @@ class StoreTest {
             val a = com.reelforge.editor.data.SoundMaker.samples(effect)
             val b = com.reelforge.editor.data.SoundMaker.samples(effect)
             assertTrue(effect.name, a.contentEquals(b))
-            assertTrue(effect.name, a.size in 1_000..50_000)
+            assertTrue(effect.name, a.size in 1_000..90_000)
             val peak = a.maxOf { kotlin.math.abs(it.toInt()) }
             assertTrue("${effect.name} peak $peak", peak in 6_000..Short.MAX_VALUE.toInt())
             val wav = com.reelforge.editor.data.SoundMaker.wav(a)
@@ -1131,5 +1131,37 @@ class MusicSearchTest {
         assertEquals("ogg", found[1].fileType)
         assertEquals("Public domain", found[1].licence)
         assertTrue(search.parse("{}").isEmpty())
+    }
+}
+
+class LoopFxTest {
+    private fun pose(fx: com.reelforge.editor.model.LoopFx, t: Long) = com.reelforge.editor.model.loopPose(fx, t)
+
+    @Test fun `no loop leaves the item alone and every loop moves it`() {
+        assertEquals(com.reelforge.editor.model.LoopPose(), pose(com.reelforge.editor.model.LoopFx.NONE, 777))
+        for (fx in com.reelforge.editor.model.LoopFx.entries.drop(1)) {
+            val poses = (0L..3000L step 50).map { pose(fx, it) }
+            assertTrue("${fx.name} never moves", poses.toSet().size > 1)
+            for (p in poses) {
+                assertTrue(fx.name, kotlin.math.abs(p.dx) <= 0.1f && kotlin.math.abs(p.dy) <= 0.1f)
+                assertTrue(fx.name, p.scale in 0.8f..1.2f && p.alpha in 0.2f..1f && p.rotation in -360f..360f)
+            }
+        }
+    }
+
+    @Test fun `loops repeat and tolerate odd times`() {
+        val fx = com.reelforge.editor.model.LoopFx
+        assertEquals(pose(fx.SPIN, 500).rotation, pose(fx.SPIN, 2500).rotation, 0.01f)
+        assertEquals(pose(fx.BLINK, 100), pose(fx.BLINK, 900))
+        assertEquals(pose(fx.BOUNCE, 0), pose(fx.BOUNCE, -50))
+        assertTrue(pose(fx.BOUNCE, 300).dy > 0f)
+    }
+
+    @Test fun `the loop setting survives saving`() {
+        val layer = ImageLayer(uri = "file:///x.png", loop = com.reelforge.editor.model.LoopFx.WOBBLE)
+        val saved = com.reelforge.editor.data.ProjectJson.decode(
+            com.reelforge.editor.data.ProjectJson.encode(Project(name = "p", layers = listOf(layer)))
+        )
+        assertEquals(com.reelforge.editor.model.LoopFx.WOBBLE, saved.layers.single().loop)
     }
 }

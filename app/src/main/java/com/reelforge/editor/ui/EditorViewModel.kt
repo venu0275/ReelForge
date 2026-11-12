@@ -768,7 +768,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             val id = addImageLayer(Uri.fromFile(file))
-            if (id.isNotEmpty()) updateLayer(id) { it.copy(scale = 0.14f, y = -0.6f) }
+            if (id.isNotEmpty()) updateLayer(id) {
+                if (sticker.burst) it.copy(scale = 0.22f, y = 0.4f, loop = sticker.loop)
+                else it.copy(scale = 0.14f, y = -0.6f, loop = sticker.loop)
+            }
         }
     }
 

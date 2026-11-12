@@ -847,7 +847,7 @@ class ExportDeviceTest {
             assertTrue(sticker.name, bitmap.width > bitmap.height && bitmap.getPixel(bitmap.width / 2, 4) == sticker.background)
             val file = File(context.cacheDir, "social_$i.png")
             file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-            com.reelforge.editor.model.ImageLayer(uri = Uri.fromFile(file).toString(), scale = 0.14f, y = -0.6f + i * 0.5f, startMs = 0, endMs = 2_000)
+            com.reelforge.editor.model.ImageLayer(uri = Uri.fromFile(file).toString(), scale = 0.14f, y = -0.6f + i * 0.5f, startMs = 0, endMs = 6_000, loop = com.reelforge.editor.model.LoopFx.entries[i + 1])
         }
         val sounds = com.reelforge.editor.data.SoundEffect.entries.mapIndexed { i, effect ->
             val samples = com.reelforge.editor.data.SoundMaker.samples(effect)
@@ -855,11 +855,18 @@ class ExportDeviceTest {
             file.writeBytes(com.reelforge.editor.data.SoundMaker.wav(samples))
             val duration = MediaUtils.audioDurationMs(context, Uri.fromFile(file))
             assertNear(effect.name, samples.size * 1000L / 44100, duration, 60)
-            AudioClip(uri = Uri.fromFile(file).toString(), title = effect.title, startMs = i * 200L, durationMs = duration)
+            AudioClip(uri = Uri.fromFile(file).toString(), title = effect.title, startMs = i * 250L, durationMs = duration)
         }
-        val project = Project(name = "store", clips = listOf(imageClip(uri, 2_000)), layers = layers, audio = sounds)
+        val bursts = com.reelforge.editor.data.SocialSticker.entries.filter { it.burst }.mapIndexed { i, sticker ->
+            val bitmap = sticker.render()
+            assertTrue(sticker.name, bitmap.width > bitmap.height && bitmap.getPixel(2, 2) == 0)
+            val file = File(context.cacheDir, "burst_$i.png")
+            file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            com.reelforge.editor.model.ImageLayer(uri = Uri.fromFile(file).toString(), scale = 0.1f, x = -0.8f + i * 0.15f, y = 0.7f, startMs = i * 300L, endMs = 6_000, loop = sticker.loop)
+        }
+        val project = Project(name = "store", clips = listOf(imageClip(uri, 6_000)), layers = layers + bursts, audio = sounds)
         val info = inspect(exportOk(project).file!!)
-        assertNear("length", 2_000, info.durationMs, 600)
+        assertNear("length", 6_000, info.durationMs, 600)
         assertTrue("sound effects must be in the export", info.hasAudio)
     }
 

@@ -1361,7 +1361,7 @@ private fun PreviewArea(
                         LaunchedEffect(layer.uri) { vm.requestStill(layer.uri) }
                         val still = vm.previews[layer.uri]
                         val anim = overlayAnim(
-                            now - layer.startMs, layer.endMs - layer.startMs, layer.animIn, layer.animOut
+                            now - layer.startMs, layer.endMs - layer.startMs, layer.animIn, layer.animOut, layer.loop
                         )
                         val pose = if (layer.keyframes.isEmpty()) null
                         else ProjectOps.poseAt(layer.keyframes, now - layer.startMs, layer.keyframes.first())

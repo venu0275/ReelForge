@@ -95,6 +95,33 @@ enum class AudioFx(val label: String) {
     ROBOT("Robot"),
 }
 
+/** A movement that repeats for as long as a sticker or picture is on screen (the "GIF" look). */
+enum class LoopFx(val label: String) {
+    NONE("None"), BOUNCE("Bounce"), SHAKE("Shake"), PULSE("Pulse"),
+    WOBBLE("Wobble"), SPIN("Spin"), FLOAT("Float"), BLINK("Blink"),
+}
+
+/** Offset from the resting pose caused by a [LoopFx]; dx / dy are in frame units (-1..1, up is +). */
+data class LoopPose(
+    val dx: Float = 0f, val dy: Float = 0f, val scale: Float = 1f, val rotation: Float = 0f, val alpha: Float = 1f,
+)
+
+/** Where a looping effect has moved things [tMs] after the item appeared. Repeats forever. */
+fun loopPose(loop: LoopFx, tMs: Long): LoopPose {
+    val t = tMs.coerceAtLeast(0).toDouble()
+    fun wave(periodMs: Double) = kotlin.math.sin(2 * Math.PI * t / periodMs).toFloat()
+    return when (loop) {
+        LoopFx.NONE -> LoopPose()
+        LoopFx.BOUNCE -> LoopPose(dy = kotlin.math.abs(wave(1200.0)) * 0.08f)
+        LoopFx.SHAKE -> LoopPose(dx = wave(120.0) * 0.012f, rotation = wave(90.0) * 3f)
+        LoopFx.PULSE -> LoopPose(scale = 1f + 0.12f * wave(700.0))
+        LoopFx.WOBBLE -> LoopPose(rotation = 12f * wave(900.0))
+        LoopFx.SPIN -> LoopPose(rotation = (t % 2000.0 / 2000.0 * 360.0).toFloat())
+        LoopFx.FLOAT -> LoopPose(dx = 0.015f * wave(3100.0), dy = 0.03f * wave(2400.0))
+        LoopFx.BLINK -> LoopPose(alpha = if ((tMs.coerceAtLeast(0) / 400) % 2 == 0L) 1f else 0.25f)
+    }
+}
+
 /** Entry / exit animation for text, stickers and image layers. */
 enum class OverlayAnim(val label: String) {
     NONE("None"),
@@ -172,6 +199,7 @@ data class ImageLayer(
     val x2: Float = 0f,
     val y2: Float = 0f,
     val keyframes: List<Keyframe> = emptyList(),
+    val loop: LoopFx = LoopFx.NONE,
 )
 
 /**
