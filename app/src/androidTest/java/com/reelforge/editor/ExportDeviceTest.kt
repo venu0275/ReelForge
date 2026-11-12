@@ -797,6 +797,14 @@ class ExportDeviceTest {
         }
         // The shared test machine can be turned away by the service; that is not an app fault.
         org.junit.Assume.assumeTrue("search service unavailable: $lastError", lastError.isEmpty() || results.isNotEmpty())
+        runCatching {
+            for (word in listOf("piano", "rain")) for (fx in listOf(false, true)) {
+                search.searchUrls(word, fx).forEachIndexed { i, url ->
+                    val found = search.fetch(url)
+                    log("MUSIC probe $word fx=$fx stage=$i count=${found.size} first=${found.firstOrNull()?.let { it.licence + " " + it.fileType + " " + it.durationMs + " " + it.url.take(60) }}")
+                }
+            }
+        }.onFailure { log("MUSIC probe failed: ${it.message}") }
         log("MUSIC found ${results.size} results")
         assertTrue("no results for a common word", results.isNotEmpty())
         var playable = 0
