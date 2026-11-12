@@ -9,6 +9,7 @@ import com.reelforge.editor.model.AudioClip
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
+import com.reelforge.editor.model.Cut
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.History
 import com.reelforge.editor.model.ImageLayer
@@ -320,6 +321,82 @@ class EdgeTrimTest {
         assertNull(ProjectOps.trimLeftOfPlayhead(p, "b", 13_950))  // too close to b's end
         assertNull(ProjectOps.trimLeftOfPlayhead(p, "missing", 5_000))
         assertNull(ProjectOps.cutPoint(project(), "a", 0))
+    }
+
+    @Test fun `text and image layers trim and split at the playhead`() {
+        val p = project(video("a", 10_000)).copy(
+            texts = listOf(TextItem(id = "t", text = "Hi", startMs = 1_000, endMs = 5_000,
+                animIn = OverlayAnim.FADE, animOut = OverlayAnim.POP)),
+            layers = listOf(ImageLayer(id = "l", uri = "u", startMs = 1_000, endMs = 5_000)),
+        )
+        assertEquals(3_000 to 5_000, ProjectOps.cutText(p, "t", 3_000, Cut.LEFT)!!.texts[0].let { it.startMs to it.endMs })
+        assertEquals(1_000 to 3_000, ProjectOps.cutText(p, "t", 3_000, Cut.RIGHT)!!.texts[0].let { it.startMs to it.endMs })
+        val split = ProjectOps.cutText(p, "t", 3_000, Cut.SPLIT, newItemId = "t2")!!.texts
+        assertEquals(listOf("t", "t2"), split.map { it.id })
+        assertEquals(listOf(1_000L to 3_000L, 3_000L to 5_000L), split.map { it.startMs to it.endMs })
+        // The join is seamless: no exit animation on the first half, no entry on the second.
+        assertEquals(OverlayAnim.FADE to OverlayAnim.NONE, split[0].animIn to split[0].animOut)
+        assertEquals(OverlayAnim.NONE to OverlayAnim.POP, split[1].animIn to split[1].animOut)
+
+        val layers = ProjectOps.cutLayer(p, "l", 2_000, Cut.SPLIT, newItemId = "l2")!!.layers
+        assertEquals(listOf(1_000L to 2_000L, 2_000L to 5_000L), layers.map { it.startMs to it.endMs })
+        assertEquals(2_000, ProjectOps.cutLayer(p, "l", 2_000, Cut.LEFT)!!.layers[0].startMs)
+    }
+
+    @Test fun `video layers keep their picture in step when cut`() {
+        val layer = VideoLayer(id = "v", uri = "u", sourceDurationMs = 20_000, trimStartMs = 2_000,
+            trimEndMs = 10_000, startMs = 1_000) // plays 1 s – 9 s
+        val p = project(video("a", 12_000)).copy(videoLayers = listOf(layer))
+        val left = ProjectOps.cutVideoLayer(p, "v", 4_000, Cut.LEFT)!!.videoLayers[0]
+        assertEquals(4_000, left.startMs)
+        assertEquals(5_000, left.trimStartMs)   // 3 s further into the source
+        assertEquals(10_000, left.trimEndMs)
+        val right = ProjectOps.cutVideoLayer(p, "v", 4_000, Cut.RIGHT)!!.videoLayers[0]
+        assertEquals(1_000, right.startMs)
+        assertEquals(2_000 to 5_000L, right.trimStartMs.toInt() to right.trimEndMs)
+        val parts = ProjectOps.cutVideoLayer(p, "v", 4_000, Cut.SPLIT, newItemId = "v2")!!.videoLayers
+        assertEquals(listOf("v", "v2"), parts.map { it.id })
+        assertEquals(layer.durationMs, parts.sumOf { it.durationMs })
+        assertEquals(parts[0].startMs + parts[0].durationMs, parts[1].startMs)
+        assertEquals(parts[0].trimEndMs, parts[1].trimStartMs)
+    }
+
+    @Test fun `sounds keep playing from the right place when cut`() {
+        val clip = AudioClip("s", "u", "Voice", startMs = 2_000, durationMs = 6_000, fadeInMs = 300,
+            fadeOutMs = 400, offsetMs = 500)
+        val p = project(video("a", 12_000)).copy(audio = listOf(clip))
+        val left = ProjectOps.cutAudio(p, "s", 5_000, Cut.LEFT)!!.audio[0]
+        assertEquals(5_000, left.startMs)
+        assertEquals(3_000, left.durationMs)
+        assertEquals(3_500, left.offsetMs)
+        assertEquals(300, left.fadeInMs)
+        val right = ProjectOps.cutAudio(p, "s", 5_000, Cut.RIGHT)!!.audio[0]
+        assertEquals(3_000, right.durationMs)
+        assertEquals(500, right.offsetMs)
+        assertEquals(400, right.fadeOutMs)
+        val parts = ProjectOps.cutAudio(p, "s", 5_000, Cut.SPLIT, newItemId = "s2")!!.audio
+        assertEquals(clip.durationMs, parts.sumOf { it.durationMs })
+        assertEquals(parts[0].offsetMs + parts[0].durationMs, parts[1].offsetMs)
+        // No fade is added at the join.
+        assertEquals(0, parts[0].fadeOutMs)
+        assertEquals(0, parts[1].fadeInMs)
+    }
+
+    @Test fun `cuts on items are refused outside them or at their edges`() {
+        val p = project(video("a", 10_000)).copy(
+            texts = listOf(TextItem(id = "t", text = "Hi", startMs = 1_000, endMs = 5_000)),
+            audio = listOf(AudioClip("s", "u", "Voice", 2_000, 6_000)),
+            videoLayers = listOf(VideoLayer(id = "v", uri = "u", sourceDurationMs = 4_000, startMs = 3_000)),
+        )
+        for (cut in Cut.entries) {
+            assertNull(ProjectOps.cutText(p, "t", 500, cut))
+            assertNull(ProjectOps.cutText(p, "t", 1_100, cut))
+            assertNull(ProjectOps.cutText(p, "t", 4_950, cut))
+            assertNull(ProjectOps.cutText(p, "missing", 3_000, cut))
+            assertNull(ProjectOps.cutAudio(p, "s", 9_000, cut))
+            assertNull(ProjectOps.cutVideoLayer(p, "v", 2_000, cut))
+            assertNull(ProjectOps.cutLayer(p, "none", 3_000, cut))
+        }
     }
 
     @Test fun `replace keeps the edits and fits the new media`() {
@@ -648,7 +725,7 @@ class ProjectJsonTest {
                 animOut = OverlayAnim.FADE, moving = true, x2 = 1f, y2 = 1f,
             )
         ),
-        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f, 400, 600)),
+        audio = listOf(AudioClip("v1", "file:///voice.m4a", "Voice 1", 1_200, 3_400, 1.5f, 400, 600, 250)),
         videoLayers = listOf(
             VideoLayer(
                 id = "pip", uri = "content://video/9", sourceDurationMs = 9_000, trimStartMs = 1_000,

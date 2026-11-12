@@ -47,6 +47,7 @@ import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.ImageLayer
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
+import com.reelforge.editor.model.Cut
 import com.reelforge.editor.model.MusicTrack
 import com.reelforge.editor.model.History
 import com.reelforge.editor.model.Project
@@ -330,6 +331,38 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         mutate { result }
         // Stay on the last frame that was kept.
         seekTo((playheadMs - 34).coerceAtLeast(0))
+    }
+
+    // -------------------------------------------------- cuts on layers, text, sounds
+
+    private fun applyCut(result: Project?) {
+        if (result == null) message = "Move the red line onto this item, away from its edges"
+        else mutate { result }
+    }
+
+    /** True when the playhead is far enough inside the range to cut it. */
+    fun canCut(startMs: Long, endMs: Long): Boolean =
+        ProjectOps.rangeCutPoint(startMs, endMs, playheadMs) != null
+
+    fun cutText(id: String, cut: Cut) {
+        applyCut(ProjectOps.cutText(project ?: return, id, playheadMs, cut))
+    }
+
+    fun cutLayer(id: String, cut: Cut) {
+        applyCut(ProjectOps.cutLayer(project ?: return, id, playheadMs, cut))
+    }
+
+    fun cutVideoLayer(id: String, cut: Cut) {
+        val p = project ?: return
+        if (cut == Cut.SPLIT && p.videoLayers.size >= ExportManager.MAX_VIDEO_LAYERS) {
+            message = "Splitting needs a free video layer (the limit is ${ExportManager.MAX_VIDEO_LAYERS})"
+            return
+        }
+        applyCut(ProjectOps.cutVideoLayer(p, id, playheadMs, cut))
+    }
+
+    fun cutAudio(id: String, cut: Cut) {
+        applyCut(ProjectOps.cutAudio(project ?: return, id, playheadMs, cut))
     }
 
     /** Edge drags on the timeline. [deltaMs] is timeline time; see [ProjectOps.trimStart]. */
@@ -776,7 +809,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             voiceClipId = clip.id
             voicePlayer.setMediaItem(MediaItem.fromUri(Uri.parse(clip.uri)))
             voicePlayer.prepare()
-            voicePlayer.seekTo(playheadMs - clip.startMs)
+            voicePlayer.seekTo(clip.offsetMs + playheadMs - clip.startMs)
             voicePlayer.play()
         }
         val length = minOf(clip.durationMs, p.durationMs - clip.startMs)

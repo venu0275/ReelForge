@@ -184,6 +184,7 @@ data class AudioClip(
     val volume: Float = 1f,
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
+    val offsetMs: Long = 0,   // where in the audio file this clip starts playing
 )
 
 data class MusicTrack(

@@ -111,6 +111,7 @@ object ProjectJson {
                     put("volume", a.volume.toDouble())
                     put("fadeInMs", a.fadeInMs)
                     put("fadeOutMs", a.fadeOutMs)
+                    put("offsetMs", a.offsetMs)
                 })
             }
         })
@@ -314,6 +315,7 @@ object ProjectJson {
                 volume = a.optDouble("volume", 1.0).toFloat(),
                 fadeInMs = a.optLong("fadeInMs", 0),
                 fadeOutMs = a.optLong("fadeOutMs", 0),
+                offsetMs = a.optLong("offsetMs", 0),
             )
         }
         return Project(

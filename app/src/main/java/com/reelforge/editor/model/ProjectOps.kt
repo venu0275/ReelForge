@@ -122,6 +122,81 @@ object ProjectOps {
         return trimEnd(project, id, local - clip.durationMs)
     }
 
+    /**
+     * Time from [startMs] at which the playhead cuts an item lasting until [endMs], or null when
+     * the playhead is outside it or too close to an edge to leave a usable piece.
+     */
+    fun rangeCutPoint(startMs: Long, endMs: Long, playheadMs: Long): Long? {
+        val local = playheadMs - startMs
+        return if (local >= MIN_PIECE_MS && endMs - playheadMs >= MIN_PIECE_MS) local else null
+    }
+
+    /** Trims or splits a text / sticker at the playhead. Null when the playhead cannot cut it. */
+    fun cutText(project: Project, id: String, playheadMs: Long, cut: Cut, newItemId: String = newId()): Project? {
+        val item = project.texts.firstOrNull { it.id == id } ?: return null
+        rangeCutPoint(item.startMs, item.endMs, playheadMs) ?: return null
+        val pieces = when (cut) {
+            Cut.LEFT -> listOf(item.copy(startMs = playheadMs))
+            Cut.RIGHT -> listOf(item.copy(endMs = playheadMs))
+            Cut.SPLIT -> listOf(
+                item.copy(endMs = playheadMs, animOut = OverlayAnim.NONE),
+                item.copy(id = newItemId, startMs = playheadMs, animIn = OverlayAnim.NONE),
+            )
+        }
+        return project.copy(texts = project.texts.flatMap { if (it.id == id) pieces else listOf(it) })
+    }
+
+    /** Trims or splits an image layer at the playhead. */
+    fun cutLayer(project: Project, id: String, playheadMs: Long, cut: Cut, newItemId: String = newId()): Project? {
+        val item = project.layers.firstOrNull { it.id == id } ?: return null
+        rangeCutPoint(item.startMs, item.endMs, playheadMs) ?: return null
+        val pieces = when (cut) {
+            Cut.LEFT -> listOf(item.copy(startMs = playheadMs))
+            Cut.RIGHT -> listOf(item.copy(endMs = playheadMs))
+            Cut.SPLIT -> listOf(
+                item.copy(endMs = playheadMs, animOut = OverlayAnim.NONE),
+                item.copy(id = newItemId, startMs = playheadMs, animIn = OverlayAnim.NONE),
+            )
+        }
+        return project.copy(layers = project.layers.flatMap { if (it.id == id) pieces else listOf(it) })
+    }
+
+    /** Trims or splits a video layer at the playhead, keeping the picture in step with time. */
+    fun cutVideoLayer(
+        project: Project, id: String, playheadMs: Long, cut: Cut, newItemId: String = newId(),
+    ): Project? {
+        val item = project.videoLayers.firstOrNull { it.id == id } ?: return null
+        val local = rangeCutPoint(item.startMs, item.startMs + item.durationMs, playheadMs) ?: return null
+        val firstPart = item.copy(trimEndMs = item.trimStartMs + local)
+        val secondPart = item.copy(trimStartMs = item.trimStartMs + local, startMs = playheadMs)
+        val pieces = when (cut) {
+            Cut.LEFT -> listOf(secondPart)
+            Cut.RIGHT -> listOf(firstPart)
+            Cut.SPLIT -> listOf(firstPart, secondPart.copy(id = newItemId))
+        }
+        return project.copy(videoLayers = project.videoLayers.flatMap { if (it.id == id) pieces else listOf(it) })
+    }
+
+    /** Trims or splits a voice-over / sound clip at the playhead. */
+    fun cutAudio(project: Project, id: String, playheadMs: Long, cut: Cut, newItemId: String = newId()): Project? {
+        val item = project.audio.firstOrNull { it.id == id } ?: return null
+        val local = rangeCutPoint(item.startMs, item.startMs + item.durationMs, playheadMs) ?: return null
+        val firstPart = item.copy(durationMs = local, fadeOutMs = 0)
+        val secondPart = item.copy(
+            offsetMs = item.offsetMs + local,
+            startMs = playheadMs,
+            durationMs = item.durationMs - local,
+            fadeInMs = 0,
+        )
+        val pieces = when (cut) {
+            // A plain trim keeps the fade the user set on the side that stays.
+            Cut.LEFT -> listOf(secondPart.copy(fadeInMs = item.fadeInMs))
+            Cut.RIGHT -> listOf(firstPart.copy(fadeOutMs = item.fadeOutMs))
+            Cut.SPLIT -> listOf(firstPart, secondPart.copy(id = newItemId))
+        }
+        return project.copy(audio = project.audio.flatMap { if (it.id == id) pieces else listOf(it) })
+    }
+
     /** Shortest clip an edge drag can leave, in source time. */
     const val MIN_CLIP_MS = 300L
 
@@ -207,6 +282,9 @@ object ProjectOps {
         )
     }
 }
+
+/** A cut at the playhead: keep the right side, split in two, or keep the left side. */
+enum class Cut { LEFT, SPLIT, RIGHT }
 
 /**
  * Undo / redo history. Changes recorded within [coalesceMs] of each other (dragging a slider)

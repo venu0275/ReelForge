@@ -529,6 +529,7 @@ fun TextPanel(
         }
 
         TextTab.PLACE -> {
+            CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutText(id, cut) }
             Text("Turn", style = MaterialTheme.typography.labelLarge)
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
@@ -728,6 +729,7 @@ fun LayerPanel(
         }) { Text("Delete") }
         TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
+    CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutLayer(id, cut) }
     LabeledSlider("Size", editing.scale, 0.05f..1f) { v -> vm.updateLayer(id) { it.copy(scale = v) } }
     LabeledSlider("Opacity", editing.opacity, 0f..1f) { v -> vm.updateLayer(id) { it.copy(opacity = v) } }
     LabeledSlider("Rotation", editing.rotation, -180f..180f) { v ->
@@ -779,6 +781,7 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             }
             TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
         }
+        CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
         CommitSlider(
             label = "Starts at",
             value = clip.startMs.toFloat(),
@@ -900,6 +903,7 @@ private fun VideoLayerEditor(vm: EditorViewModel, project: Project, layer: Video
         }) { Text("Delete") }
         TextButton(onClick = onDone) { Text("Done") }
     }
+    CutRow(vm.canCut(layer.startMs, layer.startMs + layer.durationMs)) { cut -> vm.cutVideoLayer(id, cut) }
     LabeledSlider("Size", layer.scale, 0.1f..1f) { v -> vm.updateVideoLayer(id) { it.copy(scale = v) } }
     LabeledSlider("Opacity", layer.opacity, 0f..1f) { v -> vm.updateVideoLayer(id) { it.copy(opacity = v) } }
     LabeledSlider("Rotation", layer.rotation, -180f..180f) { v ->

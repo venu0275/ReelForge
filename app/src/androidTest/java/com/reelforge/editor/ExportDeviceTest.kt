@@ -649,8 +649,8 @@ class ExportDeviceTest {
             ),
             audio = listOf(
                 AudioClip(
-                    uri = Uri.fromFile(audio).toString(), title = "s", startMs = 1_000, durationMs = 1_500,
-                    fadeInMs = 2_000, fadeOutMs = 2_000,
+                    uri = Uri.fromFile(audio).toString(), title = "s", startMs = 1_000, durationMs = 1_000,
+                    fadeInMs = 2_000, fadeOutMs = 2_000, offsetMs = 400, // the second half of a split
                 ),
             ),
         )

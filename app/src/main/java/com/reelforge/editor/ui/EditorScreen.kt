@@ -537,9 +537,20 @@ private fun EditorMenu(
                 val isVideo = clip.type == ClipType.VIDEO
                 // Cuts at the red line. They light up when the line is on this clip.
                 val canCut = vm.canCutSelectedClip
-                MenuTile("Trim left", enabled = canCut, accent = true) { vm.trimLeftOfPlayhead() }
-                MenuTile("Split", enabled = canCut, accent = true) { vm.splitAtPlayhead() }
-                MenuTile("Trim right", enabled = canCut, accent = true) { vm.trimRightOfPlayhead() }
+                MenuTile("Trim left", enabled = canCut, accent = true, icon = CutKind.LEFT) {
+                    vm.trimLeftOfPlayhead()
+                }
+                MenuTile("Split", enabled = canCut, accent = true, icon = CutKind.SPLIT) {
+                    vm.splitAtPlayhead()
+                }
+                MenuTile("Trim right", enabled = canCut, accent = true, icon = CutKind.RIGHT) {
+                    vm.trimRightOfPlayhead()
+                }
+                if (isVideo) {
+                    MenuTile("Split + freeze", enabled = canCut, accent = true, icon = CutKind.FREEZE) {
+                        vm.freezeFrame()
+                    }
+                }
                 MenuTile("Fine trim") { openPanel(Panel.TRIM) }
                 MenuTile("Replace") { replace(id) }
                 if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
@@ -550,7 +561,6 @@ private fun EditorMenu(
                 MenuTile("Rotate") { vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) } }
                 MenuTile("Mirror") { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
                 MenuTile(if (clip.fill) "Fit" else "Fill") { vm.updateClip(id) { it.copy(fill = !it.fill) } }
-                if (isVideo) MenuTile("Freeze") { vm.freezeFrame() }
                 MenuTile("Copy") { vm.duplicateClip(id) }
                 MenuTile("Move left") { vm.moveClip(id, -1) }
                 MenuTile("Move right") { vm.moveClip(id, 1) }
@@ -564,6 +574,7 @@ private fun MenuTile(
     label: String,
     enabled: Boolean = true,
     accent: Boolean = false,
+    icon: CutKind? = null,
     onClick: () -> Unit,
 ) {
     Surface(
@@ -574,12 +585,23 @@ private fun MenuTile(
         contentColor = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
     ) {
-        Text(
-            label,
-            modifier = Modifier.widthIn(min = 84.dp).padding(horizontal = 12.dp, vertical = 14.dp),
-            style = MaterialTheme.typography.labelLarge,
-            textAlign = TextAlign.Center,
-        )
+        if (icon == null) {
+            Text(
+                label,
+                modifier = Modifier.widthIn(min = 84.dp).padding(horizontal = 12.dp, vertical = 14.dp),
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+            )
+        } else {
+            Column(
+                Modifier.widthIn(min = 84.dp).padding(horizontal = 10.dp, vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                CutIcon(icon)
+                Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            }
+        }
     }
 }
 

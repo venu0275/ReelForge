@@ -266,7 +266,7 @@ class ScreenshotTest {
         waitForText("In animation (how it appears)")
         save("10_text_animation_landscape")
         tap("Place", scroll = true)
-        waitForText("Turn left 90°")
+        waitForText("Cut at the red line")
         save("11_text_turn_landscape")
 
         // 12. The video layer editor.

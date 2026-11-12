@@ -415,7 +415,10 @@ object ExportManager {
         val playMs = if (clip.durationMs > 0) min(clip.durationMs, available) else available
         val media = MediaItem.Builder().setUri(Uri.parse(clip.uri))
             .setClippingConfiguration(
-                MediaItem.ClippingConfiguration.Builder().setEndPositionMs(playMs).build()
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.offsetMs)
+                    .setEndPositionMs(clip.offsetMs + playMs)
+                    .build()
             )
             .build()
         items += EditedMediaItem.Builder(media)
