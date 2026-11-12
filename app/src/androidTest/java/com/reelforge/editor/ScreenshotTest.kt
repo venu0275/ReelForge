@@ -277,5 +277,12 @@ class ScreenshotTest {
         tap("Edit")
         waitForText("Edit video layer")
         save("12_video_layer_landscape")
+
+        // 13. A bar selected on the timeline: its own cut / edit / delete menu.
+        rule.onNodeWithContentDescription("Close tool").performClick()
+        waitForText("Add to your video")
+        tap("Day 1")
+        waitForText("Text · Day 1")
+        save("13_bar_selected_landscape")
     }
 }
