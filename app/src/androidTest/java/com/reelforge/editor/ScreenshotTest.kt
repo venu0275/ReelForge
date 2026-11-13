@@ -259,12 +259,13 @@ class ScreenshotTest {
         save("08_text_editor_landscape")
 
         // 9-11. The other text tabs.
-        tap("Effects")
+        tap("Effects", scroll = true)
         waitForText("Background")
-        tap("Background")
+        tap("Background", scroll = true)
         waitForText("Background colour")
         save("09_text_background_landscape")
-        tap("Motion")
+        // The tab row scrolls sideways; bring the tab into view before tapping it.
+        tap("Motion", scroll = true)
         waitForText("In animation (how it appears)")
         save("10_text_animation_landscape")
         tap("Place and time", scroll = true)
