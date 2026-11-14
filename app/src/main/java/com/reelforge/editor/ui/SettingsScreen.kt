@@ -19,6 +19,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -29,6 +33,11 @@ import com.reelforge.editor.data.ScreenMode
 @Composable
 fun SettingsScreen(vm: EditorViewModel) {
     val s = vm.settings
+    var showPolicy by remember { mutableStateOf(false) }
+    if (showPolicy) {
+        PrivacyScreen(onBack = { showPolicy = false })
+        return
+    }
     BackHandler { vm.showSettings = false }
     LaunchedEffect(Unit) { vm.refreshDownloadSize() }
     Column(
@@ -79,6 +88,10 @@ fun SettingsScreen(vm: EditorViewModel) {
 
         Section("Reset")
         TextButton(onClick = { vm.updateSettings { AppSettings() } }) { Text("Put all settings back to normal") }
+
+        Section("Privacy")
+        Note("Your videos, photos and projects stay on this phone. Nothing is sent to us.")
+        TextButton(onClick = { showPolicy = true }) { Text("Privacy policy") }
 
         Section("About")
         Note(

@@ -1311,3 +1311,37 @@ class TextOptionsTest {
         assertEquals(text, saved)
     }
 }
+
+class PlaybackGroupingTest {
+    private fun video(uri: String, start: Long, end: Long, speed: Float = 1f) =
+        Clip(uri = uri, type = ClipType.VIDEO, sourceDurationMs = 60_000, trimStartMs = start, trimEndMs = end, speed = speed)
+
+    @Test fun `clips that were only split apart play as one piece`() {
+        val clips = listOf(video("a", 0, 4_000), video("a", 4_000, 9_000), video("a", 9_000, 12_000), video("b", 0, 3_000))
+        assertEquals(listOf(0..2, 3..3), ProjectOps.playGroups(clips))
+        assertTrue(ProjectOps.playGroups(emptyList()).isEmpty())
+    }
+
+    @Test fun `a trim, another file or another speed starts a new piece`() {
+        val trimmed = listOf(video("a", 0, 4_000), video("a", 5_000, 9_000))
+        assertEquals(listOf(0..0, 1..1), ProjectOps.playGroups(trimmed))
+        val otherFile = listOf(video("a", 0, 4_000), video("b", 4_000, 9_000))
+        assertEquals(2, ProjectOps.playGroups(otherFile).size)
+        val otherSpeed = listOf(video("a", 0, 4_000), video("a", 4_000, 9_000, speed = 2f))
+        assertEquals(2, ProjectOps.playGroups(otherSpeed).size)
+    }
+
+    @Test fun `positions map into a piece and back again`() {
+        val clips = listOf(video("a", 2_000, 4_000), video("a", 4_000, 9_000), video("b", 0, 3_000))
+        val groups = ProjectOps.playGroups(clips)
+        assertEquals(0 to 500L, ProjectOps.toPlayPosition(clips, groups, 0, 500))
+        assertEquals(0 to 3_000L, ProjectOps.toPlayPosition(clips, groups, 1, 1_000))
+        assertEquals(1 to 700L, ProjectOps.toPlayPosition(clips, groups, 2, 700))
+        assertEquals(0 to 500L, ProjectOps.fromPlayPosition(clips, groups, 0, 500))
+        assertEquals(1 to 0L, ProjectOps.fromPlayPosition(clips, groups, 0, 2_000))
+        assertEquals(1 to 1_000L, ProjectOps.fromPlayPosition(clips, groups, 0, 3_000))
+        assertEquals(1 to 5_500L, ProjectOps.fromPlayPosition(clips, groups, 0, 7_500))
+        assertEquals(2 to 700L, ProjectOps.fromPlayPosition(clips, groups, 1, 700))
+        assertEquals(null, ProjectOps.fromPlayPosition(clips, groups, 5, 0))
+    }
+}

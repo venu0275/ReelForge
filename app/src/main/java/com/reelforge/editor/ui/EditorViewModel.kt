@@ -196,6 +196,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private var recordStartMs = 0L
 
     private var playlistSignature = ""
+    // The clips grouped into the pieces the player was given (see ProjectOps.playGroups).
+    private var playGroups: List<IntRange> = emptyList()
+    private var shownClipIndex = -1
     private var effectSignature = ""
     private var musicSignature = ""
     private var effectsEverSet = false
@@ -1326,6 +1329,24 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- playback
 
+    /** One piece for the player: a single clip, or several that were only split apart. */
+    private fun toMediaItem(clips: List<Clip>, range: IntRange): MediaItem {
+        val clip = clips[range.first]
+        if (range.first == range.last) return toMediaItem(clip)
+        return MediaItem.Builder().setUri(Uri.parse(clip.uri)).setMediaId(clip.id)
+            .setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder()
+                    .setStartPositionMs(clip.trimStartMs)
+                    .setEndPositionMs(clips[range.last].trimEndMs)
+                    .build()
+            )
+            .build()
+    }
+
+    /** The clip the player is showing now and how far into it, in the source file's own time. */
+    private fun shownClip(p: Project): Pair<Int, Long>? =
+        ProjectOps.fromPlayPosition(p.clips, playGroups, player.currentMediaItemIndex, player.currentPosition)
+
     private fun toMediaItem(clip: Clip): MediaItem {
         val uri = Uri.parse(clip.uri)
         val builder = MediaItem.Builder().setUri(uri).setMediaId(clip.id)
@@ -1347,18 +1368,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Brings both players in line with the current project. */
     private fun syncPlayer() {
         val p = project ?: return
+        // Speed and pitch are part of this because they decide which split clips can share a piece.
         val signature = p.clips.joinToString("|") {
-            "${it.id}:${it.trimStartMs}:${it.trimEndMs}"
+            "${it.id}:${it.trimStartMs}:${it.trimEndMs}:${it.uri.hashCode()}:${it.effectiveSpeed}:${it.pitch}"
         }
         if (signature != playlistSignature) {
             playlistSignature = signature
             val wasPlaying = player.isPlaying
+            playGroups = ProjectOps.playGroups(p.clips)
             if (p.clips.isEmpty()) {
                 player.clearMediaItems()
             } else {
                 val (index, local) = p.locate(playheadMs) ?: (0 to 0L)
-                val position = (local * p.clips[index].effectiveSpeed).toLong()
-                player.setMediaItems(p.clips.map(::toMediaItem), index, position)
+                val source = (local * p.clips[index].effectiveSpeed).toLong()
+                val (piece, position) = ProjectOps.toPlayPosition(p.clips, playGroups, index, source)
+                player.setMediaItems(playGroups.map { toMediaItem(p.clips, it) }, piece, position)
                 player.prepare()
                 player.playWhenReady = wasPlaying
             }
@@ -1369,7 +1393,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyClipParams() {
         val p = project ?: return
-        val clip = p.clips.getOrNull(player.currentMediaItemIndex) ?: return
+        val shown = shownClip(p) ?: return
+        val clip = p.clips.getOrNull(shown.first) ?: return
+        shownClipIndex = shown.first
         // The preview player tops out at 8x; faster clips still export at their full speed.
         player.playbackParameters = PlaybackParameters(
             clip.effectiveSpeed.coerceIn(0.1f, 8f),
@@ -1443,7 +1469,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         playheadMs = target
         stopVoice()
         val (index, local) = p.locate(target) ?: return
-        player.seekTo(index, (local * p.clips[index].effectiveSpeed).toLong())
+        val (piece, position) = ProjectOps.toPlayPosition(
+            p.clips, playGroups, index, (local * p.clips[index].effectiveSpeed).toLong(),
+        )
+        player.seekTo(piece, position)
         applyClipParams()
         syncLayers(p, player.isPlaying)
         if (player.isPlaying) startMusic()
@@ -1489,9 +1518,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun tick() {
         val p = project ?: return
         if (!player.isPlaying) return
-        val index = player.currentMediaItemIndex
+        val (index, source) = shownClip(p) ?: return
         val clip = p.clips.getOrNull(index) ?: return
-        val local = (player.currentPosition / clip.effectiveSpeed).toLong()
+        // Split clips share one piece of video, so the player gives no signal when it crosses
+        // from one to the next; pick up the new clip's filter, volume and so on here.
+        if (index != shownClipIndex) applyClipParams()
+        val local = (source / clip.effectiveSpeed).toLong()
         playheadMs = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
         // Sound follows the picture fade.
         val gain = fadeAlpha(local, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)

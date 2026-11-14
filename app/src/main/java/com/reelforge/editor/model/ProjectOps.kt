@@ -88,6 +88,55 @@ object ProjectOps {
         return if (kotlin.math.abs(moved) < 0.04f) 0f else moved
     }
 
+    /**
+     * True when the preview can play [a] straight into [b] as one piece of video: both are cut
+     * from the same file with nothing removed between them (a split), at the same speed and pitch.
+     */
+    fun joinsForPlayback(a: Clip, b: Clip): Boolean =
+        a.type == ClipType.VIDEO && b.type == ClipType.VIDEO && a.uri == b.uri &&
+            a.trimEndMs == b.trimStartMs && a.effectiveSpeed == b.effectiveSpeed && a.pitch == b.pitch
+
+    /**
+     * The clips grouped into the pieces the preview player is given. Clips that were only split
+     * apart share one piece, so playback runs through the cut without stopping to reload.
+     */
+    fun playGroups(clips: List<Clip>): List<IntRange> {
+        val out = ArrayList<IntRange>()
+        var start = 0
+        for (i in 1..clips.size) {
+            if (i == clips.size || !joinsForPlayback(clips[i - 1], clips[i])) {
+                out += start until i
+                start = i
+            }
+        }
+        return out
+    }
+
+    /**
+     * Where the player must go to show clip [index] at [sourceMs] into that clip (in the source
+     * file's own time): the piece number and the position inside the piece.
+     */
+    fun toPlayPosition(clips: List<Clip>, groups: List<IntRange>, index: Int, sourceMs: Long): Pair<Int, Long> {
+        val g = groups.indexOfFirst { index in it }.coerceAtLeast(0)
+        val first = groups.getOrNull(g)?.first ?: return 0 to sourceMs
+        val offset = if (first == index) 0L else clips[index].trimStartMs - clips[first].trimStartMs
+        return g to offset + sourceMs
+    }
+
+    /** The reverse of [toPlayPosition]: which clip is showing, and how far into it (source time). */
+    fun fromPlayPosition(clips: List<Clip>, groups: List<IntRange>, group: Int, positionMs: Long): Pair<Int, Long>? {
+        val range = groups.getOrNull(group) ?: return null
+        if (range.first == range.last) return range.first to positionMs
+        val base = clips[range.first].trimStartMs
+        for (i in range) {
+            val clip = clips[i]
+            if (positionMs < clip.trimEndMs - base || i == range.last) {
+                return i to (positionMs - (clip.trimStartMs - base)).coerceAtLeast(0L)
+            }
+        }
+        return null
+    }
+
     fun snap(ms: Long, points: List<Long>, toleranceMs: Long): Long {
         val nearest = points.minByOrNull { kotlin.math.abs(it - ms) } ?: return ms
         return if (kotlin.math.abs(nearest - ms) <= toleranceMs) nearest else ms

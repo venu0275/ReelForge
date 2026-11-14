@@ -2,8 +2,14 @@ name: Android build
 
 # Runs only when started by hand (Actions tab > Android build > Run workflow),
 # so pushes do not use up GitHub Actions minutes.
+# The slow emulator tests are off unless the box is ticked when starting the run.
 on:
   workflow_dispatch:
+    inputs:
+      run_emulator_tests:
+        description: "Also run the emulator tests (slow, about 15 minutes)"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -37,6 +43,7 @@ jobs:
           path: app/build/reports/tests/
 
   device-tests:
+    if: ${{ inputs.run_emulator_tests }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
