@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         // The Play Store package name. It can never change once the app is published.
-        applicationId = "com.cutmitra.videoeditor"
+        applicationId = "com.reelforge.editor"
         minSdk = 29
         targetSdk = 35
         versionCode = 1
