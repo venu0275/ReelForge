@@ -42,8 +42,9 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
     "Device permissions and features" to listOf(
         "• Microphone: used only while you record a voice-over. The recording is saved inside the app on " +
             "your device and is never sent to us. You can refuse this permission and still use the rest of the app.",
-        "• Photos and videos: when you add media, the Android photo picker lets you choose items; the app " +
-            "can read only the ones you pick.",
+        "• Photos and videos: if you allow it, the app lists your photos and videos in its own media " +
+            "screen so you can tap one to add it. They are read on your device only and never sent to us. " +
+            "If you don't allow it, you can still pick items with the Android photo picker or Files.",
         "• Files: music files and font files you import are chosen by you through the Android file picker.",
         "• Saving videos: exported videos are saved to the Movies/CutMitra folder on your device. Files " +
             "there can be seen by your gallery and by other apps that you have given media access.",

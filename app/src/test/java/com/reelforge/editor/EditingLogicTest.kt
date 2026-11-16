@@ -1357,3 +1357,18 @@ class ClipNameTest {
         assertEquals("", old.name)
     }
 }
+
+class MediaLibraryTest {
+    private fun item(uri: String, album: String, modified: Long, name: String = "") =
+        com.reelforge.editor.data.LibraryItem(uri, name, isVideo = true, durationMs = 1_000, albumId = album, albumName = name, modified = modified)
+
+    @Test fun `items are grouped into folders, newest folder and newest item first`() {
+        val items = listOf(item("a1", "A", 10, "Camera"), item("b1", "B", 30, "WhatsApp"), item("a2", "A", 20, "Camera"))
+        val albums = com.reelforge.editor.data.MediaLibrary.albums(items)
+        assertEquals(listOf("B", "A"), albums.map { it.id })
+        assertEquals(listOf("a2", "a1"), albums[1].items.map { it.uri })
+        assertEquals("Camera", albums[1].name)
+        assertEquals("Other", com.reelforge.editor.data.MediaLibrary.albums(listOf(item("x", "Z", 1))).single().name)
+        assertTrue(com.reelforge.editor.data.MediaLibrary.albums(emptyList()).isEmpty())
+    }
+}

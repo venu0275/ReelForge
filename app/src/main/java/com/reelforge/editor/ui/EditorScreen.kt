@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -119,15 +120,16 @@ fun EditorScreen(vm: EditorViewModel) {
         }
     }
 
-    // Picked photos and videos wait on the review screen until "Add" is pressed.
-    var reviewing by remember { mutableStateOf(false) }
-    val picked = remember { mutableStateListOf<Uri>() }
+    // The in-app media screen (folders and thumbnails, like a gallery) is open.
+    var browsing by remember { mutableStateOf(false) }
+    // A new, empty project opens straight onto it.
+    LaunchedEffect(project.id) { if (project.clips.isEmpty()) browsing = true }
     val pickMedia = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris -> picked.addAll(uris.filterNot { it in picked }) }
+    ) { uris -> vm.addMedia(uris) }
     val pickMediaFiles = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris -> picked.addAll(uris.filterNot { it in picked }) }
+    ) { uris -> vm.addMedia(uris) }
     val openGallery: () -> Unit = {
         pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
     }
@@ -177,9 +179,18 @@ fun EditorScreen(vm: EditorViewModel) {
         if (granted) vm.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
     val addMedia: () -> Unit = {
-        picked.clear()
-        reviewing = true
-        openGallery()
+        panel = null
+        browsing = true
+    }
+    val mediaBrowser: @Composable (Modifier) -> Unit = { modifier ->
+        MediaBrowser(
+            vm = vm,
+            usedCount = project.clips.groupingBy { it.uri }.eachCount(),
+            modifier = modifier,
+            onClose = { browsing = false },
+            onGallery = openGallery,
+            onFiles = { pickMediaFiles.launch(arrayOf("video/*", "image/*")) },
+        )
     }
     val replace: (String) -> Unit = { clipId ->
         replaceTarget = clipId
@@ -352,7 +363,8 @@ fun EditorScreen(vm: EditorViewModel) {
 
     if (landscape) {
         Column(root) {
-            Row(Modifier.weight(1f)) {
+            // The media screen takes the place of the preview and menu; the timeline stays below.
+            if (browsing) mediaBrowser(Modifier.weight(1f).fillMaxWidth()) else Row(Modifier.weight(1f)) {
                 // Left rail: leave, undo, redo, play.
                 Column(
                     Modifier.width(56.dp).fillMaxHeight().padding(vertical = 4.dp),
@@ -430,41 +442,30 @@ fun EditorScreen(vm: EditorViewModel) {
                     modifier = Modifier.padding(end = 8.dp),
                 ) { Text("Export") }
             }
-            preview(Modifier.weight(1f))
-            messageBar()
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                JumpButtons(vm, project, vertical = false)
-                Spacer(Modifier.weight(1f))
-                PlayButton(vm, project)
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "${MediaUtils.formatTime(vm.playheadMs)} / ${MediaUtils.formatTime(project.durationMs)}",
-                    style = MaterialTheme.typography.labelMedium,
-                )
+            if (browsing) {
+                mediaBrowser(Modifier.weight(1f).fillMaxWidth())
+                messageBar()
+                timeline(Modifier.fillMaxWidth())
+            } else {
+                preview(Modifier.weight(1f))
+                messageBar()
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    JumpButtons(vm, project, vertical = false)
+                    Spacer(Modifier.weight(1f))
+                    PlayButton(vm, project)
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "${MediaUtils.formatTime(vm.playheadMs)} / ${MediaUtils.formatTime(project.durationMs)}",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                timeline(Modifier.fillMaxWidth())
+                menu(Modifier.fillMaxWidth().heightIn(max = 190.dp), false)
             }
-            timeline(Modifier.fillMaxWidth())
-            menu(Modifier.fillMaxWidth().heightIn(max = 190.dp), false)
         }
-    }
-
-    if (reviewing) {
-        MediaReview(
-            picked = picked,
-            onGallery = openGallery,
-            onFiles = { pickMediaFiles.launch(arrayOf("video/*", "image/*")) },
-            onCancel = {
-                reviewing = false
-                picked.clear()
-            },
-            onAdd = { uris ->
-                vm.addMedia(uris)
-                reviewing = false
-                picked.clear()
-            },
-        )
     }
 
     if (composing) {
@@ -1193,23 +1194,42 @@ private fun ClipBlock(
                 .clickable { vm.toggleClipSelection(clip.id) }
                 .semantics { contentDescription = if (isVideo) "Video clip" else "Photo clip" }
         )
-        // The file's name, so each scene on the timeline can be told apart.
+        // A header strip with the clip's kind, speed and file name, so each scene can be told apart.
         LaunchedEffect(clip.uri) { vm.requestClipName(clip) }
-        val label = vm.clipName(clip).substringBeforeLast('.')
-        if (label.isNotEmpty() && widthPx > with(density) { 36.dp.toPx() }) {
-            Text(
-                label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = 10.sp,
-                color = Color.White,
-                modifier = Modifier
+        if (widthPx > with(density) { 28.dp.toPx() }) {
+            val name = vm.clipName(clip)
+            val speed = clip.effectiveSpeed
+            val speedText = if (speed % 1f == 0f) "${speed.toInt()}x" else "${(speed * 100).roundToInt() / 100f}x"
+            Row(
+                Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 5.dp, top = 3.dp)
-                    .widthIn(max = with(density) { widthPx.toDp() } - 12.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
-                    .padding(horizontal = 3.dp),
-            )
+                    .fillMaxWidth()
+                    .padding(horizontal = 1.dp)
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.75f), Color.Black.copy(alpha = 0.35f)),
+                        ),
+                        RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp),
+                    )
+                    .padding(start = 6.dp, end = 4.dp, top = 3.dp, bottom = 3.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(14.dp).background(Color.White, RoundedCornerShape(3.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(if (isVideo) "▶" else "▣", color = Color.Black, fontSize = 8.sp, lineHeight = 8.sp)
+                }
+                Text(
+                    (if (isVideo) "$speedText " else "") + name,
+                    Modifier.padding(start = 5.dp),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (selected && widthPx > with(density) { 64.dp.toPx() }) {
             TrimHandle(atStart = true) { dragPx ->
