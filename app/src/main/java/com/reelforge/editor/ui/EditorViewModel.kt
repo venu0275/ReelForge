@@ -366,6 +366,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     MediaUtils.probe(ctx, uri)?.let { info ->
                         Clip(
                             uri = uri.toString(),
+                            name = MediaUtils.displayName(ctx, uri),
                             type = info.type,
                             sourceDurationMs = if (info.type == ClipType.IMAGE) settings.photoMs else info.durationMs,
                             hasAudio = info.hasAudio,
@@ -574,20 +575,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Swaps the clip's video or photo for another one, keeping its edits. */
     fun replaceClip(id: String, uri: Uri) {
         viewModelScope.launch {
-            val info = withContext(Dispatchers.IO) {
+            val (info, name) = withContext(Dispatchers.IO) {
                 runCatching {
                     ctx.contentResolver.takePersistableUriPermission(
                         uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
                 }
-                MediaUtils.probe(ctx, uri)
+                MediaUtils.probe(ctx, uri) to MediaUtils.displayName(ctx, uri)
             }
             if (info == null) {
                 message = "That file could not be read"
                 return@launch
             }
             mutate {
-                ProjectOps.replaceMedia(it, id, uri.toString(), info.type, info.durationMs, info.hasAudio)
+                val replaced = ProjectOps.replaceMedia(it, id, uri.toString(), info.type, info.durationMs, info.hasAudio)
+                replaced.copy(clips = replaced.clips.map { c -> if (c.id == id) c.copy(name = name) else c })
             }
         }
     }
@@ -1546,6 +1548,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // -------------------------------------------------------------- thumbnails
 
     fun thumbKey(clip: Clip): String = "${clip.uri}@${clip.trimStartMs}"
+
+    /** File names for clips saved before names were kept, looked up once per file. */
+    private val clipNames = mutableStateMapOf<String, String>()
+
+    /** The clip's file name, or "" while it is still being looked up. */
+    fun clipName(clip: Clip): String = clip.name.ifBlank { clipNames[clip.uri].orEmpty() }
+
+    fun requestClipName(clip: Clip) {
+        if (clip.name.isNotBlank() || !requested.add("n:${clip.uri}")) return
+        viewModelScope.launch {
+            val name = withContext(Dispatchers.IO) {
+                runCatching { MediaUtils.displayName(ctx, Uri.parse(clip.uri)) }.getOrDefault("")
+            }
+            clipNames[clip.uri] = name
+        }
+    }
 
     /** Key into [frames] for the timeline frame of [uri] nearest to [sourceMs] (one per second). */
     fun frameKey(uri: String, sourceMs: Long): String = "$uri#${sourceMs / 1000}"

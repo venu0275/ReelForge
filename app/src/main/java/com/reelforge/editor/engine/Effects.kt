@@ -411,7 +411,7 @@ private class BackgroundFitProgram(
                 vec3 sum = vec3(0.0);
                 for (int i = -3; i <= 3; i++) {
                   for (int j = -3; j <= 3; j++) {
-                    sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * 0.012).rgb;
+                    sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * 0.024).rgb;
                   }
                 }
                 gl_FragColor = vec4(sum / 49.0 * 0.7, 1.0);

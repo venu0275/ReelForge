@@ -154,6 +154,7 @@ object ProjectJson {
         put("saturation", c.saturation.toDouble())
         put("fadeInMs", c.fadeInMs)
         put("fadeOutMs", c.fadeOutMs)
+        put("name", c.name)
         put("hasAudio", c.hasAudio)
         put("opacity", c.opacity.toDouble())
         put("zoom", c.zoom.toDouble())
@@ -259,6 +260,7 @@ object ProjectJson {
                 saturation = c.optDouble("saturation", 0.0).toFloat(),
                 fadeInMs = c.optLong("fadeInMs", 0),
                 fadeOutMs = c.optLong("fadeOutMs", 0),
+                name = c.optString("name", ""),
                 hasAudio = c.optBoolean("hasAudio", true),
                 opacity = c.optDouble("opacity", 1.0).toFloat(),
                 zoom = c.optDouble("zoom", 1.0).toFloat(),

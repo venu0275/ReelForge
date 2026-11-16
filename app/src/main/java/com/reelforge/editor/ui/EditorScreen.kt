@@ -2,6 +2,7 @@
 
 package com.reelforge.editor.ui
 
+import android.net.Uri
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -118,9 +119,18 @@ fun EditorScreen(vm: EditorViewModel) {
         }
     }
 
+    // Picked photos and videos wait on the review screen until "Add" is pressed.
+    var reviewing by remember { mutableStateOf(false) }
+    val picked = remember { mutableStateListOf<Uri>() }
     val pickMedia = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris -> vm.addMedia(uris) }
+    ) { uris -> picked.addAll(uris.filterNot { it in picked }) }
+    val pickMediaFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> picked.addAll(uris.filterNot { it in picked }) }
+    val openGallery: () -> Unit = {
+        pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+    }
     val pickAudio = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.setMusic(uri) }
@@ -167,9 +177,9 @@ fun EditorScreen(vm: EditorViewModel) {
         if (granted) vm.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
     val addMedia: () -> Unit = {
-        pickMedia.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-        )
+        picked.clear()
+        reviewing = true
+        openGallery()
     }
     val replace: (String) -> Unit = { clipId ->
         replaceTarget = clipId
@@ -440,6 +450,23 @@ fun EditorScreen(vm: EditorViewModel) {
         }
     }
 
+    if (reviewing) {
+        MediaReview(
+            picked = picked,
+            onGallery = openGallery,
+            onFiles = { pickMediaFiles.launch(arrayOf("video/*", "image/*")) },
+            onCancel = {
+                reviewing = false
+                picked.clear()
+            },
+            onAdd = { uris ->
+                vm.addMedia(uris)
+                reviewing = false
+                picked.clear()
+            },
+        )
+    }
+
     if (composing) {
         TextComposer(
             vm,
@@ -556,10 +583,12 @@ private fun EditorMenu(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to main menu")
                 }
                 Text(
-                    (if (clip.type == ClipType.VIDEO) "Video clip" else "Photo") +
+                    vm.clipName(clip).ifBlank { if (clip.type == ClipType.VIDEO) "Video clip" else "Photo" } +
                         " · " + MediaUtils.formatTime(clip.durationMs),
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 IconButton(onClick = { vm.deleteClip(clip.id) }) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete clip")
@@ -1164,6 +1193,24 @@ private fun ClipBlock(
                 .clickable { vm.toggleClipSelection(clip.id) }
                 .semantics { contentDescription = if (isVideo) "Video clip" else "Photo clip" }
         )
+        // The file's name, so each scene on the timeline can be told apart.
+        LaunchedEffect(clip.uri) { vm.requestClipName(clip) }
+        val label = vm.clipName(clip).substringBeforeLast('.')
+        if (label.isNotEmpty() && widthPx > with(density) { 36.dp.toPx() }) {
+            Text(
+                label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontSize = 10.sp,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(start = 5.dp, top = 3.dp)
+                    .widthIn(max = with(density) { widthPx.toDp() } - 12.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
+                    .padding(horizontal = 3.dp),
+            )
+        }
         if (selected && widthPx > with(density) { 64.dp.toPx() }) {
             TrimHandle(atStart = true) { dragPx ->
                 vm.trimClipStart(clip.id, snapEdge(startMs, (dragPx / pxPerMs).toLong()))
@@ -1313,9 +1360,31 @@ private fun PreviewArea(
         ) {
             val frameHeight = maxHeight
 
+            // The backdrop around a video set to Fit is drawn here, behind the player, so it shows
+            // in the preview on every phone. (The exported video draws its own.)
+            if (current != null && current.type == ClipType.VIDEO && !current.fill) {
+                when (project.background) {
+                    Background.COLOR -> Box(Modifier.fillMaxSize().background(Color(project.backgroundColor)))
+                    Background.BLUR -> {
+                        val sourceMs = current.trimStartMs + (local * current.effectiveSpeed).toLong()
+                        SideEffect { vm.requestFrame(current.uri, sourceMs) }
+                        LaunchedEffect(vm.thumbKey(current)) { vm.requestThumb(current) }
+                        // The frame for this second, else one shortly before it while it loads.
+                        val frame = (0..4).firstNotNullOfOrNull { back ->
+                            vm.frames[vm.frameKey(current.uri, (sourceMs - back * 1000L).coerceAtLeast(0L))]
+                        } ?: vm.thumbs[vm.thumbKey(current)]
+                        BlurredBackdrop(frame)
+                    }
+                    Background.BLACK -> Unit
+                }
+            }
+
             AndroidView(
                 factory = { context ->
                     PlayerView(context).apply {
+                        // See-through around the picture, so the backdrop behind it shows.
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         useController = false
                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                         player = vm.player
@@ -1349,13 +1418,7 @@ private fun PreviewArea(
                 } else Color.Black
                 Box(Modifier.fillMaxSize().background(backdrop)) {
                     if (still != null && !current.fill && project.background == Background.BLUR) {
-                        Image(
-                            bitmap = still,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize().blur(24.dp),
-                            contentScale = ContentScale.Crop,
-                            alpha = 0.7f,
-                        )
+                        BlurredBackdrop(still)
                     }
                     if (still != null) {
                         Image(

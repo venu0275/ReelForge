@@ -1345,3 +1345,15 @@ class PlaybackGroupingTest {
         assertEquals(null, ProjectOps.fromPlayPosition(clips, groups, 5, 0))
     }
 }
+
+class ClipNameTest {
+    @Test fun `a clip's file name survives saving and old projects load without one`() {
+        val clip = Clip(uri = "content://x/1", name = "Wedding day.mp4", type = ClipType.VIDEO, sourceDurationMs = 5_000)
+        val saved = com.reelforge.editor.data.ProjectJson.decode(
+            com.reelforge.editor.data.ProjectJson.encode(Project(name = "p", clips = listOf(clip)))
+        )
+        assertEquals("Wedding day.mp4", saved.clips.single().name)
+        val old = Clip(uri = "content://x/2", type = ClipType.IMAGE, sourceDurationMs = 3_000)
+        assertEquals("", old.name)
+    }
+}

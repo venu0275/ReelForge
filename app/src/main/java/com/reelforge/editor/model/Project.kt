@@ -50,6 +50,7 @@ data class Clip(
     val saturation: Float = 0f,   // -100..100
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
+    val name: String = "",      // the file's name, shown on the timeline
     val hasAudio: Boolean = true,
     val opacity: Float = 1f,      // 0..1, blended over black
     val zoom: Float = 1f,         // 1..3, centre zoom
