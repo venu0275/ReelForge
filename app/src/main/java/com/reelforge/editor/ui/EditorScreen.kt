@@ -264,6 +264,8 @@ fun EditorScreen(vm: EditorViewModel) {
                 val picked = Selected(kind, id)
                 selectedItem = if (selectedItem == picked) null else picked
                 if (selectedItem != null) vm.selectedClipId = null
+                // A text opens its tool at once, so its options can be seen.
+                if (kind == ItemKind.TEXT && selectedItem != null) editText(id)
             },
         )
     }
@@ -485,7 +487,34 @@ fun EditorScreen(vm: EditorViewModel) {
                     )
                 }
                 timeline(Modifier.fillMaxWidth())
-                menu(Modifier.fillMaxWidth().heightIn(max = 190.dp), false)
+                if (open == Panel.TEXT) {
+                    // Docked under the timeline, not a sheet over the preview, so the text can be
+                    // seen and dragged while its options are changed.
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .background(MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { panel = null }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close tool")
+                            }
+                            Text(open.title, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 16.dp)
+                        ) {
+                            panelBody(open)
+                        }
+                    }
+                } else {
+                    menu(Modifier.fillMaxWidth().heightIn(max = 190.dp), false)
+                }
             }
         }
     }
@@ -501,7 +530,9 @@ fun EditorScreen(vm: EditorViewModel) {
             onSaved = { id ->
                 // A new text closes the tool so it is in view, selected, and can be dragged into
                 // place. Changing the words of an existing one leaves the screen as it was.
-                if (composeTarget == null) panel = null
+                // The text's tool opens on it straight away, so its options are in view; the
+                // preview stays visible so the text can still be dragged into place.
+                panel = Panel.TEXT
                 composing = false
                 composeTarget = null
                 editingTextId = id
@@ -521,7 +552,7 @@ fun EditorScreen(vm: EditorViewModel) {
                 panel = null
             },
         )
-    } else if (open != null && !landscape) {
+    } else if (open != null && !landscape && open != Panel.TEXT) {
         ModalBottomSheet(onDismissRequest = { panel = null }) {
             Column(
                 Modifier
@@ -1780,7 +1811,10 @@ private fun PreviewArea(
                                 .itemGestures(
                                     gesture,
                                     enabled = canMove,
-                                    onTap = { if (pickedId == t.id) onEditText(t.id) else onPick(t.id) },
+                                    onTap = {
+                                        onPick(t.id)
+                                        onEditText(t.id)
+                                    },
                                     onEnd = { pan, zoom, turn ->
                                         onPick(t.id)
                                         vm.updateText(t.id) {

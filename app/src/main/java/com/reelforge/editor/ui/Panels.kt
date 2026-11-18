@@ -429,14 +429,16 @@ fun TextPanel(
         TextButton(onClick = { retype(id) }) { Text("\u270E") }
         TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
+    // Every tab is in view at once (they wrap onto a second line), so all the options can be seen.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         TextTab.entries.forEach { t ->
             FilterChip(selected = tab == t, onClick = { tab = t }, label = { Text(t.label) })
         }
     }
+    Text(tab.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Spacer(Modifier.height(8.dp))
 
     when (tab) {
@@ -642,13 +644,13 @@ fun TextPanel(
     }
 }
 
-private enum class TextTab(val label: String) {
-    LOOK("Look"),
-    FONT("Font"),
-    EFFECTS("Effects"),
-    STYLES("Styles"),
-    MOTION("Motion"),
-    PLACE("Place and time"),
+private enum class TextTab(val label: String, val hint: String) {
+    LOOK("Look", "Colour, size, bold, italic, underline, alignment and spacing"),
+    FONT("Font", "Built-in fonts, more fonts to download, or your own font file"),
+    EFFECTS("Effects", "Outline, shadow, glow, background box and opacity"),
+    STYLES("Styles", "Ready-made looks, your saved styles, apply to all texts"),
+    MOTION("Motion", "Animate in and out, keep moving, letter-by-letter reveal"),
+    PLACE("Place and time", "Position, turn, when it shows, stretch, cut, copy, read aloud"),
 }
 
 /** Adds [by] degrees and keeps the angle within -180..180 (positive is counter-clockwise). */
