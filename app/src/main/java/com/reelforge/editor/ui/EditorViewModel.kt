@@ -1667,14 +1667,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 captionWork = "Listening…"
                 captionProgress = 0f
                 // Progress counts by length, so a long clip moves the bar more than a short one.
-                val total = pieces.sumOf { (it.toMs - it.fromMs).coerceAtLeast(1) }.toFloat()
+                val soundMs = pieces.sumOf { (it.toMs - it.fromMs).coerceAtLeast(1) }.toFloat()
                 val words = withContext(Dispatchers.IO) {
                     com.reelforge.editor.engine.Transcriber(ctx, language).use { t ->
                         var done = 0L
                         pieces.flatMap { piece ->
                             val length = (piece.toMs - piece.fromMs).coerceAtLeast(1)
                             val heard = t.words(ctx, piece, stop = { !isActive }) { f ->
-                                val part = ((done + f * length) / total).coerceIn(0f, 1f)
+                                val part = ((done + f * length) / soundMs).coerceIn(0f, 1f)
                                 postStatus(captionHandler, "Listening… ${(part * 100).toInt()}%", set)
                                 captionHandler.post { captionProgress = part }
                             }
