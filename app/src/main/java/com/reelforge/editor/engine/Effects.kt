@@ -271,6 +271,43 @@ class AudioFadeProcessor(
     }
 }
 
+/** Lowers the sound inside [rangesUs] (from the start of the clip) to [level], smoothly. */
+@OptIn(UnstableApi::class)
+class DuckProcessor(
+    private val rangesUs: List<LongRange>,
+    private val level: Float,
+) : BaseAudioProcessor() {
+    private var frames = 0L
+
+    override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
+        if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
+            throw AudioProcessor.UnhandledAudioFormatException(inputAudioFormat)
+        }
+        return inputAudioFormat
+    }
+
+    override fun queueInput(inputBuffer: ByteBuffer) {
+        val channels = inputAudioFormat.channelCount.coerceAtLeast(1)
+        val sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(1)
+        val out = replaceOutputBuffer(inputBuffer.remaining())
+        while (inputBuffer.remaining() >= 2 * channels) {
+            val gain = com.reelforge.editor.model.duckGain(frames * 1_000_000L / sampleRate, rangesUs, level)
+            repeat(channels) { out.putShort((inputBuffer.short * gain).toInt().toShort()) }
+            frames++
+        }
+        inputBuffer.position(inputBuffer.limit())
+        out.flip()
+    }
+
+    override fun onFlush() {
+        frames = 0
+    }
+
+    override fun onReset() {
+        frames = 0
+    }
+}
+
 /** Slide / zoom motion during a clip's fade-in and fade-out time (export only). */
 @OptIn(UnstableApi::class)
 class TransitionMotion(

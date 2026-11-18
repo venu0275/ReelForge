@@ -182,16 +182,21 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
         value = clip.volume,
         range = 0f..2f,
         format = { "${(it * 100).roundToInt()}%" },
-    ) { v -> vm.updateClip(clip.id) { it.copy(volume = v) } }
+    ) { v -> vm.updateClip(clip.id) { it.copy(volume = v, muted = v <= 0f) } }
+    // Quick levels: 0% silences the clip so a voice-over can replace it; above 100% makes it louder.
+    VolumeChips(if (clip.muted) 0f else clip.volume) { v -> vm.updateClip(clip.id) { it.copy(volume = v, muted = v <= 0f) } }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Mute", Modifier.weight(1f))
         Switch(
             checked = clip.muted,
-            onCheckedChange = { m -> vm.updateClip(clip.id) { it.copy(muted = m) } },
+            onCheckedChange = { m -> vm.updateClip(clip.id) { it.copy(muted = m, volume = if (!m && it.volume <= 0f) 1f else it.volume) } },
         )
     }
+    TextButton(onClick = { vm.setAllClipVolume(if (clip.muted) 0f else clip.volume) }) {
+        Text("Use this level for all clips")
+    }
     Text(
-        "Levels above 100% apply on export; the preview plays at up to 100%.",
+        "Above 100% makes quiet videos louder (up to double). Very loud sound can crackle.",
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(8.dp))
@@ -698,7 +703,7 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
     CommitSlider(
         label = "Volume",
         value = music.volume,
-        range = 0f..1f,
+        range = 0f..2f,
         format = { "${(it * 100).roundToInt()}%" },
     ) { v -> vm.updateMusic { it.copy(volume = v) } }
     CommitSlider("Fade in", music.fadeInMs.toFloat(), 0f..5000f, { "%.1f s".format(it / 1000f) }) { v ->
@@ -865,10 +870,32 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
         Button(onClick = record) { Text("Record at playhead") }
         TextButton(onClick = pickSound) { Text("Add audio file") }
     }
-    Text(
-        "Use headphones while recording so the microphone does not pick up the video sound.",
-        style = MaterialTheme.typography.bodySmall,
-    )
+    SwitchRow("Play the video silently while recording", vm.settings.silentWhileRecording) { on ->
+        vm.updateSettings { it.copy(silentWhileRecording = on) }
+    }
+
+    // The video's own sound, for replacing it with a voice-over or making it louder.
+    Spacer(Modifier.height(8.dp))
+    Text("Video's own sound (all clips)", style = MaterialTheme.typography.labelLarge)
+    val clips = project.clips.filter { it.type == ClipType.VIDEO && it.hasAudio }
+    if (clips.isEmpty()) {
+        Text("Your clips have no sound.", style = MaterialTheme.typography.bodySmall)
+    } else {
+        val current = clips.map { if (it.muted) 0f else it.volume }.distinct().singleOrNull()
+        VolumeChips(current) { v -> vm.setAllClipVolume(v) }
+        Text(
+            if (current == null) "Clips have different levels; tap one to set them all."
+            else "0% removes the video's sound so only your voice-over is heard.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+    Spacer(Modifier.height(8.dp))
+    Text("While a voice-over plays, lower the video's sound to", style = MaterialTheme.typography.labelLarge)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(1f to "Don't lower", 0.5f to "50%", 0.25f to "25%", 0f to "0%").forEach { (level, label) ->
+            FilterChip(selected = project.duckLevel == level, onClick = { vm.setDuckLevel(level) }, label = { Text(label) })
+        }
+    }
     Spacer(Modifier.height(8.dp))
     var speech by remember { mutableStateOf("") }
     OutlinedTextField(
@@ -1137,4 +1164,18 @@ private fun PoseControls(vm: EditorViewModel, kind: ItemKind, id: String) {
         vm.editPose(kind, id) { it.copy(rotation = v) }
     }
     LabeledSlider("Opacity", pose.opacity, 0f..1f) { v -> vm.editPose(kind, id) { it.copy(opacity = v) } }
+}
+
+/** One-tap sound levels from silent to double. */
+@Composable
+fun VolumeChips(current: Float?, onPick: (Float) -> Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(0f, 0.25f, 0.5f, 1f, 1.5f, 2f).forEach { level ->
+            FilterChip(
+                selected = current != null && kotlin.math.abs(current - level) < 0.01f,
+                onClick = { onPick(level) },
+                label = { Text("${(level * 100).roundToInt()}%") },
+            )
+        }
+    }
 }

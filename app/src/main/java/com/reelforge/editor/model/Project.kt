@@ -348,6 +348,7 @@ data class AudioClip(
     val fadeOutMs: Long = 0,
     val offsetMs: Long = 0,   // where in the audio file this clip starts playing
     val audioFx: AudioFx = AudioFx.NONE,
+    val voice: Boolean = false, // a voice-over (recorded or spoken); other sound is lowered under it
 )
 
 data class MusicTrack(
@@ -388,6 +389,8 @@ data class MusicTrack(
 data class Project(
     val id: String = newId(),
     val name: String,
+    /** How loud the video's own sound plays while a voice-over is speaking (1 = unchanged). */
+    val duckLevel: Float = 1f,
     val aspect: AspectRatio = AspectRatio.LANDSCAPE,
     val clips: List<Clip> = emptyList(),
     val texts: List<TextItem> = emptyList(),
@@ -414,5 +417,36 @@ data class Project(
         }
         val last = clips.lastIndex
         return last to (clips[last].durationMs - 1).coerceAtLeast(0)
+    }
+}
+
+/**
+ * Gain (0..1) for the video's own sound at [tUs], lowered to [level] inside any of [ranges]
+ * (microseconds), with short [rampUs] slopes at their edges so the change is smooth.
+ */
+fun duckGain(tUs: Long, ranges: List<LongRange>, level: Float, rampUs: Long = 150_000L): Float {
+    if (level >= 1f || ranges.isEmpty()) return 1f
+    var weight = 0f
+    for (r in ranges) {
+        val w = when {
+            tUs < r.first - rampUs || tUs > r.last + rampUs -> 0f
+            tUs < r.first -> 1f - (r.first - tUs).toFloat() / rampUs
+            tUs > r.last -> 1f - (tUs - r.last).toFloat() / rampUs
+            else -> 1f
+        }
+        if (w > weight) weight = w
+    }
+    return 1f - (1f - level.coerceIn(0f, 1f)) * weight
+}
+
+/** The stretches of time, in microseconds from the start of clip [index], where a voice-over plays. */
+fun voiceRangesInClip(project: Project, index: Int): List<LongRange> {
+    if (project.duckLevel >= 1f) return emptyList()
+    val clipStart = project.clipStartMs(index)
+    val clipEnd = clipStart + project.clips[index].durationMs
+    return project.audio.filter { it.voice }.mapNotNull { a ->
+        val from = maxOf(a.startMs, clipStart)
+        val to = minOf(a.startMs + a.durationMs, clipEnd)
+        if (to > from) ((from - clipStart) * 1000)..((to - clipStart) * 1000) else null
     }
 }

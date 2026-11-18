@@ -1313,6 +1313,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 isSpeaking = false
                 val clip = AudioClip(
                     uri = uri.toString(), title = "Speech: " + words.take(18), startMs = start, durationMs = duration,
+                    voice = true,
                 )
                 mutate { it.copy(audio = it.audio + clip) }
             }
@@ -1348,6 +1349,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             recordStartMs = playheadMs
             isRecording = true
             stopVoice()
+            // Play the video without sound, so the microphone hears only the speaker.
+            if (settings.silentWhileRecording) {
+                player.volume = 0f
+                musicPlayer.volume = 0f
+            }
             player.play()
         } catch (e: Exception) {
             file.delete()
@@ -1375,7 +1381,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val duration = withContext(Dispatchers.IO) { MediaUtils.audioDurationMs(ctx, uri) }
             val number = (project?.audio?.count { it.title.startsWith("Voice") } ?: 0) + 1
             val clip = AudioClip(
-                uri = uri.toString(), title = "Voice $number", startMs = start, durationMs = duration,
+                uri = uri.toString(), title = "Voice $number", startMs = start, durationMs = duration, voice = true,
             )
             mutate { it.copy(audio = it.audio + clip) }
         }
@@ -1539,7 +1545,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             clip.effectiveSpeed.coerceIn(0.1f, 8f),
             if (clip.type == ClipType.VIDEO) clip.pitch.coerceIn(0.5f, 2f) else 1f,
         )
-        player.volume = if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)
+        setMainVolume(clip, 1f)
         val signature = EffectFactory.previewSignature(clip, p)
         if (signature != effectSignature) {
             effectSignature = signature
@@ -1652,6 +1658,55 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (index >= 0) seekTo(p.clipStartMs(index))
     }
 
+    // ------------------------------------------------------------- loudness
+
+    // Raises the preview above 100% (the player alone stops at 100%).
+    private var booster: android.media.audiofx.LoudnessEnhancer? = null
+    private var boosterSession = 0
+
+    /**
+     * Sets how loud the main video plays: its own level (0-200%), its fade [gain], lowered while a
+     * voice-over plays if chosen, and silent while recording a voice-over if chosen.
+     */
+    private fun setMainVolume(clip: Clip, gain: Float) {
+        val p = project
+        if (isRecording && settings.silentWhileRecording) {
+            player.volume = 0f
+            return
+        }
+        val inVoice = p != null && p.duckLevel < 1f &&
+            p.audio.any { it.voice && playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
+        val level = (if (clip.muted) 0f else clip.volume.coerceIn(0f, 2f)) * gain * (if (inVoice) p!!.duckLevel else 1f)
+        player.volume = level.coerceIn(0f, 1f)
+        boost(if (level > 1f) level else 1f)
+    }
+
+    private fun boost(factor: Float) {
+        runCatching {
+            val session = player.audioSessionId
+            if (factor <= 1.001f) {
+                booster?.enabled = false
+                return
+            }
+            if (booster == null || boosterSession != session) {
+                booster?.release()
+                booster = android.media.audiofx.LoudnessEnhancer(session)
+                boosterSession = session
+            }
+            // Loudness gain in millibels: 200% is about +6 dB.
+            booster?.setTargetGain((2000 * kotlin.math.log10(factor.toDouble())).toInt())
+            booster?.enabled = true
+        }
+    }
+
+    /** Sets the sound level of every clip on the main track (0-200%). */
+    fun setAllClipVolume(volume: Float) = mutate { p ->
+        p.copy(clips = p.clips.map { it.copy(volume = volume.coerceIn(0f, 2f), muted = volume <= 0f) })
+    }
+
+    /** How loud the video's own sound plays while a voice-over speaks (1 = not lowered). */
+    fun setDuckLevel(level: Float) = mutate { it.copy(duckLevel = level.coerceIn(0f, 1f)) }
+
     /** Called from the UI a few times per second to move the playhead while playing. */
     fun tick() {
         val p = project ?: return
@@ -1665,7 +1720,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         playheadMs = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
         // Sound follows the picture fade.
         val gain = fadeAlpha(local, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
-        player.volume = (if (clip.muted) 0f else clip.volume.coerceIn(0f, 1f)) * gain
+        setMainVolume(clip, gain)
         p.music?.let { music ->
             // Music plays only inside its own stretch of the timeline, fading at both ends.
             val end = music.windowEnd(p.durationMs)
@@ -1674,8 +1729,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             // playing yet, and it must be left alone to finish loading.
             if (inside && !musicPlayer.playWhenReady) startMusic()
             if (!inside && musicPlayer.playWhenReady) musicPlayer.pause()
-            musicPlayer.volume = music.volume.coerceIn(0f, 1f) *
-                fadeAlpha(playheadMs - music.startMs, end - music.startMs, music.fadeInMs, music.fadeOutMs)
+            // Silent while recording a voice-over (if chosen), and lowered under voice-overs.
+            val quiet = isRecording && settings.silentWhileRecording
+            val inVoice = p.duckLevel < 1f &&
+                p.audio.any { it.voice && playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
+            musicPlayer.volume = if (quiet) 0f else music.volume.coerceIn(0f, 1f) *
+                fadeAlpha(playheadMs - music.startMs, end - music.startMs, music.fadeInMs, music.fadeOutMs) *
+                (if (inVoice) p.duckLevel else 1f)
         }
         syncVoice(p)
         syncLayers(p, true)
@@ -1878,6 +1938,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        runCatching { booster?.release() }
         transformer?.cancel()
         runCatching { recorder?.release() }
         player.release()

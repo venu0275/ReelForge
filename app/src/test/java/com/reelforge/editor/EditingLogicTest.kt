@@ -1435,3 +1435,36 @@ class StretchBarTest {
         assertEquals(8_000L, ProjectOps.clipEndAt(project, 4_000))
     }
 }
+
+class VoiceOverTest {
+    @Test fun `video sound is lowered inside a voice-over and ramps at its edges`() {
+        val ranges = listOf(1_000_000L..3_000_000L)
+        assertEquals(1f, com.reelforge.editor.model.duckGain(0, ranges, 0.25f), 0.001f)
+        assertEquals(0.25f, com.reelforge.editor.model.duckGain(2_000_000, ranges, 0.25f), 0.001f)
+        val edge = com.reelforge.editor.model.duckGain(925_000, ranges, 0.25f)
+        assertTrue(edge > 0.25f && edge < 1f)
+        assertEquals(1f, com.reelforge.editor.model.duckGain(2_000_000, ranges, 1f), 0.001f)
+        assertEquals(0f, com.reelforge.editor.model.duckGain(2_000_000, ranges, 0f), 0.001f)
+    }
+
+    @Test fun `voice-over times are found inside each clip`() {
+        val clips = listOf(
+            Clip(uri = "a", type = ClipType.VIDEO, sourceDurationMs = 4_000),
+            Clip(uri = "b", type = ClipType.VIDEO, sourceDurationMs = 4_000),
+        )
+        val voice = AudioClip(uri = "v", title = "Voice 1", startMs = 3_000, durationMs = 2_000, voice = true)
+        val music = AudioClip(uri = "m", title = "Pop", startMs = 0, durationMs = 8_000)
+        val p = Project(name = "p", clips = clips, audio = listOf(voice, music), duckLevel = 0.3f)
+        assertEquals(listOf(3_000_000L..4_000_000L), com.reelforge.editor.model.voiceRangesInClip(p, 0))
+        assertEquals(listOf(0L..1_000_000L), com.reelforge.editor.model.voiceRangesInClip(p, 1))
+        assertTrue(com.reelforge.editor.model.voiceRangesInClip(p.copy(duckLevel = 1f), 0).isEmpty())
+    }
+
+    @Test fun `voice marks and the lowering level survive saving`() {
+        val voice = AudioClip(uri = "v", title = "Voice 1", startMs = 0, durationMs = 1_000, voice = true)
+        val p = Project(name = "p", audio = listOf(voice), duckLevel = 0.25f)
+        val saved = com.reelforge.editor.data.ProjectJson.decode(com.reelforge.editor.data.ProjectJson.encode(p))
+        assertTrue(saved.audio.single().voice)
+        assertEquals(0.25f, saved.duckLevel, 0.001f)
+    }
+}

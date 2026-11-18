@@ -24,6 +24,8 @@ data class AppSettings(
     /** 0 = small file, 1 = balanced, 2 = best quality. */
     val exportQuality: Int = 1,
     val exportHevc: Boolean = false,
+    /** Play the video without sound while recording a voice-over, so only the voice is recorded. */
+    val silentWhileRecording: Boolean = true,
 ) {
     /** The same settings with every value forced into its allowed range. */
     fun sanitized(): AppSettings = copy(
@@ -57,6 +59,7 @@ class SettingsStore(context: Context) {
             exportFps = prefs.getInt("exportFps", d.exportFps),
             exportQuality = prefs.getInt("exportQuality", d.exportQuality),
             exportHevc = prefs.getBoolean("exportHevc", d.exportHevc),
+            silentWhileRecording = prefs.getBoolean("silentWhileRecording", d.silentWhileRecording),
         ).sanitized()
     }
 
@@ -71,6 +74,7 @@ class SettingsStore(context: Context) {
             .putInt("exportFps", s.exportFps)
             .putInt("exportQuality", s.exportQuality)
             .putBoolean("exportHevc", s.exportHevc)
+            .putBoolean("silentWhileRecording", s.silentWhileRecording)
             .apply()
     }
 }

@@ -207,6 +207,7 @@ object ExportManager {
             buildClipItem(
                 context, project, clip, width, height, overlays, fps,
                 capFrameRate = !layered, videoOnly = layered,
+                duckRangesUs = com.reelforge.editor.model.voiceRangesInClip(project, index),
             )
         }
 
@@ -242,7 +243,9 @@ object ExportManager {
             // own audio-only track, with real silence wherever there is none. This avoids
             // Media3's generated-silence path, which fails when several video tracks are stacked.
             val silence = Uri.fromFile(MediaUtils.silenceFile(context, SILENCE_MS))
-            val mainAudio = project.clips.flatMap { clipAudioItems(it, silence) }
+            val mainAudio = project.clips.flatMapIndexed { index, clip ->
+                clipAudioItems(clip, silence, com.reelforge.editor.model.voiceRangesInClip(project, index), project.duckLevel)
+            }
             if (mainAudio.isNotEmpty()) sequences += EditedMediaItemSequence(mainAudio)
             videoLayers.forEach { layer ->
                 layerAudioItems(layer, total, silence)?.let { sequences += EditedMediaItemSequence(it) }
@@ -369,7 +372,12 @@ object ExportManager {
     }
 
     /** The sound of one main-track clip as audio-only items: its own audio, or silence. */
-    private fun clipAudioItems(clip: Clip, silence: Uri): List<EditedMediaItem> {
+    private fun clipAudioItems(
+        clip: Clip,
+        silence: Uri,
+        duckRangesUs: List<LongRange> = emptyList(),
+        duckLevel: Float = 1f,
+    ): List<EditedMediaItem> {
         if (clip.type == ClipType.IMAGE || clip.muted || !clip.hasAudio) {
             return silenceItems(silence, clip.durationMs)
         }
@@ -389,6 +397,7 @@ object ExportManager {
             }
         }
         if (clip.volume != 1f) audio += volumeProcessor(clip.volume)
+        if (duckRangesUs.isNotEmpty()) audio += DuckProcessor(duckRangesUs, duckLevel)
         if (clip.audioFx != AudioFx.NONE) audio += AudioFxProcessor(clip.audioFx)
         if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) {
             audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
@@ -470,6 +479,7 @@ object ExportManager {
         fps: Int,
         capFrameRate: Boolean,
         videoOnly: Boolean,
+        duckRangesUs: List<LongRange> = emptyList(),
     ): EditedMediaItem {
         val isImage = clip.type == ClipType.IMAGE
         val uri = Uri.parse(clip.uri)
@@ -508,6 +518,10 @@ object ExportManager {
         }
         if (!isImage && !clip.muted && clip.volume != 1f) {
             audio += volumeProcessor(clip.volume)
+        }
+        // The video's own sound is lowered while a voice-over plays (times are after speed change).
+        if (!isImage && !clip.muted && clip.hasAudio && duckRangesUs.isNotEmpty()) {
+            audio += DuckProcessor(duckRangesUs, project.duckLevel)
         }
 
         video += EffectFactory.geometry(clip)

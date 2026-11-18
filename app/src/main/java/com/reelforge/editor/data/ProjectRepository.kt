@@ -56,6 +56,7 @@ object ProjectJson {
         put("updatedAt", p.updatedAt)
         put("background", p.background.name)
         put("backgroundColor", p.backgroundColor)
+        put("duckLevel", p.duckLevel.toDouble())
         put("clips", JSONArray().apply { p.clips.forEach { put(clipToJson(it)) } })
         put("texts", JSONArray().apply { p.texts.forEach { put(textToJson(it)) } })
         put("layers", JSONArray().apply {
@@ -117,6 +118,7 @@ object ProjectJson {
                     put("fadeInMs", a.fadeInMs)
                     put("fadeOutMs", a.fadeOutMs)
                     put("offsetMs", a.offsetMs)
+                    put("voice", a.voice)
                     put("audioFx", a.audioFx.name)
                 })
             }
@@ -393,6 +395,8 @@ object ProjectJson {
                 fadeOutMs = a.optLong("fadeOutMs", 0),
                 offsetMs = a.optLong("offsetMs", 0),
                 audioFx = fx(a.optString("audioFx")),
+                // Older projects did not mark voice-overs; their recordings are named "Voice …".
+                voice = a.optBoolean("voice", a.optString("title").startsWith("Voice")),
             )
         }
         return Project(
@@ -409,6 +413,7 @@ object ProjectJson {
             background = runCatching { Background.valueOf(o.optString("background")) }
                 .getOrDefault(Background.BLACK),
             backgroundColor = o.optInt("backgroundColor", -1),
+            duckLevel = o.optDouble("duckLevel", 1.0).toFloat().coerceIn(0f, 1f),
             updatedAt = o.optLong("updatedAt", 0),
         )
     }
