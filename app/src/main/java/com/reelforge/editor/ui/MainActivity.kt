@@ -39,6 +39,8 @@ class MainActivity : ComponentActivity() {
                     vm.project == null -> HomeScreen(vm)
                     else -> EditorScreen(vm)
                 }
+                // "Update available" box, checked every time the app is opened.
+                UpdatePrompt()
             }
         }
     }

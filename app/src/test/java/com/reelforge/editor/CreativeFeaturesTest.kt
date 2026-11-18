@@ -199,3 +199,21 @@ class ReverseTest {
         assertEquals(listOf(6, 5, 4, 3), Reverser.reversedFrames(3, 6).toList())
     }
 }
+
+class BugReportTest {
+    @Test fun `report text has the problem, the steps and the phone details`() {
+        val r = com.reelforge.editor.ui.BugReportText(
+            problem = "App closed on Export\nwhen the video was long",
+            steps = "1. Add a video\n2. Export",
+            device = "App: CutMitra 1.1.0",
+        )
+        assertEquals("CutMitra bug: App closed on Export", r.subject)
+        assertTrue(r.body.contains("What went wrong:\nApp closed on Export"))
+        assertTrue(r.body.contains("How to make it happen:\n1. Add a video"))
+        assertTrue(r.body.contains("Phone and app:\nApp: CutMitra 1.1.0"))
+        val bare = com.reelforge.editor.ui.BugReportText("Crash", "", null)
+        assertTrue(!bare.body.contains("How to make it happen") && !bare.body.contains("Phone and app"))
+        // Long first lines are cut in the subject.
+        assertEquals(13 + 60, com.reelforge.editor.ui.BugReportText("x".repeat(200), "", null).subject.length)
+    }
+}

@@ -54,7 +54,7 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
             "there can be seen by your gallery and by other apps that you have given media access.",
         "• Sharing: an exported video is sent to another app only when you tap Share. It is then handled " +
             "by that app under its own privacy policy.",
-        "• Internet: used only for the store, music search and the one-time model downloads described below.",
+        "• Internet: used only for the store, music search, the one-time model downloads and the update check described below.",
     ),
     "Internet use and third-party services" to listOf(
         "The Service does not show advertisements and does not include any advertising, analytics or " +
@@ -73,6 +73,12 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
             "public model storage (storage.googleapis.com). Your pictures and videos are processed on your " +
             "phone and never uploaded. Google receives a normal web request, which includes your IP address.",
         "• Clean voice: noise removal uses your phone's own audio features and the app's code, on your phone.",
+        "• Update check: when the app opens, it asks the Google Play Store app on your phone whether a " +
+            "newer version is available. This is handled by Google Play under Google's privacy policy; the " +
+            "app sends nothing of yours.",
+        "• Bug reports: only if you choose Report a bug. The report opens in your own email app, and " +
+            "nothing is sent until you press Send there. It contains what you type and, if you leave them " +
+            "on, your phone model, Android version, the app's own recent log and any screenshots you add.",
         "• Text to speech: \"Read aloud\" uses the text-to-speech engine installed on your phone. The text " +
             "you type is handled by that engine under its own privacy policy.",
         "• Android backup: if backup is turned on in your phone settings, Android may back up the app's " +

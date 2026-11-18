@@ -4,6 +4,12 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Private values kept out of the repository (local.properties is never committed).
+// Add a line "support.email=you@example.com" there so bug reports go to that address.
+val localProps = java.util.Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}
+
 android {
     namespace = "com.reelforge.editor"
     compileSdk = 36
@@ -16,6 +22,7 @@ android {
         versionCode = 4
         versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SUPPORT_EMAIL", "\"${localProps.getProperty("support.email", "").trim()}\"")
     }
 
     buildTypes {
@@ -32,6 +39,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -55,6 +63,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Auto captions: offline speech recognition (Apache 2.0). Speech models are downloaded on first use.
@@ -64,6 +73,9 @@ dependencies {
     // Remove background: runs Google's selfie segmentation model on the phone (Apache 2.0).
     // The plain LiteRT runtime is used, not MediaPipe Tasks, which would send usage data to Google.
     implementation("com.google.ai.edge.litert:litert:1.4.0")
+    // "Update available" check: asks the Play Store app on the phone whether a newer version is
+    // published, and installs it from inside the app. Free Google Play library; sends nothing of ours.
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // Unit tests (run on the build machine).
     testImplementation("junit:junit:4.13.2")

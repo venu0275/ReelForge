@@ -34,10 +34,16 @@ import com.reelforge.editor.data.ScreenMode
 fun SettingsScreen(vm: EditorViewModel) {
     val s = vm.settings
     var showPolicy by remember { mutableStateOf(false) }
+    var showBugReport by remember { mutableStateOf(false) }
     if (showPolicy) {
         PrivacyScreen(onBack = { showPolicy = false })
         return
     }
+    if (showBugReport) {
+        BugReportScreen(vm.appVersion, onBack = { showBugReport = false })
+        return
+    }
+    val context = androidx.compose.ui.platform.LocalContext.current
     BackHandler { vm.showSettings = false }
     LaunchedEffect(Unit) { vm.refreshDownloadSize() }
     Column(
@@ -89,13 +95,20 @@ fun SettingsScreen(vm: EditorViewModel) {
         Section("Reset")
         TextButton(onClick = { vm.updateSettings { AppSettings() } }) { Text("Put all settings back to normal") }
 
+        Section("Help")
+        TextButton(onClick = { showBugReport = true }) { Text("Report a bug") }
+        Note("Something not working? Describe it, add screenshots if you like, and send it from your email app.")
+        TextButton(onClick = { openStoreListing(context) }) { Text("Check for updates") }
+        Note("You are using version ${vm.appVersion}. When a newer version is out, the app also tells you when it opens.")
+
         Section("Privacy")
         Note("Your videos, photos and projects stay on this phone. Nothing is sent to us.")
         TextButton(onClick = { showPolicy = true }) { Text("Privacy policy") }
 
         Section("About")
         Note(
-            "CutMitra ${vm.appVersion}. Built only with free, open-source libraries (AndroidX Media3, Jetpack Compose). " +
+            "CutMitra ${vm.appVersion}. Built with free libraries: AndroidX Media3, Jetpack Compose, " +
+                "Vosk speech recognition (Apache 2.0), LiteRT (Apache 2.0) and Google Play In-App Updates. " +
                 "Stickers: Noto Emoji (Apache 2.0). Fonts: Google Fonts (open licences). " +
                 "Music search: public-domain audio from openverse.org. Buttons and sound effects are made by the app."
         )
