@@ -183,8 +183,6 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
         range = 0f..2f,
         format = { "${(it * 100).roundToInt()}%" },
     ) { v -> vm.updateClip(clip.id) { it.copy(volume = v, muted = v <= 0f) } }
-    // Quick levels: 0% silences the clip so a voice-over can replace it; above 100% makes it louder.
-    VolumeChips(if (clip.muted) 0f else clip.volume) { v -> vm.updateClip(clip.id) { it.copy(volume = v, muted = v <= 0f) } }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Mute", Modifier.weight(1f))
         Switch(
@@ -196,9 +194,12 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
         Text("Use this level for all clips")
     }
     Text(
-        "Above 100% makes quiet videos louder (up to double). Very loud sound can crackle.",
+        "Slide to 0% to silence this scene, so only a voice-over is heard. Above 100% makes quiet " +
+            "videos louder (up to double); very loud sound can crackle.",
         style = MaterialTheme.typography.bodySmall,
     )
+    Spacer(Modifier.height(8.dp))
+    DuckSlider(vm, project = vm.project)
     Spacer(Modifier.height(8.dp))
     Text("Voice changer", style = MaterialTheme.typography.labelLarge)
     Row(
@@ -887,21 +888,22 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
     if (clips.isEmpty()) {
         Text("Your clips have no sound.", style = MaterialTheme.typography.bodySmall)
     } else {
-        val current = clips.map { if (it.muted) 0f else it.volume }.distinct().singleOrNull()
-        VolumeChips(current) { v -> vm.setAllClipVolume(v) }
+        val levels = clips.map { if (it.muted) 0f else it.volume }
+        val same = levels.distinct().size == 1
+        CommitSlider(
+            label = "Level",
+            value = levels.average().toFloat(),
+            range = 0f..2f,
+            format = { "${(it * 100).roundToInt()}%" },
+        ) { v -> vm.setAllClipVolume(v) }
         Text(
-            if (current == null) "Clips have different levels; tap one to set them all."
-            else "0% removes the video's sound so only your voice-over is heard.",
+            if (!same) "Scenes have different levels; moving the line sets them all."
+            else "Slide to 0% to remove the video's sound, so only your voice-over is heard.",
             style = MaterialTheme.typography.bodySmall,
         )
     }
     Spacer(Modifier.height(8.dp))
-    Text("While a voice-over plays, lower the video's sound to", style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(1f to "Don't lower", 0.5f to "50%", 0.25f to "25%", 0f to "0%").forEach { (level, label) ->
-            FilterChip(selected = project.duckLevel == level, onClick = { vm.setDuckLevel(level) }, label = { Text(label) })
-        }
-    }
+    DuckSlider(vm, project)
     Spacer(Modifier.height(8.dp))
     var speech by remember { mutableStateOf("") }
     OutlinedTextField(
@@ -1172,16 +1174,22 @@ private fun PoseControls(vm: EditorViewModel, kind: ItemKind, id: String) {
     LabeledSlider("Opacity", pose.opacity, 0f..1f) { v -> vm.editPose(kind, id) { it.copy(opacity = v) } }
 }
 
-/** One-tap sound levels from silent to double. */
+/**
+ * How loud the video's own sound (and music) plays while a voice-over speaks, as a line from 0%
+ * (silent) to 100% (not lowered). It applies to the whole video.
+ */
 @Composable
-fun VolumeChips(current: Float?, onPick: (Float) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf(0f, 0.25f, 0.5f, 1f, 1.5f, 2f).forEach { level ->
-            FilterChip(
-                selected = current != null && kotlin.math.abs(current - level) < 0.01f,
-                onClick = { onPick(level) },
-                label = { Text("${(level * 100).roundToInt()}%") },
-            )
-        }
-    }
+fun DuckSlider(vm: EditorViewModel, project: Project?) {
+    if (project == null) return
+    Text("While a voice-over plays, the video's sound goes to", style = MaterialTheme.typography.labelLarge)
+    CommitSlider(
+        label = "Under voice-over",
+        value = project.duckLevel,
+        range = 0f..1f,
+        format = { if (it >= 0.995f) "100% (not lowered)" else "${(it * 100).roundToInt()}%" },
+    ) { v -> vm.setDuckLevel(v) }
+    Text(
+        "For the whole video. It fades down only while your voice speaks, then comes back.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
