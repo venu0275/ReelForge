@@ -126,6 +126,55 @@ fun RecordPanel(vm: EditorViewModel, onStarted: () -> Unit) {
         if (needsMic) microphone.launch(Manifest.permission.RECORD_AUDIO) else askNotifications()
     }
 
+    // Settings are their own page, so it is clear where they are.
+    if (showSettings) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.TextButton(onClick = { showSettings = false }) { Text("← Back") }
+            Text("Recording settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        }
+        if (status != ScreenRecording.Status.IDLE) {
+            Text(
+                "Stop the recording to change these.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        val enabled = status == ScreenRecording.Status.IDLE
+        Spacer(Modifier.height(8.dp))
+        SettingChips("Record", RecordArea.entries.map { it to it.label }, s.area, enabled) { v ->
+            ScreenRecording.update(context) { it.copy(area = v) }
+        }
+        SettingChips("Quality", RecordSettings.SIDES.map { it to "${it}p" }, s.shortSide, enabled) { v ->
+            ScreenRecording.update(context) { it.copy(shortSide = v) }
+        }
+        SettingChips("Frames per second", RecordSettings.FPS.map { it to "$it" }, s.fps, enabled) { v ->
+            ScreenRecording.update(context) { it.copy(fps = v) }
+        }
+        SettingChips(
+            "Countdown", RecordSettings.COUNTDOWNS.map { it to if (it == 0) "Off" else "$it s" }, s.countdownSec, enabled,
+        ) { v -> ScreenRecording.update(context) { it.copy(countdownSec = v) } }
+        SettingChips("When finished", RecordTarget.entries.map { it to it.label }, s.target, enabled) { v ->
+            ScreenRecording.update(context) { it.copy(target = v) }
+        }
+        SettingSwitch("Record sound from the microphone", s.microphone, enabled) { on ->
+            ScreenRecording.update(context) { it.copy(microphone = on) }
+        }
+        SettingSwitch("Also save to the gallery (Movies/CutMitra)", s.saveToGallery, enabled) { on ->
+            ScreenRecording.update(context) { it.copy(saveToGallery = on) }
+        }
+        Text(
+            "Sound from other apps can't be recorded here, only the microphone. Settings can be changed " +
+                "while not recording.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        androidx.compose.material3.Button(onClick = { showSettings = false }, modifier = Modifier.fillMaxWidth()) {
+            Text("Done")
+        }
+        return
+    }
+
     // Time and state.
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
@@ -165,9 +214,7 @@ fun RecordPanel(vm: EditorViewModel, onStarted: () -> Unit) {
             enabled = status == ScreenRecording.Status.RECORDING || status == ScreenRecording.Status.PAUSED ||
                 status == ScreenRecording.Status.COUNTDOWN,
         ) { ScreenRecorderService.send(context, ScreenRecorderService.ACTION_STOP) }
-        RoundAction(RecordButton.SETTINGS, "Settings", enabled = true, selected = showSettings) {
-            showSettings = !showSettings
-        }
+        RoundAction(RecordButton.SETTINGS, "Settings", enabled = true) { showSettings = true }
     }
     ScreenRecording.error?.let {
         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -184,37 +231,6 @@ fun RecordPanel(vm: EditorViewModel, onStarted: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
-    if (showSettings) {
-        val enabled = status == ScreenRecording.Status.IDLE
-        Spacer(Modifier.height(8.dp))
-        SettingChips("Record", RecordArea.entries.map { it to it.label }, s.area, enabled) { v ->
-            ScreenRecording.update(context) { it.copy(area = v) }
-        }
-        SettingChips("Quality", RecordSettings.SIDES.map { it to "${it}p" }, s.shortSide, enabled) { v ->
-            ScreenRecording.update(context) { it.copy(shortSide = v) }
-        }
-        SettingChips("Frames per second", RecordSettings.FPS.map { it to "$it" }, s.fps, enabled) { v ->
-            ScreenRecording.update(context) { it.copy(fps = v) }
-        }
-        SettingChips(
-            "Countdown", RecordSettings.COUNTDOWNS.map { it to if (it == 0) "Off" else "$it s" }, s.countdownSec, enabled,
-        ) { v -> ScreenRecording.update(context) { it.copy(countdownSec = v) } }
-        SettingChips("When finished", RecordTarget.entries.map { it to it.label }, s.target, enabled) { v ->
-            ScreenRecording.update(context) { it.copy(target = v) }
-        }
-        SettingSwitch("Record sound from the microphone", s.microphone, enabled) { on ->
-            ScreenRecording.update(context) { it.copy(microphone = on) }
-        }
-        SettingSwitch("Also save to the gallery (Movies/CutMitra)", s.saveToGallery, enabled) { on ->
-            ScreenRecording.update(context) { it.copy(saveToGallery = on) }
-        }
-        Text(
-            "Sound from other apps can't be recorded here, only the microphone. Settings can be changed " +
-                "while not recording.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 }
 
 @Composable
@@ -249,7 +265,7 @@ private fun RoundAction(
     val fill = when {
         !enabled -> Color.White.copy(alpha = 0.06f)
         accent -> red
-        selected -> Color.White.copy(alpha = 0.24f)
+        selected -> red
         else -> Color.White.copy(alpha = 0.12f)
     }
     val ink = if (enabled) Color.White else Color.White.copy(alpha = 0.3f)

@@ -143,6 +143,7 @@ fun MediaBrowser(
                 Column(
                     Modifier
                         .clip(RoundedCornerShape(8.dp))
+                        .background(if (on) MaterialTheme.colorScheme.primary else Color.Transparent)
                         .clickable { tab = t }
                         .padding(6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,

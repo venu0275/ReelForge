@@ -47,6 +47,9 @@ class MainActivity : ComponentActivity() {
 private val Colors = darkColorScheme(
     primary = Color(0xFFFF4D5E),
     onPrimary = Color.White,
+    // Selected chips and tabs use this, so a chosen option is clearly red, not a faint grey.
+    secondaryContainer = Color(0xFFFF4D5E),
+    onSecondaryContainer = Color.White,
     secondary = Color(0xFF4DD0E1),
     background = Color(0xFF101114),
     surface = Color(0xFF181A1F),
