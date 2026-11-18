@@ -1785,10 +1785,11 @@ private fun PreviewArea(
                     .graphicsLayer {
                         val at = project.locate(vm.playheadMs)
                         val shown = at?.let { project.clips.getOrNull(it.first) }
+                        val into = at?.second ?: 0L
                         if (shown != null && shown.type == ClipType.IMAGE &&
                             shown.motion != com.reelforge.editor.model.PhotoMotion.NONE
                         ) {
-                            val pose = shown.motion.pose(at.second.toFloat() / shown.durationMs.coerceAtLeast(1))
+                            val pose = shown.motion.pose(into.toFloat() / shown.durationMs.coerceAtLeast(1))
                             scaleX = pose.scale
                             scaleY = pose.scale
                             translationX = pose.dx * size.width / 2
