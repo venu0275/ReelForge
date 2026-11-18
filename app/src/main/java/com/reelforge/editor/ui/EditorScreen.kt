@@ -324,10 +324,7 @@ fun EditorScreen(vm: EditorViewModel) {
 
     val menu: @Composable (Modifier, Boolean) -> Unit = { modifier, showExport ->
         val item = selectedItem?.takeIf { it.existsIn(project) }
-        if (vm.isRecording || vm.voiceCountdown > 0) {
-            // While a voice-over is recorded, the menu becomes its controls.
-            VoiceRecordingPanel(vm, modifier, onSettings = { voiceSettings = true })
-        } else if (item != null) {
+        if (item != null) {
             ItemMenu(
                 vm, project, modifier, item,
                 onBack = { selectedItem = null },
@@ -769,14 +766,33 @@ private fun EditorMenu(
                 MenuTile("Media", accent = true) { addMedia() }
                 MenuTile("Text", enabled = hasClips) { openPanel(Panel.TEXT) }
                 MenuTile("Layer", enabled = hasClips) { openPanel(Panel.LAYER) }
-                MenuTile("Record voice", enabled = hasClips) { recordVoice() }
                 MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
                 MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }
                 // Opens the music screen; with music already added, its settings are one tap away there.
                 MenuTile("Music") { if (project.music == null) openMusic() else openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
-                MenuTile("Record screen") { openPanel(Panel.RECORD) }
+                // The two recorders sit side by side; each shows its own time while recording.
+                val screenRec = com.reelforge.editor.record.ScreenRecording
+                MenuTile(
+                    when (screenRec.status) {
+                        com.reelforge.editor.record.ScreenRecording.Status.IDLE -> "⏺ Record screen"
+                        com.reelforge.editor.record.ScreenRecording.Status.COUNTDOWN -> "Screen in ${screenRec.countdown}…"
+                        com.reelforge.editor.record.ScreenRecording.Status.SAVING -> "Saving screen…"
+                        else -> "■ Screen " + MediaUtils.formatTime(screenRec.elapsedMs).substringBefore('.')
+                    },
+                    accent = screenRec.busy,
+                ) { openPanel(Panel.RECORD) }
+                MenuTile(
+                    when {
+                        vm.voiceCountdown > 0 -> "Voice in ${vm.voiceCountdown}…  ✕"
+                        vm.isRecording -> "■ Stop voice " +
+                            MediaUtils.formatTime((vm.playheadMs - vm.recordingFromMs).coerceAtLeast(0)).substringBefore('.')
+                        else -> "🎙 Record voice"
+                    },
+                    enabled = hasClips,
+                    accent = vm.isRecording || vm.voiceCountdown > 0,
+                ) { recordVoice() }
                 MenuTile("Settings") { vm.showSettings = true }
             } else {
                 val id = clip.id

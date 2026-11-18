@@ -877,6 +877,16 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
         Button(onClick = record) { Text("Record at playhead") }
         TextButton(onClick = pickSound) { Text("Add audio file") }
     }
+    Text("Countdown before recording", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(0, 3, 5).forEach { sec ->
+            FilterChip(
+                selected = vm.settings.voiceCountdown == sec,
+                onClick = { vm.updateSettings { it.copy(voiceCountdown = sec) } },
+                label = { Text(if (sec == 0) "Off" else "$sec s") },
+            )
+        }
+    }
     SwitchRow("Play the video silently while recording", vm.settings.silentWhileRecording) { on ->
         vm.updateSettings { it.copy(silentWhileRecording = on) }
     }
