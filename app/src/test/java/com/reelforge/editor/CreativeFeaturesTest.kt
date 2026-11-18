@@ -214,6 +214,6 @@ class BugReportTest {
         val bare = com.reelforge.editor.ui.BugReportText("Crash", "", null)
         assertTrue(!bare.body.contains("How to make it happen") && !bare.body.contains("Phone and app"))
         // Long first lines are cut in the subject.
-        assertEquals(13 + 60, com.reelforge.editor.ui.BugReportText("x".repeat(200), "", null).subject.length)
+        assertEquals("CutMitra bug: ".length + 60, com.reelforge.editor.ui.BugReportText("x".repeat(200), "", null).subject.length)
     }
 }
