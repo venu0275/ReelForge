@@ -829,7 +829,7 @@ private fun ItemMenu(
             Triple("Video layer", it.startMs, it.startMs + it.durationMs)
         }
         ItemKind.SOUND -> project.audio.first { it.id == id }.let {
-            Triple("Sound · " + it.title.take(16), it.startMs, it.startMs + it.durationMs)
+            Triple((if (it.voice) "Voice-over · " else "Sound · ") + it.title.take(16), it.startMs, it.startMs + it.durationMs)
         }
         ItemKind.MUSIC -> project.music!!.let {
             Triple("Music · " + it.title.take(16), it.startMs, it.windowEnd(project.durationMs))
@@ -870,7 +870,10 @@ private fun ItemMenu(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            IconButton(onClick = delete) {
+            IconButton(onClick = {
+                delete()
+                onBack()
+            }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete item")
             }
         }
@@ -900,6 +903,10 @@ private fun ItemMenu(
             MenuTile("Trim right", enabled = canCut, accent = true, icon = CutKind.RIGHT) { cut(Cut.RIGHT) }
             MenuTile("Edit") { onEdit() }
             if (item.kind == ItemKind.TEXT) MenuTile("Copy") { vm.duplicateText(id) }
+            MenuTile("Delete") {
+                delete()
+                onBack()
+            }
         }
     }
 }
@@ -1023,10 +1030,14 @@ private fun Timeline(
     val rows = listOf(textBars, layerBars, audioBars, videoBars).count { it.isNotEmpty() } +
         (if (project.music != null) 1 else 0)
     val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp
+    val configuration = LocalConfiguration.current
+    val sideways = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val cap = configuration.screenHeightDp.dp * (if (sideways) 0.42f else 0.34f)
+    val rowsScroll = rememberScrollState()
 
     BoxWithConstraints(
         modifier
-            .height(height)
+            .height(minOf(height, maxOf(cap, RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * 2)))
             .background(MaterialTheme.colorScheme.surface)
             .pointerInput(Unit) {
                 // Two fingers zoom the timeline; one finger is left to the scroll below.
@@ -1058,7 +1069,7 @@ private fun Timeline(
 
         Row(Modifier.fillMaxHeight().horizontalScroll(scroll)) {
             Spacer(Modifier.width(half))
-            Column(Modifier.width(contentWidth)) {
+            Column(Modifier.width(contentWidth).verticalScroll(rowsScroll)) {
                 Ruler(total, pxPerMs, visibleFrom, visibleTo, Modifier.width(contentWidth).height(RULER_HEIGHT))
 
                 Row(Modifier.height(TRACK_HEIGHT)) {
