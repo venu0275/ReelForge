@@ -535,6 +535,9 @@ object ExportManager {
         }
 
         video += EffectFactory.geometry(clip)
+        if (isImage && clip.motion != com.reelforge.editor.model.PhotoMotion.NONE) {
+            video += PhotoMotionEffect(clip.durationMs * 1000, clip.motion)
+        }
         video += EffectFactory.color(clip)
         if (EffectFactory.usesBackground(clip, project)) {
             video += EffectFactory.background(project, width, height)

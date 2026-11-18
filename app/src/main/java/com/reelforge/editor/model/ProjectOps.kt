@@ -74,6 +74,8 @@ object ProjectOps {
             points += it.startMs
             points += it.startMs + it.durationMs
         }
+        // Dragged edges also stick to the music's beats, once they have been found.
+        points += CreativeOps.beatTimes(project)
         return points.distinct().sorted()
     }
 

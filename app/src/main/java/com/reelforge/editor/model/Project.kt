@@ -59,6 +59,7 @@ data class Clip(
     val transition: TransitionStyle = TransitionStyle.FADE,
     val pitch: Float = 1f,        // voice changer: <1 deeper, >1 higher
     val audioFx: AudioFx = AudioFx.NONE,
+    val motion: PhotoMotion = PhotoMotion.NONE, // slow pan / zoom on a photo (Ken Burns)
 ) {
     val effectiveSpeed: Float get() = if (type == ClipType.IMAGE) 1f else speed
 
@@ -103,6 +104,63 @@ enum class AudioFx(val label: String, val pitch: Float = 1f) {
 
     /** True when the effect only changes pitch (or nothing), with no filter to run. */
     val filterless: Boolean get() = this == NONE || pitch != 1f
+}
+
+/** Slow movement over a photo while it is on screen, so a slideshow feels alive (Ken Burns). */
+enum class PhotoMotion(val label: String) {
+    NONE("None"),
+    ZOOM_IN("Zoom in"),
+    ZOOM_OUT("Zoom out"),
+    PAN_LEFT("Pan left"),
+    PAN_RIGHT("Pan right"),
+    PAN_UP("Pan up"),
+    PAN_DOWN("Pan down");
+
+    /**
+     * How the photo is placed [progress] (0..1) of the way through its time: [scale] (1 = as is)
+     * and a shift as a fraction of half the frame (positive [dx] = right, positive [dy] = up).
+     * The photo is always scaled up enough that the shift never shows an edge.
+     */
+    fun pose(progress: Float): MotionPose {
+        val t = progress.coerceIn(0f, 1f).let { it * it * (3 - 2 * it) } // ease in and out
+        return when (this) {
+            NONE -> MotionPose(1f, 0f, 0f)
+            ZOOM_IN -> MotionPose(1f + ZOOM * t, 0f, 0f)
+            ZOOM_OUT -> MotionPose(1f + ZOOM * (1 - t), 0f, 0f)
+            PAN_LEFT -> MotionPose(1f + ZOOM, PAN * (1 - 2 * t), 0f)
+            PAN_RIGHT -> MotionPose(1f + ZOOM, -PAN * (1 - 2 * t), 0f)
+            PAN_UP -> MotionPose(1f + ZOOM, 0f, -PAN * (1 - 2 * t))
+            PAN_DOWN -> MotionPose(1f + ZOOM, 0f, PAN * (1 - 2 * t))
+        }
+    }
+
+    companion object {
+        const val ZOOM = 0.18f
+        const val PAN = 0.14f   // less than ZOOM, so no edge shows
+    }
+}
+
+data class MotionPose(val scale: Float, val dx: Float, val dy: Float)
+
+/**
+ * Speed that changes inside a clip. [curve] gives the speed (times the clip's own speed) at each
+ * point 0..1 through the clip.
+ */
+enum class SpeedRamp(val label: String, private val points: List<Float>) {
+    MONTAGE("Montage", listOf(1f, 1f, 0.4f, 0.4f, 2.5f, 2.5f)),
+    HERO("Hero", listOf(2f, 2f, 0.3f, 0.3f, 2f, 2f)),
+    BULLET("Bullet", listOf(2.5f, 0.2f, 0.2f, 0.2f, 2.5f)),
+    FLASH_IN("Flash in", listOf(0.5f, 1f, 2f, 3f)),
+    FLASH_OUT("Flash out", listOf(3f, 2f, 1f, 0.5f));
+
+    /** The speed factor [t] (0..1) of the way through, joining the points smoothly. */
+    fun curve(t: Float): Float {
+        val x = t.coerceIn(0f, 1f) * (points.size - 1)
+        val i = x.toInt().coerceAtMost(points.size - 2)
+        val f = x - i
+        val smooth = f * f * (3 - 2 * f)
+        return points[i] + (points[i + 1] - points[i]) * smooth
+    }
 }
 
 /** A movement that repeats for as long as a sticker or picture is on screen (the "GIF" look). */
@@ -372,6 +430,7 @@ data class MusicTrack(
     val startMs: Long = 0,    // where on the timeline the music begins
     val stopMs: Long = 0,     // where it is cut off; 0 = plays as long as it can
     val offsetMs: Long = 0,   // where in the audio file it begins
+    val beats: List<Long> = emptyList(), // beat times found in the file (ms into the file)
 ) {
     /** Where the music ends on a video [videoMs] long. */
     fun windowEnd(videoMs: Long): Long {

@@ -53,7 +53,7 @@ import com.reelforge.editor.util.MediaUtils
 import kotlin.math.roundToInt
 
 @Composable
-private fun PanelTitle(text: String) {
+internal fun PanelTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
 }
 
@@ -169,6 +169,7 @@ fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
             style = MaterialTheme.typography.bodySmall,
         )
     }
+    SpeedRampSection(vm, clip)
 }
 
 @Composable
@@ -360,7 +361,7 @@ fun ColorPicker(selected: Int, onPick: (Int) -> Unit) {
 }
 
 @Composable
-private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChange)
@@ -724,6 +725,7 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
         Text("Loop to fill the video", Modifier.weight(1f))
         Switch(checked = music.loop, onCheckedChange = { l -> vm.updateMusic { it.copy(loop = l) } })
     }
+    BeatSyncSection(vm, project)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = pickAudio) { Text("Replace") }
         TextButton(onClick = { vm.removeMusic() }) { Text("Remove") }

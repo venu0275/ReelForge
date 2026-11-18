@@ -136,6 +136,7 @@ object ProjectJson {
                 put("startMs", m.startMs)
                 put("stopMs", m.stopMs)
                 put("offsetMs", m.offsetMs)
+                put("beats", JSONArray().apply { m.beats.forEach { put(it) } })
             })
         }
     }
@@ -166,6 +167,7 @@ object ProjectJson {
         put("transition", c.transition.name)
         put("pitch", c.pitch.toDouble())
         put("audioFx", c.audioFx.name)
+        put("motion", c.motion.name)
     }
 
     private fun textToJson(t: TextItem) = JSONObject().apply {
@@ -273,6 +275,8 @@ object ProjectJson {
                     .getOrDefault(TransitionStyle.FADE),
                 pitch = c.optDouble("pitch", 1.0).toFloat(),
                 audioFx = fx(c.optString("audioFx")),
+                motion = runCatching { com.reelforge.editor.model.PhotoMotion.valueOf(c.optString("motion")) }
+                    .getOrDefault(com.reelforge.editor.model.PhotoMotion.NONE),
             )
         }
         val texts = (0 until textsJson.length()).map { i ->
@@ -332,6 +336,7 @@ object ProjectJson {
                 startMs = m.optLong("startMs", 0),
                 stopMs = m.optLong("stopMs", 0),
                 offsetMs = m.optLong("offsetMs", 0),
+                beats = m.optJSONArray("beats")?.let { b -> (0 until b.length()).map { b.getLong(it) } }.orEmpty(),
             )
         }
         val layersJson = o.optJSONArray("layers") ?: JSONArray()

@@ -92,6 +92,9 @@ enum class Panel(val title: String) {
     FADE("Fade"),
     TEXT("Text"),
     CAPTIONS("Auto captions"),
+    PHOTO_ZOOM("Photo zoom"),
+    TEMPLATES("Templates"),
+    COVER("Cover"),
     LAYER("Layers"),
     AUDIO("Voice and sounds"),
     MUSIC("Music"),
@@ -410,6 +413,9 @@ fun EditorScreen(vm: EditorViewModel) {
             Panel.MUSIC -> MusicPanel(vm, project) { openMusic() }
             Panel.STORE -> StorePanel(vm)
             Panel.CAPTIONS -> CaptionsPanel(vm, project)
+            Panel.PHOTO_ZOOM -> clip?.let { PhotoZoomPanel(vm, it) }
+            Panel.TEMPLATES -> TemplatesPanel(vm, project) { panel = null }
+            Panel.COVER -> CoverPanel(vm, project)
             Panel.RECORD -> RecordPanel(vm, onStarted = { panel = null })
             Panel.EXPORT -> Unit
         }
@@ -797,6 +803,7 @@ private fun EditorMenu(
                     enabled = hasClips,
                     accent = vm.captionWork != null,
                 ) { openPanel(Panel.CAPTIONS) }
+                MenuTile("Templates", enabled = hasClips) { openPanel(Panel.TEMPLATES) }
                 MenuTile("Layer", enabled = hasClips) { openPanel(Panel.LAYER) }
                 MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
                 MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }
@@ -804,6 +811,7 @@ private fun EditorMenu(
                 MenuTile("Music") { if (project.music == null) openMusic() else openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
+                MenuTile("Cover", enabled = hasClips) { openPanel(Panel.COVER) }
                 // The two recorders sit side by side; each shows its own time while recording.
                 val screenRec = com.reelforge.editor.record.ScreenRecording
                 MenuTile(
@@ -848,6 +856,14 @@ private fun EditorMenu(
                 MenuTile("Fine trim") { openPanel(Panel.TRIM) }
                 MenuTile("Replace") { replace(id) }
                 if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
+                if (isVideo) {
+                    // Shows its progress on the tile; tap again to stop.
+                    val reversing = vm.reverseWork
+                    MenuTile(reversing ?: "⏪ Reverse", accent = reversing != null) {
+                        if (reversing != null) vm.cancelReverse() else vm.reverseClip(id)
+                    }
+                }
+                if (!isVideo) MenuTile("Photo zoom") { openPanel(Panel.PHOTO_ZOOM) }
                 if (isVideo) MenuTile("Volume") { openPanel(Panel.VOLUME) }
                 MenuTile("Filter") { openPanel(Panel.FILTER) }
                 MenuTile("Adjust") { openPanel(Panel.ADJUST) }
@@ -1149,7 +1165,8 @@ private fun Timeline(
         Row(Modifier.fillMaxHeight().horizontalScroll(scroll)) {
             Spacer(Modifier.width(half))
             Column(Modifier.width(contentWidth).verticalScroll(rowsScroll)) {
-                Ruler(total, pxPerMs, visibleFrom, visibleTo, Modifier.width(contentWidth).height(RULER_HEIGHT))
+                val beats = remember(project.music, total) { com.reelforge.editor.model.CreativeOps.beatTimes(project) }
+                Ruler(total, pxPerMs, visibleFrom, visibleTo, Modifier.width(contentWidth).height(RULER_HEIGHT), beats)
 
                 Row(Modifier.height(TRACK_HEIGHT)) {
                     var startPx = 0f
@@ -1314,7 +1331,15 @@ private fun com.reelforge.editor.model.TextItem.shifted(deltaMs: Long): com.reel
 
 /** Time marks along the top of the timeline. */
 @Composable
-private fun Ruler(totalMs: Long, pxPerMs: Float, visibleFrom: Float, visibleTo: Float, modifier: Modifier) {
+private fun Ruler(
+    totalMs: Long,
+    pxPerMs: Float,
+    visibleFrom: Float,
+    visibleTo: Float,
+    modifier: Modifier,
+    beats: List<Long> = emptyList(),
+) {
+    val beatColor = Color(0xFFFFC107)
     val measurer = rememberTextMeasurer()
     val color = MaterialTheme.colorScheme.onSurfaceVariant
     val style = TextStyle(color = color, fontSize = 10.sp)
@@ -1334,6 +1359,12 @@ private fun Ruler(totalMs: Long, pxPerMs: Float, visibleFrom: Float, visibleTo: 
             val mid = (t + stepMs / 2) * pxPerMs
             if (mid < size.width) drawCircle(color, radius = 2.5f, center = Offset(mid, size.height * 0.75f))
             t += stepMs
+        }
+        // Beats of the music, as small amber marks along the bottom.
+        for (b in beats) {
+            val x = b * pxPerMs
+            if (x < visibleFrom - 10 || x > visibleTo + 10) continue
+            drawLine(beatColor, Offset(x, size.height * 0.7f), Offset(x, size.height), strokeWidth = 3f)
         }
     }
 }
@@ -1748,7 +1779,27 @@ private fun PreviewArea(
                     }
                 },
                 onRelease = { it.player = null },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Photo zoom / pan (Ken Burns), read per frame so the screen is not rebuilt.
+                    .graphicsLayer {
+                        val at = project.locate(vm.playheadMs)
+                        val shown = at?.let { project.clips.getOrNull(it.first) }
+                        if (shown != null && shown.type == ClipType.IMAGE &&
+                            shown.motion != com.reelforge.editor.model.PhotoMotion.NONE
+                        ) {
+                            val pose = shown.motion.pose(at.second.toFloat() / shown.durationMs.coerceAtLeast(1))
+                            scaleX = pose.scale
+                            scaleY = pose.scale
+                            translationX = pose.dx * size.width / 2
+                            translationY = -pose.dy * size.height / 2
+                        } else {
+                            scaleX = 1f
+                            scaleY = 1f
+                            translationX = 0f
+                            translationY = 0f
+                        }
+                    },
             )
 
             if (current == null) {

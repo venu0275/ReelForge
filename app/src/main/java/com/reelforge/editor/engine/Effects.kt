@@ -308,6 +308,25 @@ class DuckProcessor(
     }
 }
 
+/** A photo's slow pan or zoom over its whole time on screen (Ken Burns). */
+@OptIn(UnstableApi::class)
+class PhotoMotionEffect(
+    private val durationUs: Long,
+    private val motion: com.reelforge.editor.model.PhotoMotion,
+) : MatrixTransformation {
+    private var baseUs = C.TIME_UNSET
+
+    override fun getMatrix(presentationTimeUs: Long): Matrix {
+        if (baseUs == C.TIME_UNSET) baseUs = presentationTimeUs
+        val progress = ((presentationTimeUs - baseUs).toFloat() / durationUs.coerceAtLeast(1)).coerceIn(0f, 1f)
+        val pose = motion.pose(progress)
+        return Matrix().apply {
+            setScale(pose.scale, pose.scale)
+            postTranslate(pose.dx, pose.dy)
+        }
+    }
+}
+
 /** Slide / zoom motion during a clip's fade-in and fade-out time (export only). */
 @OptIn(UnstableApi::class)
 class TransitionMotion(

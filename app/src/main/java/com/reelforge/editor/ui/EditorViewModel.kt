@@ -1894,6 +1894,230 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         cutoutJob?.cancel()
     }
 
+    // ------------------------------------------------------------ photo zoom + speed ramp
+
+    fun setPhotoMotion(id: String, motion: com.reelforge.editor.model.PhotoMotion) =
+        updateClip(id) { it.copy(motion = motion) }
+
+    /** Gives every photo the same movement. */
+    fun setPhotoMotionForAll(motion: com.reelforge.editor.model.PhotoMotion) = mutate { p ->
+        p.copy(clips = p.clips.map { if (it.type == ClipType.IMAGE) it.copy(motion = motion) else it })
+    }
+
+    /** Splits a video clip into steps whose speeds follow [ramp]. */
+    fun applySpeedRamp(id: String, ramp: com.reelforge.editor.model.SpeedRamp) {
+        val p = project ?: return
+        val clip = p.clips.firstOrNull { it.id == id } ?: return
+        if (clip.trimEndMs - clip.trimStartMs < com.reelforge.editor.model.CreativeOps.MIN_RAMP_SOURCE_MS) {
+            message = "This clip is too short for a speed ramp"
+            return
+        }
+        mutate { com.reelforge.editor.model.CreativeOps.speedRamp(it, id, ramp) }
+        message = "${ramp.label} ramp added (${com.reelforge.editor.model.CreativeOps.RAMP_STEPS} speed steps). Undo removes it."
+    }
+
+    // ------------------------------------------------------------ reverse
+
+    /** What is shown while a clip is being reversed (null when idle). */
+    var reverseWork by mutableStateOf<String?>(null)
+        private set
+    private var reverseJob: Job? = null
+
+    /** Replaces a video clip with a copy that plays backwards (without sound). */
+    fun reverseClip(id: String) {
+        val clip = project?.clips?.firstOrNull { it.id == id } ?: return
+        if (clip.type != ClipType.VIDEO || reverseJob?.isActive == true) return
+        val length = clip.trimEndMs - clip.trimStartMs
+        if (length > com.reelforge.editor.engine.Reverser.MAX_MS) {
+            message = "Trim this clip to 30 seconds or less to reverse it (it is ${MediaUtils.formatTime(length)})"
+            return
+        }
+        pause()
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        reverseJob = viewModelScope.launch {
+            reverseWork = "Reversing… 0%"
+            try {
+                val dir = File(ctx.filesDir, "reversed").apply { mkdirs() }
+                val out = File(dir, "reverse_${System.currentTimeMillis()}.mp4")
+                val newLength = withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.Reverser.reverse(
+                        ctx, Uri.parse(clip.uri), clip.trimStartMs, clip.trimEndMs, out, stop = { !isActive },
+                    ) { f -> postStatus(handler, "Reversing… ${(f * 100).toInt()}%") { reverseWork = it } }
+                }
+                if (newLength <= 0) error("empty")
+                updateClip(id) {
+                    it.copy(
+                        uri = Uri.fromFile(out).toString(), sourceDurationMs = newLength,
+                        trimStartMs = 0, trimEndMs = newLength, hasAudio = false,
+                        name = "Reversed " + it.name,
+                    ).let(ProjectOps::clampFades)
+                }
+                message = "Clip reversed (it plays without sound). Undo brings the original back."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                message = "Could not reverse this clip on this phone"
+            } finally {
+                handler.removeCallbacksAndMessages(null)
+                reverseWork = null
+            }
+        }
+    }
+
+    fun cancelReverse() {
+        reverseJob?.cancel()
+    }
+
+    // ------------------------------------------------------------ beat sync
+
+    /** What is shown while beats are being found (null when idle). */
+    var beatWork by mutableStateOf<String?>(null)
+        private set
+    private var beatJob: Job? = null
+
+    /** Finds the beats in the background music and marks them on the timeline. */
+    fun findBeats() {
+        val music = project?.music ?: return
+        if (beatJob?.isActive == true) return
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        beatJob = viewModelScope.launch {
+            beatWork = "Listening for the beat…"
+            try {
+                val beats = withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.BeatFinder.fromFile(
+                        ctx, Uri.parse(music.uri), music.durationMs, stop = { !isActive },
+                    ) { f -> postStatus(handler, "Listening for the beat… ${(f * 100).toInt()}%") { beatWork = it } }
+                }
+                if (beats.size < 4) {
+                    message = "No clear beat was found in this music"
+                    return@launch
+                }
+                // Only if the same music is still there.
+                if (project?.music?.uri == music.uri) {
+                    updateMusic { it.copy(beats = beats) }
+                    message = "Found the beat: about ${com.reelforge.editor.model.CreativeOps.bpm(beats)} BPM. " +
+                        "Beats are marked on the timeline."
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                message = "Could not read this music"
+            } finally {
+                handler.removeCallbacksAndMessages(null)
+                beatWork = null
+            }
+        }
+    }
+
+    fun cancelBeats() {
+        beatJob?.cancel()
+    }
+
+    fun clearBeats() = updateMusic { it.copy(beats = emptyList()) }
+
+    /** Lengthens or shortens clips so every cut lands on a beat ([every] = every 1st, 2nd or 4th). */
+    fun cutClipsToBeats(every: Int) {
+        val p = project ?: return
+        val beats = com.reelforge.editor.model.CreativeOps.beatTimes(p)
+        if (beats.isEmpty()) {
+            message = "Find the beats in the music first"
+            return
+        }
+        mutate { com.reelforge.editor.model.CreativeOps.cutToBeats(it, beats, every) }
+        message = "Clips now change on the beat. Undo puts them back."
+    }
+
+    // ------------------------------------------------------------ templates
+
+    fun applyTemplate(template: com.reelforge.editor.model.Template, title: String, ending: String) {
+        val p = project ?: return
+        if (p.clips.isEmpty()) {
+            message = "Add your photos or videos first, then pick a template"
+            return
+        }
+        mutate { com.reelforge.editor.model.Templates.apply(it, template, title, ending) }
+        seekTo(0)
+        message = "${template.name} look applied. Tip: add music (try \"${template.musicHint}\" in Free music)."
+    }
+
+    // ------------------------------------------------------------ cover
+
+    /** A small picture of the cover being designed (null until made). */
+    var coverPreview by mutableStateOf<ImageBitmap?>(null)
+        private set
+    var coverBusy by mutableStateOf(false)
+        private set
+
+    /** The picture behind the cover: [picture] if chosen, else the frame at the red line. */
+    private fun coverSource(p: Project, picture: Uri?, side: Int): Bitmap? {
+        if (picture != null) return MediaUtils.decodeImage(ctx, picture, side)
+        val (index, local) = p.locate(playheadMs) ?: return null
+        val clip = p.clips[index]
+        val uri = Uri.parse(clip.uri)
+        return if (clip.type == ClipType.IMAGE) MediaUtils.decodeImage(ctx, uri, side)
+        else MediaUtils.videoFrame(ctx, uri, clip.trimStartMs + (local * clip.effectiveSpeed).toLong(), side)
+    }
+
+    fun previewCover(title: String, style: com.reelforge.editor.engine.CoverStyle, picture: Uri?) {
+        val p = project ?: return
+        viewModelScope.launch {
+            val image = withContext(Dispatchers.IO) {
+                runCatching {
+                    val source = coverSource(p, picture, 720) ?: return@runCatching null
+                    val (w, h) = com.reelforge.editor.engine.ExportManager.outputSize(p.aspect, 360)
+                    com.reelforge.editor.engine.CoverMaker.render(source, w, h, title, style).asImageBitmap()
+                }.getOrNull()
+            }
+            coverPreview = image
+        }
+    }
+
+    /**
+     * Saves the cover to the gallery (Pictures/CutMitra). With [addToStart], it is also put at the
+     * very start of the video for half a second, so apps that use the first frame show it.
+     */
+    fun saveCover(title: String, style: com.reelforge.editor.engine.CoverStyle, picture: Uri?, addToStart: Boolean) {
+        val p = project ?: return
+        if (coverBusy) return
+        coverBusy = true
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val source = coverSource(p, picture, 2160) ?: return@withContext null
+                    val (w, h) = com.reelforge.editor.engine.ExportManager.outputSize(p.aspect, 1080)
+                    val cover = com.reelforge.editor.engine.CoverMaker.render(source, w, h, title, style)
+                    val name = "CutMitra_cover_${System.currentTimeMillis()}"
+                    val saved = com.reelforge.editor.engine.CoverMaker.saveToGallery(ctx, cover, name)
+                    val copy = if (addToStart) {
+                        File(File(ctx.filesDir, "covers").apply { mkdirs() }, "$name.jpg").also { f ->
+                            f.outputStream().use { cover.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                        }
+                    } else null
+                    saved to copy
+                }
+                if (result == null) {
+                    message = "Could not make the cover"
+                    return@launch
+                }
+                val (saved, copy) = result
+                if (copy != null) {
+                    val still = Clip(
+                        uri = Uri.fromFile(copy).toString(), type = ClipType.IMAGE, sourceDurationMs = 500,
+                        name = "Cover", fill = true,
+                    )
+                    mutate { it.copy(clips = listOf(still) + it.clips) }
+                }
+                message = when {
+                    saved == null -> "Could not save the cover to the gallery"
+                    copy != null -> "Cover saved to Pictures/CutMitra and put at the start of the video"
+                    else -> "Cover saved to Pictures/CutMitra. Upload it as the cover on Instagram or YouTube."
+                }
+            } finally {
+                coverBusy = false
+            }
+        }
+    }
+
     // ------------------------------------------------------------ freeze frame
 
     /** Inserts a 2-second still of the frame under the playhead. */
