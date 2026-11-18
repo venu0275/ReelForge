@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -184,4 +186,59 @@ fun VoiceSettingsDialog(vm: EditorViewModel, project: Project, onClose: () -> Un
         },
         confirmButton = { TextButton(onClick = onClose) { Text("Done") } },
     )
+}
+
+/**
+ * Takes the place of the menu while a voice-over is recorded: the countdown (with Cancel), then
+ * the time, a microphone level bar, Stop & add, Cancel and settings.
+ */
+@Composable
+fun VoiceRecordingPanel(vm: EditorViewModel, modifier: Modifier, onSettings: () -> Unit) {
+    val red = MaterialTheme.colorScheme.primary
+    Column(
+        modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(36.dp).clip(CircleShape).background(red),
+                contentAlignment = Alignment.Center,
+            ) { MicGlyph(Color.White) }
+            Text(
+                if (vm.voiceCountdown > 0) "  Voice-over starts in ${vm.voiceCountdown}…" else "  Recording voice-over",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            TextButton(onClick = onSettings) { Text("⚙") }
+        }
+        if (vm.isRecording) {
+            Text(
+                MediaUtils.formatTime((vm.playheadMs - vm.recordingFromMs).coerceAtLeast(0)).substringBefore('.'),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            // Moves when you speak, so you can see the microphone is hearing you.
+            Box(
+                Modifier.fillMaxWidth().height(10.dp)
+                    .clip(RoundedCornerShape(5.dp)).background(Color.White.copy(alpha = 0.12f))
+            ) {
+                Box(
+                    Modifier.fillMaxWidth(vm.micLevel.coerceIn(0.02f, 1f)).height(10.dp)
+                        .background(if (vm.micLevel > 0.85f) Color(0xFFFFC107) else Color(0xFF43A047))
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Button(onClick = { vm.stopRecording() }) {
+                    Box(Modifier.size(12.dp).clip(RoundedCornerShape(2.dp)).background(Color.White))
+                    Text("  Stop & add")
+                }
+                TextButton(onClick = { vm.cancelRecording() }) { Text("✕ Cancel") }
+            }
+        } else {
+            Text("${vm.voiceCountdown}", fontSize = 48.sp, fontWeight = FontWeight.Bold, color = red)
+            TextButton(onClick = { vm.cancelVoiceCountdown() }) { Text("✕ Cancel") }
+        }
+    }
 }

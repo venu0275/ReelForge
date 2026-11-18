@@ -1421,6 +1421,26 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Where on the timeline the current voice-over started. */
     val recordingFromMs: Long get() = recordStartMs
 
+    /** How loud the microphone is right now (0..1), for the level bar while recording. */
+    var micLevel by mutableStateOf(0f)
+        private set
+
+    /** Stops the voice-over being recorded and throws it away. */
+    fun cancelRecording() {
+        if (!isRecording) return
+        isRecording = false
+        player.pause()
+        runCatching { recorder?.stop() }
+        runCatching { recorder?.release() }
+        recorder = null
+        recordFile?.delete()
+        recordFile = null
+        micLevel = 0f
+        applyClipParams()
+        project?.music?.let { musicPlayer.volume = it.volume.coerceIn(0f, 1f) }
+        message = "Voice-over cancelled"
+    }
+
     private var countdownJob: Job? = null
     private var replaceVoice = false
 
@@ -1832,6 +1852,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (isRecording && (player.playbackState == Player.STATE_ENDED || playheadMs >= p.durationMs - 60)) {
             stopRecording()
             return
+        }
+        if (isRecording) {
+            // Smoothed so the level bar moves calmly.
+            val now = (runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0) / 32767f).coerceIn(0f, 1f)
+            micLevel = maxOf(now, micLevel * 0.8f)
         }
         if (!player.isPlaying) return
         val (index, source) = shownClip(p) ?: return

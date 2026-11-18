@@ -304,7 +304,10 @@ fun EditorScreen(vm: EditorViewModel) {
 
     val menu: @Composable (Modifier, Boolean) -> Unit = { modifier, showExport ->
         val item = selectedItem?.takeIf { it.existsIn(project) }
-        if (item != null) {
+        if (vm.isRecording || vm.voiceCountdown > 0) {
+            // While a voice-over is recorded, the menu becomes its controls.
+            VoiceRecordingPanel(vm, modifier, onSettings = { voiceSettings = true })
+        } else if (item != null) {
             ItemMenu(
                 vm, project, modifier, item,
                 onBack = { selectedItem = null },
@@ -322,6 +325,7 @@ fun EditorScreen(vm: EditorViewModel) {
             showExport = showExport,
             addMedia = addMedia,
             replace = replace,
+            recordVoice = record,
             openPanel = { which ->
                 if (which == Panel.TEXT) editingTextId = null
                 if (which == Panel.LAYER) editingLayerId = null
@@ -432,7 +436,6 @@ fun EditorScreen(vm: EditorViewModel) {
                     GlyphButton("↶", "Undo", vm.canUndo) { vm.undo() }
                     GlyphButton("↷", "Redo", vm.canRedo) { vm.redo() }
                     Spacer(Modifier.weight(1f))
-                    VoiceButton(vm, onTap = record, onLongPress = { voiceSettings = true })
                     PlayButton(vm, project)
                 }
                 preview(Modifier.weight(1f).fillMaxHeight())
@@ -512,8 +515,6 @@ fun EditorScreen(vm: EditorViewModel) {
                 ) {
                     JumpButtons(vm, project, vertical = false)
                     Spacer(Modifier.weight(1f))
-                    VoiceButton(vm, onTap = record, onLongPress = { voiceSettings = true })
-                    Spacer(Modifier.width(12.dp))
                     PlayButton(vm, project)
                     Spacer(Modifier.weight(1f))
                     Text(
@@ -680,6 +681,7 @@ private fun EditorMenu(
     showExport: Boolean,
     addMedia: () -> Unit,
     replace: (String) -> Unit,
+    recordVoice: () -> Unit,
     openPanel: (Panel) -> Unit,
 ) {
     val clip = vm.selectedClip
@@ -742,8 +744,9 @@ private fun EditorMenu(
                 MenuTile("Media", accent = true) { addMedia() }
                 MenuTile("Text", enabled = hasClips) { openPanel(Panel.TEXT) }
                 MenuTile("Layer", enabled = hasClips) { openPanel(Panel.LAYER) }
+                MenuTile("Record voice", enabled = hasClips) { recordVoice() }
                 MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
-                MenuTile("Voice", enabled = hasClips) { openPanel(Panel.AUDIO) }
+                MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }
                 MenuTile("Music") { openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
