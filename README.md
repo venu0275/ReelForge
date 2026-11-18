@@ -46,6 +46,8 @@ Jetpack Media3 (ExoPlayer for preview, Transformer + Effect for export) and Jetp
 - Text tool with tabs (Look, Font, Effects, Styles, Motion, Place and time): underline, letter and
   line spacing, shadow, glow, outline thickness, ready-made and saved styles, keep-moving effects,
   letter-by-letter and word-by-word reveal, apply to all texts.
+- Record screen: whole screen or preview only, with Start, Pause/Resume, Stop and settings
+  (quality, fps, countdown, microphone, add as clip or layer, save to gallery).
 - Settings: screen direction (auto / portrait / landscape), keep screen on, default lengths, snapping,
   export defaults, delete unused downloads.
 - Find music: search free public-domain (CC0) music and sounds from openverse.org and add them.

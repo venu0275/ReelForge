@@ -1372,3 +1372,31 @@ class MediaLibraryTest {
         assertTrue(com.reelforge.editor.data.MediaLibrary.albums(emptyList()).isEmpty())
     }
 }
+
+class ScreenRecordingMathTest {
+    @Test fun `recording size keeps the shape, never enlarges and is even`() {
+        assertEquals(1080 to 2400, com.reelforge.editor.record.recordingSize(1080, 2400, 1080))
+        assertEquals(720 to 1600, com.reelforge.editor.record.recordingSize(1080, 2400, 720))
+        assertEquals(1600 to 720, com.reelforge.editor.record.recordingSize(2400, 1080, 720))
+        assertEquals(720 to 1280, com.reelforge.editor.record.recordingSize(720, 1280, 1080))
+        val (w, h) = com.reelforge.editor.record.recordingSize(1081, 2341, 480)
+        assertTrue(w % 2 == 0 && h % 2 == 0 && w == 480)
+    }
+
+    @Test fun `bitrate stays within sensible limits`() {
+        assertEquals(2_000_000, com.reelforge.editor.record.recordingBitrate(100, 100, 30))
+        assertEquals(16_000_000, com.reelforge.editor.record.recordingBitrate(2160, 3840, 60))
+    }
+
+    @Test fun `the preview box turns into crop coordinates and an even output size`() {
+        val box = com.reelforge.editor.record.CropBox(0.25f, 0.1f, 0.75f, 0.4f)
+        val ndc = box.toNdc()
+        assertEquals(-0.5f, ndc[0], 0.0001f)
+        assertEquals(0.5f, ndc[1], 0.0001f)
+        assertEquals(0.2f, ndc[2], 0.0001f)
+        assertEquals(0.8f, ndc[3], 0.0001f)
+        assertEquals(540 to 720, box.outputSize(1080, 2400))
+        assertTrue(box.isValid)
+        assertTrue(!com.reelforge.editor.record.CropBox(0f, 0f, 0.01f, 1f).isValid)
+    }
+}

@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
@@ -94,6 +96,7 @@ enum class Panel(val title: String) {
     MUSIC("Music"),
     BACKGROUND("Backdrop"),
     STORE("Store"),
+    RECORD("Record screen"),
     DRAW("Draw"),
     EXPORT("Export"),
 }
@@ -349,12 +352,31 @@ fun EditorScreen(vm: EditorViewModel) {
             )
             Panel.MUSIC -> MusicPanel(vm, project) { pickAudio.launch(arrayOf("audio/*")) }
             Panel.STORE -> StorePanel(vm)
+            Panel.RECORD -> RecordPanel(vm, onStarted = { panel = null })
             Panel.EXPORT -> Unit
         }
     }
 
     val open = panel
     val sidePanel = open != null && open != Panel.EXPORT && open != Panel.DRAW
+
+    // A finished screen recording is put into the project as soon as it arrives.
+    val finishedRecording = com.reelforge.editor.record.ScreenRecording.finished
+    LaunchedEffect(finishedRecording) {
+        if (finishedRecording != null) {
+            com.reelforge.editor.record.ScreenRecording.finished = null
+            vm.useScreenRecording(finishedRecording)
+        }
+    }
+    // While recording, a small bar with the time, Pause and Stop floats near the top.
+    if (com.reelforge.editor.record.ScreenRecording.busy) {
+        androidx.compose.ui.window.Popup(
+            alignment = if (landscape) Alignment.TopEnd else Alignment.TopCenter,
+            offset = IntOffset(0, with(LocalDensity.current) { 36.dp.roundToPx() }),
+        ) {
+            Box(Modifier.padding(horizontal = 12.dp)) { RecordingBar() }
+        }
+    }
     val root = Modifier
         .fillMaxSize()
         .background(MaterialTheme.colorScheme.background)
@@ -636,6 +658,7 @@ private fun EditorMenu(
                 MenuTile("Music") { openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
+                MenuTile("Record screen") { openPanel(Panel.RECORD) }
                 MenuTile("Settings") { vm.showSettings = true }
             } else {
                 val id = clip.id
@@ -1363,6 +1386,7 @@ private fun PreviewArea(
     onPick: (String?) -> Unit,
     onRetype: (String) -> Unit,
 ) {
+    val view = androidx.compose.ui.platform.LocalView.current
     val location = project.locate(vm.playheadMs)
     val current = location?.let { project.clips[it.first] }
     val local = location?.second ?: 0L
@@ -1377,6 +1401,18 @@ private fun PreviewArea(
                 .clipToBounds()
                 // Tapping the picture itself, away from any item, lets go of the selection.
                 .onEmptyTap { onPick(null) }
+                // Remember where the preview sits on the screen, for "Preview only" recordings.
+                .onGloballyPositioned { coords ->
+                    val bounds = coords.boundsInWindow()
+                    val rootW = view.rootView.width.toFloat()
+                    val rootH = view.rootView.height.toFloat()
+                    if (rootW > 0f && rootH > 0f) {
+                        vm.previewCrop = com.reelforge.editor.record.CropBox(
+                            (bounds.left / rootW).coerceIn(0f, 1f), (bounds.top / rootH).coerceIn(0f, 1f),
+                            (bounds.right / rootW).coerceIn(0f, 1f), (bounds.bottom / rootH).coerceIn(0f, 1f),
+                        )
+                    }
+                }
         ) {
             val frameHeight = maxHeight
 

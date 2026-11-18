@@ -1046,6 +1046,78 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val layerKeySignatures = mutableMapOf<String, String>()
 
     /** Adds a video on top of the main track at the playhead (picture-in-picture). */
+    // --------------------------------------------------------- screen recording
+
+    /** Where the video preview sits on the screen, kept up to date by the screen. */
+    var previewCrop: com.reelforge.editor.record.CropBox? = null
+
+    /**
+     * Puts a finished screen recording into the project: cut down to the preview first when
+     * "Preview only" was chosen, then added as a clip or video layer, and saved to the gallery.
+     */
+    fun useScreenRecording(file: java.io.File) {
+        val rec = com.reelforge.editor.record.ScreenRecording
+        val settings = rec.settings
+        val crop = rec.crop
+        val done: (java.io.File) -> Unit = { result ->
+            val uri = Uri.fromFile(result)
+            when (settings.target) {
+                com.reelforge.editor.record.RecordTarget.CLIP -> addMedia(listOf(uri))
+                com.reelforge.editor.record.RecordTarget.LAYER -> addVideoLayer(uri)
+                com.reelforge.editor.record.RecordTarget.NONE -> Unit
+            }
+            if (settings.saveToGallery) {
+                viewModelScope.launch {
+                    withContext(Dispatchers.IO) {
+                        runCatching { MediaUtils.saveToGallery(ctx, result, result.name) }
+                    }
+                }
+            }
+            message = when (settings.target) {
+                com.reelforge.editor.record.RecordTarget.NONE ->
+                    if (settings.saveToGallery) "Screen recording saved to the gallery" else "Screen recording finished"
+                else -> "Screen recording added"
+            }
+            rec.status = com.reelforge.editor.record.ScreenRecording.Status.IDLE
+        }
+        if (crop == null || rec.finishedWidth <= 0 || rec.finishedHeight <= 0) {
+            done(file)
+            return
+        }
+        // Cut the recording down to the preview's area.
+        val (w, h) = crop.outputSize(rec.finishedWidth, rec.finishedHeight)
+        val ndc = crop.toNdc()
+        val out = java.io.File(file.parentFile, file.nameWithoutExtension + "_preview.mp4")
+        val edited = androidx.media3.transformer.EditedMediaItem.Builder(MediaItem.fromUri(Uri.fromFile(file)))
+            .setEffects(
+                androidx.media3.transformer.Effects(
+                    emptyList(),
+                    listOf(
+                        androidx.media3.effect.Crop(ndc[0], ndc[1], ndc[2], ndc[3]),
+                        androidx.media3.effect.Presentation.createForWidthAndHeight(
+                            w, h, androidx.media3.effect.Presentation.LAYOUT_STRETCH_TO_FIT,
+                        ),
+                    ),
+                )
+            )
+            .build()
+        val transformer = Transformer.Builder(ctx)
+            .addListener(object : Transformer.Listener {
+                override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                    file.delete()
+                    done(out)
+                }
+
+                override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                    // Keep the whole-screen recording rather than lose it.
+                    out.delete()
+                    done(file)
+                }
+            })
+            .build()
+        runCatching { transformer.start(edited, out.absolutePath) }.onFailure { done(file) }
+    }
+
     fun addVideoLayer(uri: Uri) {
         val p = project ?: return
         if (p.videoLayers.size >= ExportManager.MAX_VIDEO_LAYERS) {
