@@ -379,7 +379,19 @@ fun TextPanel(
 
     if (editing == null) {
         PanelTitle("Text and stickers")
-        project.texts.forEach { t ->
+        // The Add button stays at the top, however many texts there are.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Button(onClick = newText) { Text("+ Add text at playhead") }
+            if (project.texts.isNotEmpty()) {
+                TextButton(onClick = { vm.deleteAllTexts() }) { Text("Delete all") }
+            }
+        }
+        if (project.texts.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+            Text("Your texts (${project.texts.size})", style = MaterialTheme.typography.labelLarge)
+        }
+        // Listed in the order they appear in the video.
+        project.texts.sortedBy { it.startMs }.forEach { t ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(t.text.replace("\n", " "), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -390,12 +402,6 @@ fun TextPanel(
                 }
                 TextButton(onClick = { onEditing(t.id) }) { Text("Edit") }
                 TextButton(onClick = { vm.deleteText(t.id) }) { Text("Delete") }
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = newText) { Text("Add text at playhead") }
-            if (project.texts.isNotEmpty()) {
-                TextButton(onClick = { vm.deleteAllTexts() }) { Text("Delete all") }
             }
         }
         Spacer(Modifier.height(12.dp))
