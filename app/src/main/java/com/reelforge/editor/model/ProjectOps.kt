@@ -137,6 +137,39 @@ object ProjectOps {
         return null
     }
 
+    /** The shortest a text, sticker, layer or sound can be made by dragging its ends. */
+    const val MIN_BAR_MS = 300L
+
+    /**
+     * New start and end of a bar after one of its ends is dragged by [deltaMs]. The moved end sticks
+     * to the nearest of [points] within [toleranceMs], never starts before [minStart] or ends after
+     * [maxEnd], and the bar never gets shorter than [MIN_BAR_MS].
+     */
+    fun resizeEdge(
+        startMs: Long,
+        endMs: Long,
+        atStart: Boolean,
+        deltaMs: Long,
+        points: List<Long>,
+        toleranceMs: Long,
+        minStart: Long = 0L,
+        maxEnd: Long = Long.MAX_VALUE,
+    ): Pair<Long, Long> {
+        return if (atStart) {
+            val upper = (endMs - MIN_BAR_MS).coerceAtLeast(minStart)
+            snap(startMs + deltaMs, points, toleranceMs).coerceIn(minStart, upper) to endMs
+        } else {
+            val lower = startMs + MIN_BAR_MS
+            startMs to snap(endMs + deltaMs, points, toleranceMs).coerceIn(lower, maxOf(lower, maxEnd))
+        }
+    }
+
+    /** Where the clip playing at [timeMs] ends on the timeline, or the video's end. */
+    fun clipEndAt(project: Project, timeMs: Long): Long {
+        val (index, _) = project.locate(timeMs) ?: return project.durationMs
+        return project.clipStartMs(index) + project.clips[index].durationMs
+    }
+
     fun snap(ms: Long, points: List<Long>, toleranceMs: Long): Long {
         val nearest = points.minByOrNull { kotlin.math.abs(it - ms) } ?: return ms
         return if (kotlin.math.abs(nearest - ms) <= toleranceMs) nearest else ms

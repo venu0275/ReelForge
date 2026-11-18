@@ -1118,6 +1118,70 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { transformer.start(edited, out.absolutePath) }.onFailure { done(file) }
     }
 
+    // ------------------------------------------------------- stretching bars
+
+    /** Lengths of sound files, so a sound can be stretched only as far as its file goes. */
+    private val soundLengths = mutableStateMapOf<String, Long>()
+
+    fun soundLength(uri: String): Long? {
+        soundLengths[uri]?.let { return it }
+        if (requested.add("len:$uri")) {
+            viewModelScope.launch {
+                val ms = withContext(Dispatchers.IO) {
+                    runCatching { MediaUtils.audioDurationMs(ctx, Uri.parse(uri)) }.getOrDefault(0L)
+                }
+                if (ms > 0) soundLengths[uri] = ms
+            }
+        }
+        return null
+    }
+
+    /**
+     * Drags one end of a timeline bar by [deltaMs]: texts, stickers and pictures change how long
+     * they show; video layers, sounds and the music are trimmed.
+     */
+    fun resizeBar(kind: com.reelforge.editor.ui.ItemKind, id: String, atStart: Boolean, deltaMs: Long, snapMs: Long) {
+        val p = project ?: return
+        val points = ProjectOps.snapPoints(p, excludeId = id) + playheadMs
+        when (kind) {
+            com.reelforge.editor.ui.ItemKind.TEXT -> updateText(id) {
+                val (s, e) = ProjectOps.resizeEdge(it.startMs, it.endMs, atStart, deltaMs, points, snapMs)
+                it.copy(startMs = s, endMs = e)
+            }
+            com.reelforge.editor.ui.ItemKind.LAYER -> updateLayer(id) {
+                val (s, e) = ProjectOps.resizeEdge(it.startMs, it.endMs, atStart, deltaMs, points, snapMs)
+                it.copy(startMs = s, endMs = e)
+            }
+            com.reelforge.editor.ui.ItemKind.VIDEO -> updateVideoLayer(id) { v ->
+                // The start can move back only as far as the video has more at its beginning.
+                val end = v.startMs + v.durationMs
+                val (s, e) = ProjectOps.resizeEdge(
+                    v.startMs, end, atStart, deltaMs, points, snapMs,
+                    minStart = maxOf(0L, v.startMs - v.trimStartMs),
+                    maxEnd = v.startMs + (v.sourceDurationMs - v.trimStartMs),
+                )
+                if (atStart) v.copy(startMs = s, trimStartMs = v.trimStartMs + (s - v.startMs))
+                else v.copy(trimEndMs = v.trimStartMs + (e - s))
+            }
+            com.reelforge.editor.ui.ItemKind.SOUND -> updateAudioClip(id) { a ->
+                val fileLength = soundLength(a.uri) ?: (a.offsetMs + a.durationMs)
+                val (s, e) = ProjectOps.resizeEdge(
+                    a.startMs, a.startMs + a.durationMs, atStart, deltaMs, points, snapMs,
+                    minStart = maxOf(0L, a.startMs - a.offsetMs),
+                    maxEnd = a.startMs + (fileLength - a.offsetMs),
+                )
+                if (atStart) a.copy(startMs = s, offsetMs = a.offsetMs + (s - a.startMs), durationMs = e - s)
+                else a.copy(durationMs = e - s)
+            }
+            com.reelforge.editor.ui.ItemKind.MUSIC -> updateMusic { m ->
+                val end = m.windowEnd(p.durationMs)
+                val (s, e) = ProjectOps.resizeEdge(m.startMs, end, atStart, deltaMs, points, snapMs)
+                if (atStart) m.copy(startMs = s, offsetMs = (m.offsetMs + (s - m.startMs)).coerceAtLeast(0L))
+                else m.copy(stopMs = e)
+            }
+        }
+    }
+
     fun addVideoLayer(uri: Uri) {
         val p = project ?: return
         if (p.videoLayers.size >= ExportManager.MAX_VIDEO_LAYERS) {

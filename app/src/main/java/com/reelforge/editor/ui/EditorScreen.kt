@@ -1001,7 +1001,11 @@ private fun Timeline(
                         ProjectOps.snapStart(startMs + deltaMs, lengthMs, points, snapMs)
                     }
                 if (textBars.isNotEmpty()) {
-                    BarRow(textBars, pxPerMs, Color(0xFF7C4DFF), selectedId, { onSelect(ItemKind.TEXT, it) }) { id, deltaMs ->
+                    BarRow(
+                        textBars, pxPerMs, Color(0xFF7C4DFF), selectedId, { onSelect(ItemKind.TEXT, it) },
+                        limitMs = total,
+                        onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.TEXT, id, atStart, deltaMs, snapMs) },
+                    ) { id, deltaMs ->
                         vm.updateText(id) {
                             val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
                             it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
@@ -1009,14 +1013,22 @@ private fun Timeline(
                     }
                 }
                 if (videoBars.isNotEmpty()) {
-                    BarRow(videoBars, pxPerMs, Color(0xFF1E88E5), selectedId, { onSelect(ItemKind.VIDEO, it) }) { id, deltaMs ->
+                    BarRow(
+                        videoBars, pxPerMs, Color(0xFF1E88E5), selectedId, { onSelect(ItemKind.VIDEO, it) },
+                        limitMs = total,
+                        onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.VIDEO, id, atStart, deltaMs, snapMs) },
+                    ) { id, deltaMs ->
                         vm.updateVideoLayer(id) {
                             it.copy(startMs = dropAt(id, it.startMs, it.durationMs, deltaMs))
                         }
                     }
                 }
                 if (layerBars.isNotEmpty()) {
-                    BarRow(layerBars, pxPerMs, Color(0xFF009688), selectedId, { onSelect(ItemKind.LAYER, it) }) { id, deltaMs ->
+                    BarRow(
+                        layerBars, pxPerMs, Color(0xFF009688), selectedId, { onSelect(ItemKind.LAYER, it) },
+                        limitMs = total,
+                        onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.LAYER, id, atStart, deltaMs, snapMs) },
+                    ) { id, deltaMs ->
                         vm.updateLayer(id) {
                             val start = dropAt(id, it.startMs, it.endMs - it.startMs, deltaMs)
                             it.copy(startMs = start, endMs = start + (it.endMs - it.startMs))
@@ -1024,7 +1036,11 @@ private fun Timeline(
                     }
                 }
                 if (audioBars.isNotEmpty()) {
-                    BarRow(audioBars, pxPerMs, Color(0xFF43A047), selectedId, { onSelect(ItemKind.SOUND, it) }) { id, deltaMs ->
+                    BarRow(
+                        audioBars, pxPerMs, Color(0xFF43A047), selectedId, { onSelect(ItemKind.SOUND, it) },
+                        limitMs = total,
+                        onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.SOUND, id, atStart, deltaMs, snapMs) },
+                    ) { id, deltaMs ->
                         vm.updateAudioClip(id) { it.copy(startMs = dropAt(id, it.startMs, it.durationMs, deltaMs)) }
                     }
                 }
@@ -1042,6 +1058,7 @@ private fun Timeline(
                     BarRow(
                         listOf(bar), pxPerMs, Color(0xFFEF6C00), selectedId, { onSelect(ItemKind.MUSIC, it) },
                         rowModifier = rest,
+                        onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.MUSIC, id, atStart, deltaMs, snapMs) },
                     ) { _, deltaMs ->
                         vm.shiftMusic(deltaMs)
                     }
@@ -1315,8 +1332,9 @@ private fun BoxScope.TrimHandle(atStart: Boolean, onCommit: (dragPx: Float) -> U
 }
 
 /**
- * A row of bars (text, layers or sounds). Tap a bar to open it; long-press and drag to move it
- * in time.
+ * A row of bars (text, layers or sounds). Tap a bar to select it; long-press and drag to move it
+ * in time. A selected bar has handles on both ends: drag them to make it longer or shorter.
+ * The part of a bar after [limitMs] (the end of the video) is shown faded, as it is not seen.
  */
 @Composable
 private fun BarRow(
@@ -1326,30 +1344,57 @@ private fun BarRow(
     selectedId: String?,
     onTap: (String) -> Unit,
     rowModifier: Modifier = Modifier,
+    limitMs: Long? = null,
+    onResize: ((id: String, atStart: Boolean, deltaMs: Long) -> Unit)? = null,
     onMove: (id: String, deltaMs: Long) -> Unit,
 ) {
     val density = LocalDensity.current
     val move by rememberUpdatedState(onMove)
+    val resize by rememberUpdatedState(onResize)
     val scale by rememberUpdatedState(pxPerMs)
+    val handleWidth = 18.dp
+    val handlePx = with(density) { handleWidth.toPx() }
+    val minPx = with(density) { 14.dp.toPx() }
     Box(Modifier.fillMaxWidth().height(ROW_HEIGHT).then(rowModifier)) {
         bars.forEach { bar ->
             key(bar.id) {
                 var drag by remember { mutableFloatStateOf(0f) }
-                val x = with(density) { (bar.startMs * pxPerMs).toDp() }
-                val width = with(density) { ((bar.endMs - bar.startMs) * pxPerMs).toDp() }
+                var leftDrag by remember { mutableFloatStateOf(0f) }
+                var rightDrag by remember { mutableFloatStateOf(0f) }
+                val selected = bar.id == selectedId
+                val baseStartPx = bar.startMs * pxPerMs
+                val baseWidthPx = (bar.endMs - bar.startMs) * pxPerMs
+                val startPx = baseStartPx + drag + leftDrag
+                val widthPx = maxOf(baseWidthPx - leftDrag + rightDrag, minPx)
+                val resizing = leftDrag != 0f || rightDrag != 0f
+                // While an end is dragged, the bar shows where it starts and ends and how long it is.
+                val shownStart = bar.startMs + (leftDrag / pxPerMs).toLong()
+                val shownEnd = bar.endMs + (rightDrag / pxPerMs).toLong()
+                val label = if (resizing) {
+                    MediaUtils.formatTime(shownStart.coerceAtLeast(0)) + " → " + MediaUtils.formatTime(shownEnd) +
+                        " · " + MediaUtils.formatTime((shownEnd - shownStart).coerceAtLeast(0))
+                } else bar.label
+                val fadeFromPx = limitMs?.let { (it - bar.startMs) * pxPerMs - leftDrag }
                 Box(
                     Modifier
-                        .offset { IntOffset(x.roundToPx() + drag.roundToInt(), 0) }
-                        .width(maxOf(width, 14.dp))
+                        .offset { IntOffset(startPx.roundToInt(), 0) }
+                        .width(with(density) { widthPx.toDp() })
                         .fillMaxHeight()
                         .padding(vertical = 2.dp)
                         .clip(RoundedCornerShape(4.dp))
                         .background(color.copy(alpha = if (drag != 0f) 0.6f else 0.9f))
-                        .then(
-                            if (bar.id == selectedId) {
-                                Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
-                            } else Modifier
-                        )
+                        .drawWithContent {
+                            drawContent()
+                            if (fadeFromPx != null && fadeFromPx < size.width) {
+                                val x0 = fadeFromPx.coerceAtLeast(0f)
+                                drawRect(
+                                    Color.Black.copy(alpha = 0.55f),
+                                    topLeft = androidx.compose.ui.geometry.Offset(x0, 0f),
+                                    size = androidx.compose.ui.geometry.Size(size.width - x0, size.height),
+                                )
+                            }
+                        }
+                        .then(if (selected) Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp)) else Modifier)
                         .clickable { onTap(bar.id) }
                         .pointerInput(bar.id) {
                             detectDragGesturesAfterLongPress(
@@ -1363,13 +1408,77 @@ private fun BarRow(
                                 drag += amount.x
                             }
                         }
-                        .padding(horizontal = 6.dp),
+                        .padding(horizontal = if (selected && onResize != null) handleWidth else 6.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    Text(bar.label, fontSize = 11.sp, maxLines = 1, color = Color.White)
+                    Text(label, fontSize = 11.sp, maxLines = 1, color = Color.White)
+                }
+                if (selected && onResize != null && drag == 0f) {
+                    BarHandle(
+                        xPx = startPx,
+                        widthDp = handleWidth,
+                        atStart = true,
+                        onDrag = { dx -> leftDrag = (leftDrag + dx).coerceAtMost(baseWidthPx - minPx) },
+                        onEnd = {
+                            resize?.invoke(bar.id, true, (leftDrag / scale).toLong())
+                            leftDrag = 0f
+                        },
+                        onCancel = { leftDrag = 0f },
+                    )
+                    BarHandle(
+                        xPx = startPx + widthPx - handlePx,
+                        widthDp = handleWidth,
+                        atStart = false,
+                        onDrag = { dx -> rightDrag = (rightDrag + dx).coerceAtLeast(minPx - baseWidthPx) },
+                        onEnd = {
+                            resize?.invoke(bar.id, false, (rightDrag / scale).toLong())
+                            rightDrag = 0f
+                        },
+                        onCancel = { rightDrag = 0f },
+                    )
                 }
             }
         }
+    }
+}
+
+/** A grab handle on one end of a selected bar. */
+@Composable
+private fun BarHandle(
+    xPx: Float,
+    widthDp: androidx.compose.ui.unit.Dp,
+    atStart: Boolean,
+    onDrag: (Float) -> Unit,
+    onEnd: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val drag by rememberUpdatedState(onDrag)
+    val end by rememberUpdatedState(onEnd)
+    val cancel by rememberUpdatedState(onCancel)
+    Box(
+        Modifier
+            .offset { IntOffset(xPx.roundToInt(), 0) }
+            .width(widthDp)
+            .fillMaxHeight()
+            .padding(vertical = 2.dp)
+            .clip(
+                if (atStart) RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
+                else RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
+            )
+            .background(Color(0xFFFFC107))
+            .semantics { contentDescription = if (atStart) "Drag to change start" else "Drag to change end" }
+            .pointerInput(atStart) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { end() },
+                    onDragCancel = { cancel() },
+                ) { change, amount ->
+                    change.consume()
+                    drag(amount)
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(3.dp, 14.dp).clip(CircleShape).background(Color(0xFF3E2723)))
     }
 }
 

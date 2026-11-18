@@ -1400,3 +1400,38 @@ class ScreenRecordingMathTest {
         assertTrue(!com.reelforge.editor.record.CropBox(0f, 0f, 0.01f, 1f).isValid)
     }
 }
+
+class StretchBarTest {
+    @Test fun `dragging the right end makes a bar longer or shorter`() {
+        assertEquals(1_000L to 6_000L, ProjectOps.resizeEdge(1_000, 4_000, false, 2_000, emptyList(), 0))
+        assertEquals(1_000L to 2_500L, ProjectOps.resizeEdge(1_000, 4_000, false, -1_500, emptyList(), 0))
+    }
+
+    @Test fun `dragging the left end moves the start and keeps the end`() {
+        assertEquals(500L to 4_000L, ProjectOps.resizeEdge(1_000, 4_000, true, -500, emptyList(), 0))
+        assertEquals(0L to 4_000L, ProjectOps.resizeEdge(1_000, 4_000, true, -5_000, emptyList(), 0))
+    }
+
+    @Test fun `a bar never gets shorter than the minimum or past its limits`() {
+        val min = ProjectOps.MIN_BAR_MS
+        assertEquals(1_000L to 1_000L + min, ProjectOps.resizeEdge(1_000, 4_000, false, -9_000, emptyList(), 0))
+        assertEquals(4_000L - min to 4_000L, ProjectOps.resizeEdge(1_000, 4_000, true, 9_000, emptyList(), 0))
+        assertEquals(1_000L to 5_000L, ProjectOps.resizeEdge(1_000, 4_000, false, 9_000, emptyList(), 0, maxEnd = 5_000))
+        assertEquals(800L to 4_000L, ProjectOps.resizeEdge(1_000, 4_000, true, -900, emptyList(), 0, minStart = 800))
+    }
+
+    @Test fun `the dragged end sticks to nearby points`() {
+        assertEquals(1_000L to 6_000L, ProjectOps.resizeEdge(1_000, 4_000, false, 1_950, listOf(6_000), 100))
+        assertEquals(1_000L to 5_800L, ProjectOps.resizeEdge(1_000, 4_000, false, 1_800, listOf(6_000), 100))
+    }
+
+    @Test fun `stretching to the clip end finds the clip under a time`() {
+        val clips = listOf(
+            Clip(uri = "a", type = ClipType.IMAGE, sourceDurationMs = 3_000),
+            Clip(uri = "b", type = ClipType.IMAGE, sourceDurationMs = 5_000),
+        )
+        val project = Project(name = "p", clips = clips)
+        assertEquals(3_000L, ProjectOps.clipEndAt(project, 1_000))
+        assertEquals(8_000L, ProjectOps.clipEndAt(project, 4_000))
+    }
+}

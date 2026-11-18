@@ -616,6 +616,25 @@ fun TextPanel(
                 )
             }
             PoseControls(vm, ItemKind.TEXT, id)
+            // Quick ways to make the text last longer.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = false,
+                    onClick = {
+                        vm.updateText(id) {
+                            it.copy(endMs = maxOf(it.startMs + ProjectOps.MIN_BAR_MS, ProjectOps.clipEndAt(project, it.startMs)))
+                        }
+                    },
+                    label = { Text("Stretch to clip end") },
+                )
+                FilterChip(
+                    selected = false,
+                    onClick = {
+                        vm.updateText(id) { it.copy(endMs = maxOf(it.startMs + ProjectOps.MIN_BAR_MS, project.durationMs)) }
+                    },
+                    label = { Text("Stretch to video end") },
+                )
+            }
             TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
                 vm.updateText(id) { it.copy(startMs = s, endMs = e) }
             }
