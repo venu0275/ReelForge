@@ -69,9 +69,11 @@ import com.reelforge.editor.model.VideoLayer
 import com.reelforge.editor.model.newId
 import com.reelforge.editor.util.MediaUtils
 import com.reelforge.editor.util.SpeechMaker
+import androidx.compose.runtime.mutableFloatStateOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -83,6 +85,11 @@ import java.io.File
 class DrawStroke(val color: Int, val points: List<Offset>)
 
 private const val SCRUB_INTERVAL_MS = 90L
+
+/** Texts made by Auto captions have ids starting with this, so they can be replaced together. */
+const val CAPTION_PREFIX = "cap_"
+
+
 
 // Timeline frames kept in memory (each is small, about 60 KB).
 private const val MAX_FRAMES = 400
@@ -184,7 +191,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private var scrubJob: Job? = null
     private var lastScrubSeekAt = 0L
 
-    val player: ExoPlayer = ExoPlayer.Builder(app).build()
+    // Sound effects and Clean voice are heard in the preview too, not only in the export.
+    private val mainFx = com.reelforge.editor.engine.LiveAudioFx()
+    private val voiceFx = com.reelforge.editor.engine.LiveAudioFx()
+    val player: ExoPlayer = ExoPlayer.Builder(app, com.reelforge.editor.engine.renderersWithFx(app, mainFx)).build()
     // Music files are often long MP3s with no seek table; without this setting the player cannot
     // jump into the middle of them and keeps restarting from the beginning.
     private val musicPlayer: ExoPlayer = ExoPlayer.Builder(app)
@@ -193,12 +203,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         )
         .build()
     private var lastMusicSeekAt = 0L
-    private val voicePlayer: ExoPlayer = ExoPlayer.Builder(app).build()
+    private val voicePlayer: ExoPlayer =
+        ExoPlayer.Builder(app, com.reelforge.editor.engine.renderersWithFx(app, voiceFx)).build()
     private var voiceClipId: String? = null
 
     var isRecording by mutableStateOf(false)
         private set
-    private var recorder: MediaRecorder? = null
+    private var recorder: com.reelforge.editor.record.VoiceCapture? = null
+    // Whether the voice-over being recorded used Clean voice.
+    private var recordingClean = false
     private var recordFile: File? = null
     private var recordStartMs = 0L
 
@@ -713,6 +726,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteAllLayers() = mutate { it.copy(layers = emptyList()) }
 
     fun deleteAllAudio() = mutate { it.copy(audio = emptyList()) }
+
 
     fun deleteAllClips() {
         mutate { it.copy(clips = emptyList()) }
@@ -1386,18 +1400,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val p = project ?: return
         if (isRecording || p.clips.isEmpty()) return
         val dir = File(ctx.filesDir, "voice").apply { mkdirs() }
-        val file = File(dir, "voice_${System.currentTimeMillis()}.m4a")
+        val stamp = System.currentTimeMillis()
+        var file = File(dir, if (settings.cleanVoice) "voice_$stamp.wav" else "voice_$stamp.m4a")
         try {
-            @Suppress("DEPRECATION")
-            val r = if (Build.VERSION.SDK_INT >= 31) MediaRecorder(ctx) else MediaRecorder()
-            r.setAudioSource(MediaRecorder.AudioSource.MIC)
-            r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            r.setAudioSamplingRate(44100)
-            r.setAudioEncodingBitRate(128000)
-            r.setOutputFile(file.absolutePath)
-            r.prepare()
-            r.start()
+            var clean = settings.cleanVoice
+            val r: com.reelforge.editor.record.VoiceCapture = try {
+                if (clean) com.reelforge.editor.record.CleanCapture(file).also { it.start() }
+                else com.reelforge.editor.record.MicCapture(ctx, file).also { it.start() }
+            } catch (e: Exception) {
+                if (!clean) throw e
+                // This phone's voice-call path is not available; record plainly instead.
+                file.delete()
+                clean = false
+                file = File(dir, "voice_$stamp.m4a")
+                com.reelforge.editor.record.MicCapture(ctx, file).also { it.start() }
+            }
+            recordingClean = clean
             recorder = r
             recordFile = file
             if (playheadMs >= p.durationMs - 200) seekTo(0)
@@ -1505,7 +1523,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         applyClipParams()
         project?.music?.let { musicPlayer.volume = it.volume.coerceIn(0f, 1f) }
         val file = recordFile
-        val ok = runCatching { recorder?.stop() }.isSuccess
+        val ok = runCatching { recorder?.stop() == true }.getOrDefault(false)
         runCatching { recorder?.release() }
         recorder = null
         recordFile = null
@@ -1521,6 +1539,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val number = (project?.audio?.count { it.title.startsWith("Voice") } ?: 0) + 1
             val clip = AudioClip(
                 uri = uri.toString(), title = "Voice $number", startMs = start, durationMs = duration, voice = true,
+                clean = recordingClean,
             )
             val replace = replaceVoice
             // One step for Undo: cutting out the old voice (if replacing) and adding the new one.
@@ -1546,6 +1565,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             stopVoice()
             return
         }
+        // Effect and clean-up are picked up live, so changing them is heard straight away.
+        voiceFx.fx = clip.audioFx
+        voiceFx.clean = clip.clean
+        val voicePitch = clip.audioFx.pitch
+        if (voicePlayer.playbackParameters.pitch != voicePitch) {
+            voicePlayer.playbackParameters = PlaybackParameters(1f, voicePitch)
+        }
         if (clip.id != voiceClipId) {
             voiceClipId = clip.id
             voicePlayer.setMediaItem(MediaItem.fromUri(Uri.parse(clip.uri)))
@@ -1557,6 +1583,315 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val voiceVolume = clip.volume.coerceIn(0f, 1f) *
             fadeAlpha(playheadMs - clip.startMs, length, clip.fadeInMs, clip.fadeOutMs)
         if (kotlin.math.abs(voicePlayer.volume - voiceVolume) > 0.005f) voicePlayer.volume = voiceVolume
+    }
+
+    // ------------------------------------------------------------ auto captions
+
+    /** What is shown while captions are being made, e.g. "Listening… 40%" (null when idle). */
+    var captionWork by mutableStateOf<String?>(null)
+        private set
+    /** How far Auto captions has got, 0..1. */
+    var captionProgress by mutableFloatStateOf(0f)
+        private set
+    private var captionJob: Job? = null
+    // Updates from background work are handed to the main thread through these; each job clears
+    // its own when it ends, so a late update cannot reappear after the job is over.
+    private val captionHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val cutoutHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var lastStatusAt = 0L
+
+    /** Shows [text] from any thread, at most a few times a second. */
+    private fun postStatus(handler: android.os.Handler, text: String, set: (String) -> Unit) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastStatusAt < 250) return
+        lastStatusAt = now
+        handler.post { set(text) }
+    }
+
+    fun captionModelReady(language: com.reelforge.editor.engine.CaptionLanguage) =
+        com.reelforge.editor.engine.CaptionModels.isInstalled(ctx, language)
+
+    /** How many captions on the timeline were made by Auto captions. */
+    val autoCaptionCount: Int get() = project?.texts?.count { it.id.startsWith(CAPTION_PREFIX) } ?: 0
+
+    /** The sound to listen to, and how each file's time maps onto the timeline. */
+    private fun captionPieces(p: Project, fromVideo: Boolean, fromVoice: Boolean): List<com.reelforge.editor.engine.SpeechPiece> {
+        val pieces = mutableListOf<com.reelforge.editor.engine.SpeechPiece>()
+        if (fromVideo) {
+            p.clips.forEachIndexed { i, c ->
+                if (c.type != ClipType.VIDEO || !c.hasAudio || c.muted || c.volume <= 0f) return@forEachIndexed
+                val start = p.clipStartMs(i)
+                val speed = c.effectiveSpeed
+                pieces += com.reelforge.editor.engine.SpeechPiece(c.uri, c.trimStartMs, c.trimEndMs) { t ->
+                    start + ((t - c.trimStartMs) / speed).toLong()
+                }
+            }
+        }
+        if (fromVoice) {
+            p.audio.filter { it.voice }.forEach { a ->
+                pieces += com.reelforge.editor.engine.SpeechPiece(a.uri, a.offsetMs, a.offsetMs + a.durationMs) { t ->
+                    a.startMs + (t - a.offsetMs)
+                }
+            }
+        }
+        return pieces
+    }
+
+    /**
+     * Listens to the video's sound and/or the voice-overs and adds what is said as timed texts.
+     * Captions made earlier by this are replaced. The speech model is downloaded the first time.
+     */
+    fun makeCaptions(language: com.reelforge.editor.engine.CaptionLanguage, fromVideo: Boolean, fromVoice: Boolean) {
+        val p = project ?: return
+        if (captionJob?.isActive == true) return
+        val pieces = captionPieces(p, fromVideo, fromVoice)
+        if (pieces.isEmpty()) {
+            message = if (fromVoice && !fromVideo) "There are no voice-overs to caption yet"
+            else "These clips have no sound to caption"
+            return
+        }
+        captionProgress = 0f
+        pause()
+        captionJob = viewModelScope.launch {
+            val set: (String) -> Unit = { captionWork = it }
+            try {
+                if (!captionModelReady(language)) {
+                    captionWork = "Downloading ${language.label} speech (${language.sizeMb} MB)…"
+                    withContext(Dispatchers.IO) {
+                        com.reelforge.editor.engine.CaptionModels.install(ctx, language) { pct ->
+                            postStatus(captionHandler, "Downloading ${language.label} speech… $pct%", set)
+                            captionHandler.post { captionProgress = pct / 100f }
+                        }
+                    }
+                }
+                captionWork = "Listening…"
+                captionProgress = 0f
+                // Progress counts by length, so a long clip moves the bar more than a short one.
+                val total = pieces.sumOf { (it.toMs - it.fromMs).coerceAtLeast(1) }.toFloat()
+                val words = withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.Transcriber(ctx, language).use { t ->
+                        var done = 0L
+                        pieces.flatMap { piece ->
+                            val length = (piece.toMs - piece.fromMs).coerceAtLeast(1)
+                            val heard = t.words(ctx, piece, stop = { !isActive }) { f ->
+                                val part = ((done + f * length) / total).coerceIn(0f, 1f)
+                                postStatus(captionHandler, "Listening… ${(part * 100).toInt()}%", set)
+                                captionHandler.post { captionProgress = part }
+                            }
+                            done += length
+                            heard
+                        }
+                    }
+                }
+                val lines = com.reelforge.editor.engine.CaptionText.group(words)
+                if (lines.isEmpty()) {
+                    message = "No speech was heard. Try another language, or check the sound is on."
+                    return@launch
+                }
+                val total = project?.durationMs ?: p.durationMs
+                val items = lines.filter { it.startMs < total }.map { line ->
+                    TextItem(
+                        id = CAPTION_PREFIX + newId(),
+                        text = com.reelforge.editor.engine.CaptionText.tidy(line.text),
+                        size = 0.06f,
+                        y = -0.62f,
+                        startMs = line.startMs.coerceAtLeast(0),
+                        endMs = line.endMs.coerceAtMost(total),
+                        outline = true,
+                        outlineWidth = 1.4f,
+                    )
+                }
+                mutate { it.copy(texts = it.texts.filterNot { t -> t.id.startsWith(CAPTION_PREFIX) } + items) }
+                message = "Added ${items.size} captions. Tap one to fix a word or change the style."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                message = "Could not download the speech model. Check the internet and try again."
+            } catch (e: Throwable) {
+                // Includes a speech library that cannot load on this phone.
+                message = "Could not make captions on this phone"
+            } finally {
+                captionHandler.removeCallbacksAndMessages(null)
+                captionWork = null
+                captionProgress = 0f
+            }
+        }
+    }
+
+    /** Stops Auto captions; nothing is added. */
+    fun stopCaptions() {
+        captionJob?.cancel()
+        message = "Auto captions stopped"
+    }
+
+    /** Removes the captions made by Auto captions (texts typed by hand stay). */
+    fun removeAutoCaptions() = mutate { p -> p.copy(texts = p.texts.filterNot { it.id.startsWith(CAPTION_PREFIX) }) }
+
+    /** Removes a downloaded speech model to free space. */
+    fun deleteCaptionModel(language: com.reelforge.editor.engine.CaptionLanguage) {
+        com.reelforge.editor.engine.CaptionModels.delete(ctx, language)
+        message = "${language.label} speech model removed"
+    }
+
+    // ------------------------------------------------------------ remove background
+
+    /** What is shown while a background is being removed (null when idle). */
+    var cutoutWork by mutableStateOf<String?>(null)
+        private set
+    private var cutoutJob: Job? = null
+
+    private suspend fun ensureCutoutModel() {
+        if (com.reelforge.editor.engine.CutOut.hasModel(ctx)) return
+        cutoutWork = "Downloading the cut-out model (${com.reelforge.editor.engine.CutOut.MODEL_MB} MB)…"
+        withContext(Dispatchers.IO) {
+            com.reelforge.editor.engine.CutOut.downloadModel(ctx) { pct ->
+                postStatus(cutoutHandler, "Downloading the cut-out model… $pct%") { cutoutWork = it }
+            }
+        }
+    }
+
+    /** Removes the background around the person in a picture layer. */
+    fun removeImageBackground(id: String) {
+        val layer = project?.layers?.firstOrNull { it.id == id } ?: return
+        if (cutoutJob?.isActive == true) return
+        cutoutJob = viewModelScope.launch {
+            try {
+                ensureCutoutModel()
+                cutoutWork = "Removing the background…"
+                val file = withContext(Dispatchers.IO) {
+                    val picture = MediaUtils.decodeImage(ctx, Uri.parse(layer.uri), 1600) ?: error("unreadable")
+                    val result = com.reelforge.editor.engine.PersonSegmenter(
+                        com.reelforge.editor.engine.CutOut.modelFile(ctx)
+                    ).use { it.cutOut(picture) }
+                    val dir = File(ctx.filesDir, "cutout").apply { mkdirs() }
+                    File(dir, "photo_${System.currentTimeMillis()}.png").also { f ->
+                        f.outputStream().use { result.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    }
+                }
+                updateLayer(id) { it.copy(uri = Uri.fromFile(file).toString()) }
+                message = "Background removed. Use Undo to bring it back."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                message = "Could not download the cut-out model. Check the internet and try again."
+            } catch (e: Throwable) {
+                message = "Could not remove the background of this picture"
+            } finally {
+                cutoutWork = null
+            }
+        }
+    }
+
+    /**
+     * Removes the background around the person in a video layer. A copy of the part in use is
+     * made with the background painted green, then keyed out like a green screen.
+     */
+    fun removeVideoBackground(id: String) {
+        val layer = project?.videoLayers?.firstOrNull { it.id == id } ?: return
+        if (cutoutJob?.isActive == true) return
+        val length = layer.trimEndMs - layer.trimStartMs
+        if (length > com.reelforge.editor.engine.CutOut.MAX_VIDEO_MS) {
+            message = "Trim this video to 1 minute or less first (it is ${MediaUtils.formatTime(length)})"
+            return
+        }
+        pause()
+        cutoutJob = viewModelScope.launch {
+            var segmenter: com.reelforge.editor.engine.PersonSegmenter? = null
+            var overlay: com.reelforge.editor.engine.GreenBackgroundOverlay? = null
+            var cutoutTransformer: Transformer? = null
+            try {
+                ensureCutoutModel()
+                cutoutWork = "Removing the background… 0%"
+                val dir = File(ctx.filesDir, "cutout").apply { mkdirs() }
+                val out = File(dir, "video_${System.currentTimeMillis()}.mp4")
+                val seg = withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.PersonSegmenter(com.reelforge.editor.engine.CutOut.modelFile(ctx))
+                }
+                segmenter = seg
+                val ov = com.reelforge.editor.engine.GreenBackgroundOverlay(ctx, Uri.parse(layer.uri), layer.trimStartMs, seg)
+                overlay = ov
+                val item = androidx.media3.transformer.EditedMediaItem.Builder(
+                    MediaItem.Builder().setUri(Uri.parse(layer.uri))
+                        .setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setStartPositionMs(layer.trimStartMs)
+                                .setEndPositionMs(layer.trimEndMs)
+                                .build()
+                        )
+                        .build()
+                ).setEffects(
+                    androidx.media3.transformer.Effects(
+                        emptyList(),
+                        listOf(androidx.media3.effect.OverlayEffect(com.google.common.collect.ImmutableList.of<androidx.media3.effect.TextureOverlay>(ov))),
+                    )
+                ).build()
+                kotlinx.coroutines.suspendCancellableCoroutine<Unit> { done ->
+                    val t = Transformer.Builder(ctx)
+                        .setVideoMimeType(androidx.media3.common.MimeTypes.VIDEO_H264)
+                        .addListener(object : Transformer.Listener {
+                            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                                if (done.isActive) done.resumeWith(Result.success(Unit))
+                            }
+
+                            override fun onError(
+                                composition: Composition, exportResult: ExportResult, exportException: ExportException,
+                            ) {
+                                out.delete()
+                                if (done.isActive) done.resumeWith(Result.failure(exportException))
+                            }
+                        })
+                        .build()
+                    cutoutTransformer = t
+                    done.invokeOnCancellation { out.delete() }
+                    t.start(item, out.absolutePath)
+                    // Show progress while it works.
+                    val holder = ProgressHolder()
+                    val poll = object : Runnable {
+                        override fun run() {
+                            if (!done.isActive) return
+                            if (t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                                cutoutWork = "Removing the background… ${holder.progress}%"
+                            }
+                            cutoutHandler.postDelayed(this, 500)
+                        }
+                    }
+                    cutoutHandler.postDelayed(poll, 500)
+                }
+                val newLength = withContext(Dispatchers.IO) { MediaUtils.probe(ctx, Uri.fromFile(out))?.durationMs }
+                    ?: length
+                val uri = Uri.fromFile(out).toString()
+                updateVideoLayer(id) {
+                    it.copy(
+                        uri = uri, sourceDurationMs = newLength, trimStartMs = 0, trimEndMs = newLength,
+                        chromaKey = true, keyColor = com.reelforge.editor.engine.CutOut.KEY_GREEN, keyTolerance = 0.3f,
+                    )
+                }
+                // The layer's player keeps playing the old file until it is given the new one.
+                layerPlayers[id]?.let {
+                    it.setMediaItem(MediaItem.fromUri(Uri.parse(uri)))
+                    it.prepare()
+                }
+                resyncLayers()
+                message = "Background removed. Use Undo to bring it back."
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                message = "Could not download the cut-out model. Check the internet and try again."
+            } catch (e: Throwable) {
+                message = "Could not remove the background of this video"
+            } finally {
+                cutoutHandler.removeCallbacksAndMessages(null)
+                // Does nothing if the export already finished.
+                runCatching { cutoutTransformer?.cancel() }
+                overlay?.close()
+                segmenter?.close()
+                cutoutWork = null
+            }
+        }
+    }
+
+    fun cancelCutout() {
+        cutoutJob?.cancel()
     }
 
     // ------------------------------------------------------------ freeze frame
@@ -1687,9 +2022,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val clip = p.clips.getOrNull(shown.first) ?: return
         shownClipIndex = shown.first
         // The preview player tops out at 8x; faster clips still export at their full speed.
+        mainFx.fx = if (clip.type == ClipType.VIDEO) clip.audioFx else com.reelforge.editor.model.AudioFx.NONE
         player.playbackParameters = PlaybackParameters(
             clip.effectiveSpeed.coerceIn(0.1f, 8f),
-            if (clip.type == ClipType.VIDEO) clip.pitch.coerceIn(0.5f, 2f) else 1f,
+            if (clip.type == ClipType.VIDEO) (clip.pitch * clip.audioFx.pitch).coerceIn(0.4f, 2.5f) else 1f,
         )
         setMainVolume(clip, 1f)
         val signature = EffectFactory.previewSignature(clip, p)
@@ -1871,7 +2207,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (isRecording) {
             // Smoothed so the level bar moves calmly.
-            val now = (runCatching { recorder?.maxAmplitude ?: 0 }.getOrDefault(0) / 32767f).coerceIn(0f, 1f)
+            val now = ((recorder?.maxAmplitude ?: 0) / 32767f).coerceIn(0f, 1f)
             micLevel = maxOf(now, micLevel * 0.8f)
         }
         if (!player.isPlaying) return

@@ -54,7 +54,7 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
             "there can be seen by your gallery and by other apps that you have given media access.",
         "• Sharing: an exported video is sent to another app only when you tap Share. It is then handled " +
             "by that app under its own privacy policy.",
-        "• Internet: used only for the store and music search described below.",
+        "• Internet: used only for the store, music search and the one-time model downloads described below.",
     ),
     "Internet use and third-party services" to listOf(
         "The Service does not show advertisements and does not include any advertising, analytics or " +
@@ -65,6 +65,14 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
         "• Music search: the words you type are sent to Openverse (openverse.org), a public catalogue of " +
             "openly licensed media. When you pick a result, the audio file is downloaded from the website " +
             "that hosts it. Those services receive a normal web request, which includes your IP address.",
+        "• Auto captions: the first time you make captions in a language, its speech model is downloaded " +
+            "once from alphacephei.com (the Vosk project). Listening to your video and voice happens on " +
+            "your phone; your sound and the captions are never uploaded. The site receives a normal web " +
+            "request, which includes your IP address.",
+        "• Remove background: the first time you use it, a cut-out model is downloaded once from Google's " +
+            "public model storage (storage.googleapis.com). Your pictures and videos are processed on your " +
+            "phone and never uploaded. Google receives a normal web request, which includes your IP address.",
+        "• Clean voice: noise removal uses your phone's own audio features and the app's code, on your phone.",
         "• Text to speech: \"Read aloud\" uses the text-to-speech engine installed on your phone. The text " +
             "you type is handled by that engine under its own privacy policy.",
         "• Android backup: if backup is turned on in your phone settings, Android may back up the app's " +

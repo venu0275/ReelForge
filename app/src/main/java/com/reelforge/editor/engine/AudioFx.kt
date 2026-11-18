@@ -133,7 +133,8 @@ class FxChannel(private val fx: AudioFx, private val sampleRate: Int) {
     private var phase = 0.0
 
     fun process(x: Float): Float = when (fx) {
-        AudioFx.NONE -> x
+        // Pitch-only effects are done by the player / exporter, not here.
+        AudioFx.NONE, AudioFx.CHIPMUNK, AudioFx.DEEP -> x
         AudioFx.ECHO -> x * 0.8f + echo.process(x) * 0.5f
         AudioFx.REVERB -> {
             var wet = 0f

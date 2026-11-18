@@ -91,6 +91,7 @@ enum class Panel(val title: String) {
     ADJUST("Adjust"),
     FADE("Fade"),
     TEXT("Text"),
+    CAPTIONS("Auto captions"),
     LAYER("Layers"),
     AUDIO("Voice and sounds"),
     MUSIC("Music"),
@@ -408,6 +409,7 @@ fun EditorScreen(vm: EditorViewModel) {
             )
             Panel.MUSIC -> MusicPanel(vm, project) { openMusic() }
             Panel.STORE -> StorePanel(vm)
+            Panel.CAPTIONS -> CaptionsPanel(vm, project)
             Panel.RECORD -> RecordPanel(vm, onStarted = { panel = null })
             Panel.EXPORT -> Unit
         }
@@ -790,6 +792,11 @@ private fun EditorMenu(
             if (clip == null) {
                 MenuTile("Media", accent = true) { addMedia() }
                 MenuTile("Text", enabled = hasClips) { openPanel(Panel.TEXT) }
+                MenuTile(
+                    if (vm.captionWork != null) "CC ${(vm.captionProgress * 100).toInt()}%" else "CC Captions",
+                    enabled = hasClips,
+                    accent = vm.captionWork != null,
+                ) { openPanel(Panel.CAPTIONS) }
                 MenuTile("Layer", enabled = hasClips) { openPanel(Panel.LAYER) }
                 MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
                 MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }

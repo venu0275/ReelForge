@@ -13,8 +13,8 @@ android {
         applicationId = "com.reelforge.editor"
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -56,6 +56,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Auto captions: offline speech recognition (Apache 2.0). Speech models are downloaded on first use.
+    // 0.3.70 and JNA 5.17 are the first with 16 KB page support, which Google Play requires.
+    implementation("com.alphacephei:vosk-android:0.3.70@aar")
+    implementation("net.java.dev.jna:jna:5.17.0@aar")
+    // Remove background: runs Google's selfie segmentation model on the phone (Apache 2.0).
+    // The plain LiteRT runtime is used, not MediaPipe Tasks, which would send usage data to Google.
+    implementation("com.google.ai.edge.litert:litert:1.4.0")
 
     // Unit tests (run on the build machine).
     testImplementation("junit:junit:4.13.2")

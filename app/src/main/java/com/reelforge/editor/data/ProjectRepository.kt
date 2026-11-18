@@ -119,6 +119,7 @@ object ProjectJson {
                     put("fadeOutMs", a.fadeOutMs)
                     put("offsetMs", a.offsetMs)
                     put("voice", a.voice)
+                    put("clean", a.clean)
                     put("audioFx", a.audioFx.name)
                 })
             }
@@ -397,6 +398,7 @@ object ProjectJson {
                 audioFx = fx(a.optString("audioFx")),
                 // Older projects did not mark voice-overs; their recordings are named "Voice …".
                 voice = a.optBoolean("voice", a.optString("title").startsWith("Voice")),
+                clean = a.optBoolean("clean", false),
             )
         }
         return Project(

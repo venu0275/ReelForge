@@ -28,6 +28,8 @@ data class AppSettings(
     val silentWhileRecording: Boolean = false,
     /** Seconds counted down on the video before a voice-over starts recording (0 = none). */
     val voiceCountdown: Int = 3,
+    /** Record voice-overs with the phone's noise and echo removal, then clean them up further. */
+    val cleanVoice: Boolean = true,
 ) {
     /** The same settings with every value forced into its allowed range. */
     fun sanitized(): AppSettings = copy(
@@ -64,6 +66,7 @@ class SettingsStore(context: Context) {
             exportHevc = prefs.getBoolean("exportHevc", d.exportHevc),
             silentWhileRecording = prefs.getBoolean("silentWhileRecording", d.silentWhileRecording),
             voiceCountdown = prefs.getInt("voiceCountdown", d.voiceCountdown),
+            cleanVoice = prefs.getBoolean("cleanVoice", d.cleanVoice),
         ).sanitized()
     }
 
@@ -80,6 +83,7 @@ class SettingsStore(context: Context) {
             .putBoolean("exportHevc", s.exportHevc)
             .putBoolean("silentWhileRecording", s.silentWhileRecording)
             .putInt("voiceCountdown", s.voiceCountdown)
+            .putBoolean("cleanVoice", s.cleanVoice)
             .apply()
     }
 }

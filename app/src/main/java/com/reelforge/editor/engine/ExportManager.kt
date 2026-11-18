@@ -398,7 +398,7 @@ object ExportManager {
         }
         if (clip.volume != 1f) audio += volumeProcessor(clip.volume)
         if (duckRangesUs.isNotEmpty()) audio += DuckProcessor(duckRangesUs, duckLevel)
-        if (clip.audioFx != AudioFx.NONE) audio += AudioFxProcessor(clip.audioFx)
+        audio += fxChain(clip.audioFx)
         if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) {
             audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
         }
@@ -423,6 +423,16 @@ object ExportManager {
         val audio = if (layer.volume != 1f) listOf(volumeProcessor(layer.volume)) else emptyList()
         return silenceItems(silence, lead) +
             EditedMediaItem.Builder(media).setRemoveVideo(true).setEffects(Effects(audio, emptyList())).build()
+    }
+
+    /**
+     * The processors for a sound effect, optionally after Clean voice. Pitch styles (Chipmunk,
+     * Deep voice) change pitch without changing length; the others run a filter.
+     */
+    private fun fxChain(fx: AudioFx, clean: Boolean = false): List<AudioProcessor> = buildList {
+        if (clean) add(VoiceCleanProcessor())
+        if (fx.pitch != 1f) add(SonicAudioProcessor().apply { setPitch(fx.pitch) })
+        if (!fx.filterless) add(AudioFxProcessor(fx))
     }
 
     /** A voice-over / sound clip: silence up to its start, then the audio itself. */
@@ -460,7 +470,7 @@ object ExportManager {
             .setRemoveVideo(true)
             .setEffects(
                 Effects(
-                    (if (clip.audioFx != AudioFx.NONE) listOf(AudioFxProcessor(clip.audioFx)) else emptyList()) +
+                    fxChain(clip.audioFx, clip.clean) +
                         audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs),
                     emptyList(),
                 )
@@ -549,7 +559,7 @@ object ExportManager {
             )
         }
         if (!isImage && !clip.muted && clip.hasAudio && clip.audioFx != AudioFx.NONE) {
-            audio += AudioFxProcessor(clip.audioFx)
+            audio += fxChain(clip.audioFx)
         }
         val hasFade = clip.fadeInMs > 0 || clip.fadeOutMs > 0
         if (!isImage && !clip.muted && clip.hasAudio && hasFade) {

@@ -22,6 +22,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -834,6 +835,7 @@ fun LayerPanel(
         TextButton(onClick = { onEditing(null) }) { Text("Done") }
     }
     CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutLayer(id, cut) }
+    RemoveBackgroundRow(vm, video = false) { vm.removeImageBackground(id) }
     LabeledSlider("Size", editing.scale, 0.05f..1f) { v -> vm.updateLayer(id) { it.copy(scale = v) } }
     PoseControls(vm, ItemKind.LAYER, id)
     TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
@@ -887,6 +889,15 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             )
         }
     }
+    SwitchRow("Clean voice (remove background noise)", vm.settings.cleanVoice) { on ->
+        vm.updateSettings { it.copy(cleanVoice = on) }
+    }
+    Text(
+        if (vm.settings.cleanVoice) "New voice-overs are recorded with the phone's noise and echo removal, " +
+            "then evened out so soft and loud words sound alike."
+        else "New voice-overs are recorded exactly as the microphone hears them.",
+        style = MaterialTheme.typography.bodySmall,
+    )
     SwitchRow("Play the video silently while recording", vm.settings.silentWhileRecording) { on ->
         vm.updateSettings { it.copy(silentWhileRecording = on) }
     }
@@ -945,7 +956,8 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
             TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
         }
         CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
-        FxChips(clip.audioFx) { fx -> vm.updateAudioClip(clip.id) { it.copy(audioFx = fx) } }
+        SwitchRow("Clean voice", clip.clean) { on -> vm.updateAudioClip(clip.id) { it.copy(clean = on) } }
+        FxChips(clip.audioFx, voice = true) { fx -> vm.updateAudioClip(clip.id) { it.copy(audioFx = fx) } }
         CommitSlider(
             label = "Starts at",
             value = clip.startMs.toFloat(),
@@ -1104,6 +1116,7 @@ private fun VideoLayerEditor(vm: EditorViewModel, project: Project, layer: Video
         SwitchRow("Mute", layer.muted) { m -> vm.updateVideoLayer(id) { it.copy(muted = m) } }
     }
 
+    RemoveBackgroundRow(vm, video = true) { vm.removeVideoBackground(id) }
     SwitchRow("Remove green screen (chroma key)", layer.chromaKey) { on ->
         vm.updateVideoLayer(id) { it.copy(chromaKey = on) }
     }
@@ -1128,10 +1141,35 @@ private fun VideoLayerEditor(vm: EditorViewModel, project: Project, layer: Video
     }
 }
 
+/**
+ * "Remove background": cuts the person out of a picture or video layer on the phone. Shows the
+ * progress, with Stop, while it works.
+ */
+@Composable
+private fun RemoveBackgroundRow(vm: EditorViewModel, video: Boolean, onRemove: () -> Unit) {
+    val work = vm.cutoutWork
+    if (work != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(work, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { vm.cancelCutout() }) { Text("Stop") }
+        }
+        androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        return
+    }
+    OutlinedButton(onClick = onRemove) { Text("✂ Remove background") }
+    Text(
+        if (video) "Keeps the person and removes everything behind them (up to 1 minute of video; it can " +
+            "take about as long as the video). First time only: downloads a ${com.reelforge.editor.engine.CutOut.MODEL_MB} MB model."
+        else "Keeps the person and makes the rest see-through. First time only: downloads a " +
+            "${com.reelforge.editor.engine.CutOut.MODEL_MB} MB model.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
 /** Sound effect choices. They are added when the video is exported. */
 @Composable
-private fun FxChips(current: AudioFx, onChange: (AudioFx) -> Unit) {
-    Text("Sound effect", style = MaterialTheme.typography.labelLarge)
+private fun FxChips(current: AudioFx, voice: Boolean = false, onChange: (AudioFx) -> Unit) {
+    Text(if (voice) "Voice style" else "Sound effect", style = MaterialTheme.typography.labelLarge)
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1142,7 +1180,7 @@ private fun FxChips(current: AudioFx, onChange: (AudioFx) -> Unit) {
     }
     if (current != AudioFx.NONE) {
         Text(
-            "You will hear this effect in the exported video; the preview plays the original sound.",
+            "Play the video to hear it; the exported video sounds the same.",
             style = MaterialTheme.typography.bodySmall,
         )
     }
@@ -1205,6 +1243,88 @@ fun DuckSlider(vm: EditorViewModel, project: Project?) {
     ) { v -> vm.setDuckLevel(v) }
     Text(
         "For the whole video. It fades down only while your voice speaks, then comes back.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+/**
+ * Auto captions: listens to the video's sound and voice-overs and writes what is said as timed
+ * text. The speech model is downloaded once per language; the sound itself never leaves the phone.
+ */
+@Composable
+fun CaptionsPanel(vm: EditorViewModel, project: Project) {
+    PanelTitle("Auto captions")
+    var language by remember { mutableStateOf(com.reelforge.editor.engine.CaptionLanguage.EN_IN) }
+    val hasVoice = project.audio.any { it.voice }
+    val hasVideoSound = project.clips.any { it.type == ClipType.VIDEO && it.hasAudio && !it.muted }
+    var fromVideo by remember { mutableStateOf(true) }
+    var fromVoice by remember { mutableStateOf(true) }
+    // Re-checked after each run, so a finished download shows as installed.
+    val ready = remember(language, vm.captionWork) { vm.captionModelReady(language) }
+
+    val work = vm.captionWork
+    if (work != null) {
+        Text(work)
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { vm.captionProgress },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        )
+        TextButton(onClick = { vm.stopCaptions() }) { Text("Stop") }
+        Text(
+            "You can keep editing while this runs.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        return
+    }
+
+    Text("Spoken language", style = MaterialTheme.typography.labelLarge)
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        com.reelforge.editor.engine.CaptionLanguage.entries.forEach { lang ->
+            FilterChip(selected = language == lang, onClick = { language = lang }, label = { Text(lang.label) })
+        }
+    }
+    Text(
+        if (ready) "${language.label} is ready on this phone."
+        else "First time only: downloads the ${language.label} speech model (about ${language.sizeMb} MB).",
+        style = MaterialTheme.typography.bodySmall,
+    )
+
+    Spacer(Modifier.height(8.dp))
+    Text("Listen to", style = MaterialTheme.typography.labelLarge)
+    SwitchRow("The video's own sound", fromVideo && hasVideoSound) { fromVideo = it }
+    SwitchRow("Voice-overs", fromVoice && hasVoice) { fromVoice = it }
+
+    val useVideo = fromVideo && hasVideoSound
+    val useVoice = fromVoice && hasVoice
+    Spacer(Modifier.height(8.dp))
+    Button(
+        onClick = { vm.makeCaptions(language, useVideo, useVoice) },
+        enabled = useVideo || useVoice,
+    ) { Text(if (vm.autoCaptionCount > 0) "Make captions again" else "Make captions") }
+    Text(
+        "Captions appear as text on the timeline: tap one to fix a word, or use the Text tool to " +
+            "change the style. Clear speech without music works best.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    if (vm.autoCaptionCount > 0) {
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("${vm.autoCaptionCount} captions", Modifier.weight(1f))
+            TextButton(onClick = { vm.removeAutoCaptions() }) { Text("Remove all captions") }
+        }
+    }
+    if (ready) {
+        TextButton(onClick = { vm.deleteCaptionModel(language) }) {
+            Text("Delete ${language.label} model (frees ${language.sizeMb} MB)")
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Speech models: Vosk project (alphacephei.com), Apache 2.0 licence. Captions are made on " +
+            "your phone; your video and voice are never uploaded.",
         style = MaterialTheme.typography.bodySmall,
     )
 }

@@ -86,14 +86,23 @@ data class Keyframe(
 )
 
 /** A sound effect applied to a clip's audio on export. */
-enum class AudioFx(val label: String) {
+/**
+ * A sound effect. [pitch] above 1 raises the voice (Chipmunk), below 1 lowers it (Deep voice);
+ * the length of the sound stays the same.
+ */
+enum class AudioFx(val label: String, val pitch: Float = 1f) {
     NONE("None"),
+    CHIPMUNK("Chipmunk", 1.6f),
+    DEEP("Deep voice", 0.72f),
+    ROBOT("Robot"),
     ECHO("Echo"),
     REVERB("Hall"),
-    BASS("Bass boost"),
-    TREBLE("Treble boost"),
     PHONE("Telephone"),
-    ROBOT("Robot"),
+    BASS("Bass boost"),
+    TREBLE("Treble boost");
+
+    /** True when the effect only changes pitch (or nothing), with no filter to run. */
+    val filterless: Boolean get() = this == NONE || pitch != 1f
 }
 
 /** A movement that repeats for as long as a sticker or picture is on screen (the "GIF" look). */
@@ -349,6 +358,7 @@ data class AudioClip(
     val offsetMs: Long = 0,   // where in the audio file this clip starts playing
     val audioFx: AudioFx = AudioFx.NONE,
     val voice: Boolean = false, // a voice-over (recorded or spoken); other sound is lowered under it
+    val clean: Boolean = false, // background noise lowered and loudness evened out (Clean voice)
 )
 
 data class MusicTrack(
