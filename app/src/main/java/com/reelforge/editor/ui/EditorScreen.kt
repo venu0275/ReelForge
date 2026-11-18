@@ -538,10 +538,7 @@ fun EditorScreen(vm: EditorViewModel) {
                     Spacer(Modifier.weight(1f))
                     PlayButton(vm, project)
                     Spacer(Modifier.weight(1f))
-                    Text(
-                        "${MediaUtils.formatTime(vm.playheadMs)} / ${MediaUtils.formatTime(project.durationMs)}",
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                    PlayTime(vm, project.durationMs)
                 }
                 timeline(Modifier.fillMaxWidth())
                 if (open == Panel.TEXT) {
@@ -649,6 +646,26 @@ fun EditorScreen(vm: EditorViewModel) {
 
 // ---------------------------------------------------------------- small controls
 
+/** "0:12 / 1:30". Its own composable so only this text redraws while the video plays. */
+@Composable
+private fun PlayTime(vm: EditorViewModel, totalMs: Long) {
+    Text(
+        "${MediaUtils.formatTime(vm.playheadMs)} / ${MediaUtils.formatTime(totalMs)}",
+        style = MaterialTheme.typography.labelMedium,
+    )
+}
+
+/** The time on the playhead line; only this redraws while the video plays. */
+@Composable
+private fun PlayheadPill(
+    vm: EditorViewModel,
+    modifier: Modifier,
+    color: Color,
+    fontSize: androidx.compose.ui.unit.TextUnit,
+) {
+    Text(MediaUtils.formatTime(vm.playheadMs), modifier = modifier, color = color, fontSize = fontSize)
+}
+
 @Composable
 private fun GlyphButton(glyph: String, description: String, enabled: Boolean, onClick: () -> Unit) {
     IconButton(
@@ -708,6 +725,14 @@ private fun EditorMenu(
 ) {
     val clip = vm.selectedClip
     val hasClips = project.clips.isNotEmpty()
+    // Whole seconds only, so the menu redraws once a second while recording rather than on
+    // every playback tick.
+    val voiceSeconds by remember(vm) {
+        derivedStateOf { ((vm.playheadMs - vm.recordingFromMs) / 1000).coerceAtLeast(0) }
+    }
+    val screenSeconds by remember {
+        derivedStateOf { com.reelforge.editor.record.ScreenRecording.elapsedMs / 1000 }
+    }
 
     Column(modifier) {
         Row(
@@ -779,7 +804,7 @@ private fun EditorMenu(
                         com.reelforge.editor.record.ScreenRecording.Status.IDLE -> "⏺ Record screen"
                         com.reelforge.editor.record.ScreenRecording.Status.COUNTDOWN -> "Screen in ${screenRec.countdown}…"
                         com.reelforge.editor.record.ScreenRecording.Status.SAVING -> "Saving screen…"
-                        else -> "■ Screen " + MediaUtils.formatTime(screenRec.elapsedMs).substringBefore('.')
+                        else -> "■ Screen " + MediaUtils.formatTime(screenSeconds * 1000).substringBefore('.')
                     },
                     accent = screenRec.busy,
                 ) { openPanel(Panel.RECORD) }
@@ -787,7 +812,7 @@ private fun EditorMenu(
                     when {
                         vm.voiceCountdown > 0 -> "Voice in ${vm.voiceCountdown}…  ✕"
                         vm.isRecording -> "■ Stop voice " +
-                            MediaUtils.formatTime((vm.playheadMs - vm.recordingFromMs).coerceAtLeast(0)).substringBefore('.')
+                            MediaUtils.formatTime(voiceSeconds * 1000).substringBefore('.')
                         else -> "🎙 Record voice"
                     },
                     enabled = hasClips,
@@ -1051,12 +1076,16 @@ private fun Timeline(
         }
     }
     // Playback, seeks and zooming move the content so the playhead time stays under the line.
-    LaunchedEffect(vm.playheadMs, pxPerMs, contentPx, zoomAnchorMs, scroll.maxValue) {
+    // The playhead is watched inside the effect, so playback scrolls the timeline without
+    // rebuilding it 25 times a second.
+    LaunchedEffect(pxPerMs, contentPx, zoomAnchorMs, scroll.maxValue) {
         val anchor = zoomAnchorMs
         if (anchor != null) {
             scroll.scrollTo((anchor * pxPerMs).roundToInt())
-        } else if (!userScrolling) {
-            scroll.scrollTo((vm.playheadMs * pxPerMs).roundToInt())
+            return@LaunchedEffect
+        }
+        snapshotFlow { vm.playheadMs }.collect { ms ->
+            if (!userScrolling) scroll.scrollTo((ms * pxPerMs).roundToInt())
         }
     }
 
@@ -1239,8 +1268,8 @@ private fun Timeline(
                 .fillMaxHeight()
                 .background(MaterialTheme.colorScheme.primary)
         )
-        Text(
-            MediaUtils.formatTime(vm.playheadMs),
+        PlayheadPill(
+            vm,
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .clip(RoundedCornerShape(50))

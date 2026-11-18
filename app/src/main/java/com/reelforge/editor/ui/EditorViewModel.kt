@@ -70,6 +70,7 @@ import com.reelforge.editor.model.newId
 import com.reelforge.editor.util.MediaUtils
 import com.reelforge.editor.util.SpeechMaker
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -82,6 +83,9 @@ import java.io.File
 class DrawStroke(val color: Int, val points: List<Offset>)
 
 private const val SCRUB_INTERVAL_MS = 90L
+
+// Timeline frames kept in memory (each is small, about 60 KB).
+private const val MAX_FRAMES = 400
 private const val MAX_LAYERED_EXPORT_ATTEMPTS = 3
 
 sealed interface ExportState {
@@ -174,6 +178,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Frames shown along video clips on the timeline, keyed by [frameKey]. */
     val frames = mutableStateMapOf<String, ImageBitmap>()
+    // Which frames were shown least recently, so the oldest can be dropped first.
+    private val frameOrder = LinkedHashSet<String>()
     private val frameQueue = Channel<Pair<String, Long>>(Channel.UNLIMITED)
     private var scrubJob: Job? = null
     private var lastScrubSeekAt = 0L
@@ -1296,7 +1302,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     else emptyList()
                 )
             }
-            layerPlayer.volume = if (layer.muted) 0f else layer.volume.coerceIn(0f, 1f)
+            val layerVolume = if (layer.muted) 0f else layer.volume.coerceIn(0f, 1f)
+            if (layerPlayer.volume != layerVolume) layerPlayer.volume = layerVolume
             val local = playheadMs - layer.startMs
             if (local < 0 || local >= layer.durationMs) {
                 if (layerPlayer.playWhenReady) layerPlayer.playWhenReady = false
@@ -1547,8 +1554,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             voicePlayer.play()
         }
         val length = minOf(clip.durationMs, p.durationMs - clip.startMs)
-        voicePlayer.volume = clip.volume.coerceIn(0f, 1f) *
+        val voiceVolume = clip.volume.coerceIn(0f, 1f) *
             fadeAlpha(playheadMs - clip.startMs, length, clip.fadeInMs, clip.fadeOutMs)
+        if (kotlin.math.abs(voicePlayer.volume - voiceVolume) > 0.005f) voicePlayer.volume = voiceVolume
     }
 
     // ------------------------------------------------------------ freeze frame
@@ -1815,14 +1823,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val inVoice = p != null && p.duckLevel < 1f &&
             p.audio.any { it.voice && playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
         val level = (if (clip.muted) 0f else clip.volume.coerceIn(0f, 2f)) * gain * (if (inVoice) p!!.duckLevel else 1f)
-        player.volume = level.coerceIn(0f, 1f)
+        val volume = level.coerceIn(0f, 1f)
+        if (kotlin.math.abs(player.volume - volume) > 0.005f) player.volume = volume
         boost(if (level > 1f) level else 1f)
     }
 
+    // The last level given to the booster. Changing it talks to the phone's audio system, which is
+    // slow, so it is only done when the level actually changes (not on every playback tick).
+    private var boostedTo = 1f
+
     private fun boost(factor: Float) {
+        val wanted = if (factor <= 1.001f) 1f else factor
+        val session = player.audioSessionId
+        if (kotlin.math.abs(wanted - boostedTo) < 0.02f && (booster == null || boosterSession == session)) return
+        boostedTo = wanted
         runCatching {
-            val session = player.audioSessionId
-            if (factor <= 1.001f) {
+            if (wanted == 1f) {
                 booster?.enabled = false
                 return
             }
@@ -1865,7 +1881,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // from one to the next; pick up the new clip's filter, volume and so on here.
         if (index != shownClipIndex) applyClipParams()
         val local = (source / clip.effectiveSpeed).toLong()
-        playheadMs = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
+        val now = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
+        if (now != playheadMs) playheadMs = now
         // Sound follows the picture fade.
         val gain = fadeAlpha(local, clip.durationMs, clip.fadeInMs, clip.fadeOutMs)
         setMainVolume(clip, gain)
@@ -1881,9 +1898,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val quiet = isRecording && settings.silentWhileRecording
             val inVoice = p.duckLevel < 1f &&
                 p.audio.any { it.voice && playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
-            musicPlayer.volume = if (quiet) 0f else music.volume.coerceIn(0f, 1f) *
+            val musicVolume = if (quiet) 0f else music.volume.coerceIn(0f, 1f) *
                 fadeAlpha(playheadMs - music.startMs, end - music.startMs, music.fadeInMs, music.fadeOutMs) *
                 (if (inVoice) p.duckLevel else 1f)
+            if (kotlin.math.abs(musicPlayer.volume - musicVolume) > 0.005f) musicPlayer.volume = musicVolume
         }
         syncVoice(p)
         syncLayers(p, true)
@@ -1918,34 +1936,74 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (requested.add("f:$uri#$second")) frameQueue.trySend(uri to second)
     }
 
-    /** Loads timeline frames one at a time, reusing the open video while the uri stays the same. */
+    /**
+     * Loads timeline frames in the background.
+     * - Keeps a few videos open at once, so a timeline mixing clips from several files does not
+     *   reopen a file for every frame (opening a video is the slow part).
+     * - Hands finished frames to the screen in small batches, so the timeline redraws a few times
+     *   a second while frames arrive rather than once per frame.
+     * - Keeps at most [MAX_FRAMES] frames in memory; the oldest are dropped and loaded again if
+     *   they scroll back into view.
+     */
     private fun startFrameLoader() {
         viewModelScope.launch(Dispatchers.IO) {
-            var openUri: String? = null
-            var retriever: MediaMetadataRetriever? = null
-            try {
-                for ((uri, second) in frameQueue) {
-                    try {
-                        if (uri != openUri) {
-                            runCatching { retriever?.release() }
-                            retriever = MediaMetadataRetriever().also { it.setDataSource(ctx, Uri.parse(uri)) }
-                            openUri = uri
-                        }
-                        val bitmap = retriever?.getScaledFrameAtTime(
-                            second * 1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 160,
-                        )
-                        if (bitmap != null) {
-                            val image = bitmap.asImageBitmap()
-                            withContext(Dispatchers.Main) { frames["$uri#$second"] = image }
-                        }
-                    } catch (e: Exception) {
-                        runCatching { retriever?.release() }
-                        retriever = null
-                        openUri = null
+            val open = object : LinkedHashMap<String, MediaMetadataRetriever>(4, 0.75f, true) {
+                override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MediaMetadataRetriever>): Boolean {
+                    if (size <= 3) return false
+                    runCatching { eldest.value.release() }
+                    return true
+                }
+            }
+            val ready = ArrayList<Pair<String, ImageBitmap>>()
+            var lastFlush = SystemClock.elapsedRealtime()
+            suspend fun flush() {
+                if (ready.isEmpty()) return
+                val batch = ready.toList()
+                ready.clear()
+                lastFlush = SystemClock.elapsedRealtime()
+                withContext(Dispatchers.Main) {
+                    batch.forEach { (key, image) ->
+                        frames[key] = image
+                        frameOrder.remove(key)
+                        frameOrder.add(key)
+                    }
+                    while (frameOrder.size > MAX_FRAMES) {
+                        val oldest = frameOrder.first()
+                        frameOrder.remove(oldest)
+                        frames.remove(oldest)
+                        requested.remove("f:$oldest")
                     }
                 }
+            }
+            try {
+                while (true) {
+                    // Wait for work; while frames are waiting to be shown, wait only briefly.
+                    val next = if (ready.isEmpty()) frameQueue.receive()
+                    else withTimeoutOrNull(120) { frameQueue.receive() }
+                    if (next != null) {
+                        val (uri, second) = next
+                        val key = "$uri#$second"
+                        try {
+                            val retriever = open[uri] ?: MediaMetadataRetriever().let { r ->
+                                try {
+                                    r.setDataSource(ctx, Uri.parse(uri))
+                                } catch (e: Exception) {
+                                    runCatching { r.release() }
+                                    throw e
+                                }
+                                r.also { open[uri] = it }
+                            }
+                            retriever.getScaledFrameAtTime(
+                                second * 1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 160,
+                            )?.let { ready += key to it.asImageBitmap() }
+                        } catch (e: Exception) {
+                            open.remove(uri)?.let { runCatching { it.release() } }
+                        }
+                    }
+                    if (next == null || ready.size >= 6 || SystemClock.elapsedRealtime() - lastFlush > 150) flush()
+                }
             } finally {
-                runCatching { retriever?.release() }
+                open.values.forEach { runCatching { it.release() } }
             }
         }
     }
