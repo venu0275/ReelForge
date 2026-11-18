@@ -1468,3 +1468,29 @@ class VoiceOverTest {
         assertEquals(0.25f, saved.duckLevel, 0.001f)
     }
 }
+
+class ReplaceVoiceTest {
+    private fun voice(start: Long, length: Long, offset: Long = 0) =
+        AudioClip(uri = "v", title = "Voice", startMs = start, durationMs = length, offsetMs = offset, voice = true)
+
+    @Test fun `a new voice-over cuts the old one into the parts before and after it`() {
+        val old = voice(1_000, 8_000)
+        val out = ProjectOps.cutOutVoice(listOf(old), 3_000, 5_000)
+        assertEquals(2, out.size)
+        assertEquals(1_000L, out[0].startMs)
+        assertEquals(2_000L, out[0].durationMs)
+        assertEquals(5_000L, out[1].startMs)
+        assertEquals(4_000L, out[1].durationMs)
+        assertEquals(4_000L, out[1].offsetMs)
+        assertTrue(out[0].id != out[1].id)
+    }
+
+    @Test fun `fully covered voice-overs go, other sounds stay, tiny leftovers are dropped`() {
+        val covered = voice(3_000, 1_000)
+        val sound = AudioClip(uri = "s", title = "Pop", startMs = 3_000, durationMs = 1_000)
+        val edge = voice(2_900, 2_000)
+        val out = ProjectOps.cutOutVoice(listOf(covered, sound, edge), 3_000, 5_000)
+        assertEquals(listOf(sound), out)
+        assertEquals(listOf(covered), ProjectOps.cutOutVoice(listOf(covered), 5_000, 5_000))
+    }
+}

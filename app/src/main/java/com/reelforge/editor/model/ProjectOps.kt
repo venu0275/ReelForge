@@ -137,6 +137,29 @@ object ProjectOps {
         return null
     }
 
+    /**
+     * Removes the stretch [fromMs]..[toMs] from every voice-over in [audio] (other sounds are kept
+     * as they are). A voice-over across the stretch is split into the part before and after it.
+     */
+    fun cutOutVoice(audio: List<AudioClip>, fromMs: Long, toMs: Long): List<AudioClip> {
+        if (toMs <= fromMs) return audio
+        return audio.flatMap { a ->
+            val end = a.startMs + a.durationMs
+            if (!a.voice || end <= fromMs || a.startMs >= toMs) return@flatMap listOf(a)
+            val parts = mutableListOf<AudioClip>()
+            if (fromMs - a.startMs >= MIN_BAR_MS) parts += a.copy(durationMs = fromMs - a.startMs)
+            if (end - toMs >= MIN_BAR_MS) {
+                parts += a.copy(
+                    id = if (parts.isEmpty()) a.id else newId(),
+                    startMs = toMs,
+                    offsetMs = a.offsetMs + (toMs - a.startMs),
+                    durationMs = end - toMs,
+                )
+            }
+            parts
+        }
+    }
+
     /** The shortest a text, sticker, layer or sound can be made by dragging its ends. */
     const val MIN_BAR_MS = 300L
 

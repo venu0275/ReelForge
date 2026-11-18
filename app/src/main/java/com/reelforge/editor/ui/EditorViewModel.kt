@@ -74,6 +74,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -1408,6 +1409,67 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // --------------------------------------------------- voice-over from the video
+
+    /** Seconds left before a voice-over starts recording (0 when not counting down). */
+    var voiceCountdown by mutableIntStateOf(0)
+        private set
+
+    /** The voice-over just recorded, offered for Retake / Undo for a few seconds. */
+    var lastVoice by mutableStateOf<AudioClip?>(null)
+
+    /** Where on the timeline the current voice-over started. */
+    val recordingFromMs: Long get() = recordStartMs
+
+    private var countdownJob: Job? = null
+    private var replaceVoice = false
+
+    /** True when a voice-over is already playing at the red line. */
+    fun voiceAtPlayhead(): Boolean =
+        project?.audio?.any { it.voice && playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs } == true
+
+    /**
+     * Records a voice-over from the red line while the video plays, after the countdown. With
+     * [replace], older voice-overs are cut out where the new one goes.
+     */
+    fun startVoiceOver(replace: Boolean) {
+        val p = project ?: return
+        if (isRecording || voiceCountdown > 0 || p.clips.isEmpty()) return
+        if (playheadMs >= p.durationMs - 200) seekTo(0)
+        replaceVoice = replace
+        lastVoice = null
+        player.pause()
+        countdownJob = viewModelScope.launch {
+            for (left in settings.voiceCountdown downTo 1) {
+                voiceCountdown = left
+                delay(1_000)
+            }
+            voiceCountdown = 0
+            startRecording()
+        }
+    }
+
+    fun cancelVoiceCountdown() {
+        countdownJob?.cancel()
+        voiceCountdown = 0
+    }
+
+    /** Throws away the voice-over just recorded. */
+    fun undoVoice() {
+        if (lastVoice == null) return
+        lastVoice = null
+        undo()
+    }
+
+    /** Throws away the voice-over just recorded and records it again from the same place. */
+    fun retakeVoice() {
+        val clip = lastVoice ?: return
+        lastVoice = null
+        undo()
+        seekTo(clip.startMs)
+        startVoiceOver(replaceVoice)
+    }
+
     fun stopRecording() {
         if (!isRecording) return
         isRecording = false
@@ -1430,7 +1492,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val clip = AudioClip(
                 uri = uri.toString(), title = "Voice $number", startMs = start, durationMs = duration, voice = true,
             )
-            mutate { it.copy(audio = it.audio + clip) }
+            val replace = replaceVoice
+            // One step for Undo: cutting out the old voice (if replacing) and adding the new one.
+            mutate {
+                val kept = if (replace) ProjectOps.cutOutVoice(it.audio, start, start + duration) else it.audio
+                it.copy(audio = kept + clip)
+            }
+            lastVoice = clip
         }
     }
 
@@ -1757,6 +1825,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Called from the UI a few times per second to move the playhead while playing. */
     fun tick() {
         val p = project ?: return
+        // A voice-over stops by itself at the end of the video.
+        if (isRecording && (player.playbackState == Player.STATE_ENDED || playheadMs >= p.durationMs - 60)) {
+            stopRecording()
+            return
+        }
         if (!player.isPlaying) return
         val (index, source) = shownClip(p) ?: return
         val clip = p.clips.getOrNull(index) ?: return

@@ -149,10 +149,16 @@ fun EditorScreen(vm: EditorViewModel) {
     val pickSound = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.addAudioClip(uri) }
+    // Voice-over from the video: asks Replace / Keep both when one is already at the red line.
+    var askReplaceVoice by remember { mutableStateOf(false) }
+    var voiceSettings by remember { mutableStateOf(false) }
+    val beginVoice: () -> Unit = {
+        if (vm.voiceAtPlayhead()) askReplaceVoice = true else vm.startVoiceOver(replace = false)
+    }
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) vm.startRecording() else vm.message = "Microphone permission is needed to record"
+        if (granted) beginVoice() else vm.message = "Microphone permission is needed to record a voice-over"
     }
     var editingTextId by remember { mutableStateOf<String?>(null) }
     // True while the full-screen "new text" editor is open.
@@ -179,7 +185,12 @@ fun EditorScreen(vm: EditorViewModel) {
     val record: () -> Unit = {
         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
-        if (granted) vm.startRecording() else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        when {
+            vm.isRecording -> vm.stopRecording()
+            vm.voiceCountdown > 0 -> vm.cancelVoiceCountdown()
+            granted -> beginVoice()
+            else -> micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
     val addMedia: () -> Unit = {
         panel = null
@@ -229,18 +240,41 @@ fun EditorScreen(vm: EditorViewModel) {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val preview: @Composable (Modifier) -> Unit = { modifier ->
-        PreviewArea(
-            vm, project, modifier, onEditText = editText, onEditLayer = editLayer,
-            pickedId = previewPick,
-            onPick = { previewPick = it },
-            onRetype = { id ->
-                composeTarget = id
-                composing = true
-            },
-        )
+        Box(modifier) {
+            PreviewArea(
+                vm, project, Modifier.fillMaxSize(), onEditText = editText, onEditLayer = editLayer,
+                pickedId = previewPick,
+                onPick = { previewPick = it },
+                onRetype = { id ->
+                    composeTarget = id
+                    composing = true
+                },
+            )
+            // Countdown, REC time and a big Stop button while a voice-over is recorded.
+            VoiceOverOverlay(vm)
+        }
     }
 
     val messageBar: @Composable () -> Unit = {
+        // Right after a voice-over: Retake or Undo, for a few seconds.
+        val justRecorded = vm.lastVoice
+        LaunchedEffect(justRecorded) {
+            if (justRecorded != null) {
+                delay(8_000)
+                if (vm.lastVoice == justRecorded) vm.lastVoice = null
+            }
+        }
+        if (justRecorded != null) {
+            Row(
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("${justRecorded.title} added", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { vm.retakeVoice() }) { Text("Retake") }
+                TextButton(onClick = { vm.undoVoice() }) { Text("Undo") }
+                TextButton(onClick = { vm.lastVoice = null }) { Text("✕") }
+            }
+        }
         vm.message?.let { msg ->
             Text(
                 msg,
@@ -400,6 +434,7 @@ fun EditorScreen(vm: EditorViewModel) {
                     GlyphButton("↶", "Undo", vm.canUndo) { vm.undo() }
                     GlyphButton("↷", "Redo", vm.canRedo) { vm.redo() }
                     Spacer(Modifier.weight(1f))
+                    VoiceButton(vm, onTap = record, onLongPress = { voiceSettings = true })
                     PlayButton(vm, project)
                 }
                 preview(Modifier.weight(1f).fillMaxHeight())
@@ -479,6 +514,8 @@ fun EditorScreen(vm: EditorViewModel) {
                 ) {
                     JumpButtons(vm, project, vertical = false)
                     Spacer(Modifier.weight(1f))
+                    VoiceButton(vm, onTap = record, onLongPress = { voiceSettings = true })
+                    Spacer(Modifier.width(12.dp))
                     PlayButton(vm, project)
                     Spacer(Modifier.weight(1f))
                     Text(
@@ -517,6 +554,29 @@ fun EditorScreen(vm: EditorViewModel) {
                 }
             }
         }
+    }
+
+    if (askReplaceVoice) {
+        AlertDialog(
+            onDismissRequest = { askReplaceVoice = false },
+            title = { Text("A voice-over is already here") },
+            text = { Text("Replace it where the new one goes, or keep both playing together?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askReplaceVoice = false
+                    vm.startVoiceOver(replace = true)
+                }) { Text("Replace") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    askReplaceVoice = false
+                    vm.startVoiceOver(replace = false)
+                }) { Text("Keep both") }
+            },
+        )
+    }
+    if (voiceSettings) {
+        VoiceSettingsDialog(vm, project) { voiceSettings = false }
     }
 
     if (composing) {
@@ -952,7 +1012,11 @@ private fun Timeline(
 
     val textBars = project.texts.map { Bar(it.id, it.text.replace("\n", " "), it.startMs, it.endMs) }
     val layerBars = project.layers.mapIndexed { i, l -> Bar(l.id, "Layer ${i + 1}", l.startMs, l.endMs) }
-    val audioBars = project.audio.map { Bar(it.id, it.title, it.startMs, it.startMs + it.durationMs) }
+    val audioBars = project.audio.map { Bar(it.id, it.title, it.startMs, it.startMs + it.durationMs) } +
+        // The voice-over being recorded grows on the timeline as you speak.
+        (if (vm.isRecording) listOf(
+            Bar("recording", "● REC", vm.recordingFromMs, maxOf(vm.playheadMs, vm.recordingFromMs + 100))
+        ) else emptyList())
     val videoBars = project.videoLayers.mapIndexed { i, v ->
         Bar(v.id, "Video ${i + 1}", v.startMs, v.startMs + v.durationMs)
     }

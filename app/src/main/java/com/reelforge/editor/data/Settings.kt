@@ -26,6 +26,8 @@ data class AppSettings(
     val exportHevc: Boolean = false,
     /** Play the video without sound while recording a voice-over, so only the voice is recorded. */
     val silentWhileRecording: Boolean = true,
+    /** Seconds counted down on the video before a voice-over starts recording (0 = none). */
+    val voiceCountdown: Int = 3,
 ) {
     /** The same settings with every value forced into its allowed range. */
     fun sanitized(): AppSettings = copy(
@@ -34,6 +36,7 @@ data class AppSettings(
         exportSide = if (exportSide in SIDES) exportSide else 720,
         exportFps = if (exportFps in FPS) exportFps else 30,
         exportQuality = exportQuality.coerceIn(0, 2),
+        voiceCountdown = voiceCountdown.coerceIn(0, 5),
     )
 
     companion object {
@@ -60,6 +63,7 @@ class SettingsStore(context: Context) {
             exportQuality = prefs.getInt("exportQuality", d.exportQuality),
             exportHevc = prefs.getBoolean("exportHevc", d.exportHevc),
             silentWhileRecording = prefs.getBoolean("silentWhileRecording", d.silentWhileRecording),
+            voiceCountdown = prefs.getInt("voiceCountdown", d.voiceCountdown),
         ).sanitized()
     }
 
@@ -75,6 +79,7 @@ class SettingsStore(context: Context) {
             .putInt("exportQuality", s.exportQuality)
             .putBoolean("exportHevc", s.exportHevc)
             .putBoolean("silentWhileRecording", s.silentWhileRecording)
+            .putInt("voiceCountdown", s.voiceCountdown)
             .apply()
     }
 }
