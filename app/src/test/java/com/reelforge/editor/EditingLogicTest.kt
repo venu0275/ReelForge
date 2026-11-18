@@ -1494,3 +1494,31 @@ class ReplaceVoiceTest {
         assertEquals(listOf(covered), ProjectOps.cutOutVoice(listOf(covered), 5_000, 5_000))
     }
 }
+
+class MusicLibraryTest {
+    private fun song(uri: String, title: String, artist: String, album: String, folder: String, modified: Long) =
+        com.reelforge.editor.data.SongItem(uri, title, artist, album, album, 180_000, folder, folder, modified)
+
+    private val songs = listOf(
+        song("1", "Kesariya", "Arijit Singh", "Brahmastra", "Music", 10),
+        song("2", "Voice note", "", "", "Recordings", 30),
+        song("3", "Deva Deva", "Arijit Singh", "Brahmastra", "Music", 20),
+    )
+
+    @Test fun `songs group into albums and folders, newest first`() {
+        val albums = com.reelforge.editor.data.MusicLibrary.albums(songs)
+        assertEquals(listOf("Unknown album", "Brahmastra"), albums.map { it.name })
+        assertEquals(listOf("3", "1"), albums[1].songs.map { it.uri })
+        val folders = com.reelforge.editor.data.MusicLibrary.folders(songs)
+        assertEquals(listOf("Recordings", "Music"), folders.map { it.name })
+    }
+
+    @Test fun `search matches title, artist or album in any letter case`() {
+        val lib = com.reelforge.editor.data.MusicLibrary
+        assertEquals(listOf("1", "3"), lib.search(songs, "arijit").map { it.uri })
+        assertEquals(listOf("3"), lib.search(songs, "DEVA").map { it.uri })
+        assertEquals(listOf("1", "3"), lib.search(songs, "brahma").map { it.uri })
+        assertEquals(songs, lib.search(songs, "  "))
+        assertTrue(lib.search(songs, "zzz").isEmpty())
+    }
+}

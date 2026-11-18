@@ -173,7 +173,7 @@ fun StorePanel(vm: EditorViewModel) {
 
 /** Search for free, public-domain music and sounds online and drop one into the project. */
 @Composable
-private fun MusicFinder(vm: EditorViewModel) {
+fun MusicFinder(vm: EditorViewModel) {
     var query by remember { mutableStateOf("") }
     var effects by remember { mutableStateOf(false) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -47,6 +47,8 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
             "If you don't allow it, you can still pick items with the Android photo picker or Files.",
         "• Screen recording: only when you press Start, after Android asks for your permission. The " +
             "recording, and microphone sound if you turn it on, is saved on your device only and never sent to us.",
+        "• Music and audio: if you allow it, the app lists the songs and audio files on your phone in " +
+            "its own music screen. They are read on your device only and never sent to us.",
         "• Files: music files and font files you import are chosen by you through the Android file picker.",
         "• Saving videos: exported videos are saved to the Movies/CutMitra folder on your device. Files " +
             "there can be seen by your gallery and by other apps that you have given media access.",

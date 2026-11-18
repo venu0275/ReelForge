@@ -125,6 +125,8 @@ fun EditorScreen(vm: EditorViewModel) {
 
     // The in-app media screen (folders and thumbnails, like a gallery) is open.
     var browsing by remember { mutableStateOf(false) }
+    // The in-app music screen (songs, albums, folders, free music) is open.
+    var browsingMusic by remember { mutableStateOf(false) }
     // A new, empty project opens straight onto it.
     LaunchedEffect(project.id) { if (project.clips.isEmpty()) browsing = true }
     val pickMedia = rememberLauncherForActivityResult(
@@ -194,7 +196,25 @@ fun EditorScreen(vm: EditorViewModel) {
     }
     val addMedia: () -> Unit = {
         panel = null
+        browsingMusic = false
         browsing = true
+    }
+    val openMusic: () -> Unit = {
+        panel = null
+        browsing = false
+        browsingMusic = true
+    }
+    val musicBrowser: @Composable (Modifier) -> Unit = { modifier ->
+        MusicBrowser(
+            vm = vm,
+            usedUris = (project.audio.map { it.uri } + listOfNotNull(project.music?.uri)).toSet(),
+            modifier = modifier,
+            onClose = { browsingMusic = false },
+            onFiles = {
+                browsingMusic = false
+                pickAudio.launch(arrayOf("audio/*"))
+            },
+        )
     }
     val mediaBrowser: @Composable (Modifier) -> Unit = { modifier ->
         MediaBrowser(
@@ -326,6 +346,7 @@ fun EditorScreen(vm: EditorViewModel) {
             addMedia = addMedia,
             replace = replace,
             recordVoice = record,
+            openMusic = openMusic,
             openPanel = { which ->
                 if (which == Panel.TEXT) editingTextId = null
                 if (which == Panel.LAYER) editingLayerId = null
@@ -386,9 +407,9 @@ fun EditorScreen(vm: EditorViewModel) {
             Panel.AUDIO -> AudioPanel(
                 vm, project,
                 record = record,
-                pickSound = { pickSound.launch(arrayOf("audio/*")) },
+                pickSound = { openMusic() },
             )
-            Panel.MUSIC -> MusicPanel(vm, project) { pickAudio.launch(arrayOf("audio/*")) }
+            Panel.MUSIC -> MusicPanel(vm, project) { openMusic() }
             Panel.STORE -> StorePanel(vm)
             Panel.RECORD -> RecordPanel(vm, onStarted = { panel = null })
             Panel.EXPORT -> Unit
@@ -424,7 +445,9 @@ fun EditorScreen(vm: EditorViewModel) {
     if (landscape) {
         Column(root) {
             // The media screen takes the place of the preview and menu; the timeline stays below.
-            if (browsing) mediaBrowser(Modifier.weight(1f).fillMaxWidth()) else Row(Modifier.weight(1f)) {
+            if (browsing) mediaBrowser(Modifier.weight(1f).fillMaxWidth())
+            else if (browsingMusic) musicBrowser(Modifier.weight(1f).fillMaxWidth())
+            else Row(Modifier.weight(1f)) {
                 // Left rail: leave, undo, redo, play.
                 Column(
                     Modifier.width(56.dp).fillMaxHeight().padding(vertical = 4.dp),
@@ -502,8 +525,9 @@ fun EditorScreen(vm: EditorViewModel) {
                     modifier = Modifier.padding(end = 8.dp),
                 ) { Text("Export") }
             }
-            if (browsing) {
-                mediaBrowser(Modifier.weight(1f).fillMaxWidth())
+            if (browsing || browsingMusic) {
+                if (browsing) mediaBrowser(Modifier.weight(1f).fillMaxWidth())
+                else musicBrowser(Modifier.weight(1f).fillMaxWidth())
                 messageBar()
                 timeline(Modifier.fillMaxWidth())
             } else {
@@ -682,6 +706,7 @@ private fun EditorMenu(
     addMedia: () -> Unit,
     replace: (String) -> Unit,
     recordVoice: () -> Unit,
+    openMusic: () -> Unit,
     openPanel: (Panel) -> Unit,
 ) {
     val clip = vm.selectedClip
@@ -747,7 +772,8 @@ private fun EditorMenu(
                 MenuTile("Record voice", enabled = hasClips) { recordVoice() }
                 MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
                 MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }
-                MenuTile("Music") { openPanel(Panel.MUSIC) }
+                // Opens the music screen; with music already added, its settings are one tap away there.
+                MenuTile("Music") { if (project.music == null) openMusic() else openPanel(Panel.MUSIC) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
                 MenuTile("Record screen") { openPanel(Panel.RECORD) }
