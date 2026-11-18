@@ -4,8 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Private values kept out of the repository (local.properties is never committed).
-// Add a line "support.email=you@example.com" there so bug reports go to that address.
+// Values that can be overridden in local.properties (never committed), e.g. "support.email=...".
 val localProps = java.util.Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
@@ -22,7 +21,7 @@ android {
         versionCode = 4
         versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "SUPPORT_EMAIL", "\"${localProps.getProperty("support.email", "").trim()}\"")
+        buildConfigField("String", "SUPPORT_EMAIL", "\"${localProps.getProperty("support.email", "developervt0909@gmail.com").trim()}\"")
     }
 
     buildTypes {
