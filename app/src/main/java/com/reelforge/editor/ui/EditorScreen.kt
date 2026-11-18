@@ -250,8 +250,6 @@ fun EditorScreen(vm: EditorViewModel) {
                     composing = true
                 },
             )
-            // Countdown, REC time and a big Stop button while a voice-over is recorded.
-            VoiceOverOverlay(vm)
         }
     }
 

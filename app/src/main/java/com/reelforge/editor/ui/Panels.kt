@@ -880,6 +880,11 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
     SwitchRow("Play the video silently while recording", vm.settings.silentWhileRecording) { on ->
         vm.updateSettings { it.copy(silentWhileRecording = on) }
     }
+    Text(
+        "Without headphones, the microphone also picks up the video's sound. Use headphones, or turn " +
+            "this on to record only your voice.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 
     // The video's own sound, for replacing it with a voice-over or making it louder.
     Spacer(Modifier.height(8.dp))

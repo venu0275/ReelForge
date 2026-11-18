@@ -25,7 +25,7 @@ data class AppSettings(
     val exportQuality: Int = 1,
     val exportHevc: Boolean = false,
     /** Play the video without sound while recording a voice-over, so only the voice is recorded. */
-    val silentWhileRecording: Boolean = true,
+    val silentWhileRecording: Boolean = false,
     /** Seconds counted down on the video before a voice-over starts recording (0 = none). */
     val voiceCountdown: Int = 3,
 ) {

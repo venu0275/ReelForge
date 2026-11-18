@@ -48,6 +48,8 @@ import com.reelforge.editor.util.MediaUtils
 fun VoiceButton(vm: EditorViewModel, onTap: () -> Unit, onLongPress: () -> Unit) {
     val red = MaterialTheme.colorScheme.primary
     val busy = vm.isRecording || vm.voiceCountdown > 0
+    // The state shows here, beside Play, rather than over the video.
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
     Box(
         Modifier
             .size(40.dp)
@@ -68,6 +70,16 @@ fun VoiceButton(vm: EditorViewModel, onTap: () -> Unit, onLongPress: () -> Unit)
             vm.isRecording -> Box(Modifier.size(14.dp).clip(RoundedCornerShape(2.dp)).background(red))
             else -> MicGlyph(Color.White)
         }
+    }
+    when {
+        vm.voiceCountdown > 0 -> Text("Get ready", fontSize = 10.sp, color = red)
+        vm.isRecording -> Text(
+            "Voice " + MediaUtils.formatTime((vm.playheadMs - vm.recordingFromMs).coerceAtLeast(0)).substringBefore('.'),
+            fontSize = 10.sp,
+            color = red,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
     }
 }
 

@@ -1474,6 +1474,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (!isRecording) return
         isRecording = false
         player.pause()
+        // Bring the video's (and music's) sound back at once.
+        applyClipParams()
+        project?.music?.let { musicPlayer.volume = it.volume.coerceIn(0f, 1f) }
         val file = recordFile
         val ok = runCatching { recorder?.stop() }.isSuccess
         runCatching { recorder?.release() }
