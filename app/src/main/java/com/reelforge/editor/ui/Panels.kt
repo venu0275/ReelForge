@@ -339,7 +339,7 @@ private fun Swatches(selected: Int, onPick: (Int) -> Unit) {
 
 /** Palette dots plus a hue slider for any other colour. */
 @Composable
-private fun ColorPicker(selected: Int, onPick: (Int) -> Unit) {
+fun ColorPicker(selected: Int, onPick: (Int) -> Unit) {
     Swatches(selected, onPick)
     var hue by remember { mutableFloatStateOf(0f) }
     Row(verticalAlignment = Alignment.CenterVertically) {

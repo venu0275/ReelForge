@@ -76,12 +76,13 @@ private object LibraryThumbs {
     val cache = LruCache<String, ImageBitmap>(400)
 }
 
-private enum class LibraryTab(val label: String) { ALL("All"), VIDEO("Video"), IMAGE("Image") }
+private enum class LibraryTab(val label: String) { ALL("All"), VIDEO("Video"), IMAGE("Image"), COLOUR("Colour") }
 
 private fun LibraryTab.keeps(item: LibraryItem) = when (this) {
     LibraryTab.ALL -> true
     LibraryTab.VIDEO -> item.isVideo
     LibraryTab.IMAGE -> !item.isVideo
+    LibraryTab.COLOUR -> false
 }
 
 /**
@@ -163,7 +164,7 @@ fun MediaBrowser(
                     Spacer(Modifier.width(12.dp))
                 }
                 Text(
-                    album?.name ?: "Media",
+                    if (tab == LibraryTab.COLOUR) "Colour backgrounds" else album?.name ?: "Media",
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
@@ -175,6 +176,8 @@ fun MediaBrowser(
             }
 
             when {
+                // Plain colours and blends need no permission: they are made on the phone.
+                tab == LibraryTab.COLOUR -> ColourGrid(vm)
                 access == MediaAccess.NONE -> NoAccess(
                     onAllow = { requestAccess.launch(MediaLibrary.permissions()) },
                     onGallery = onGallery,
@@ -386,6 +389,11 @@ private fun TabGlyph(tab: LibraryTab, color: Color) {
                 }
                 drawPath(p, Color.Black)
             }
+            LibraryTab.COLOUR -> {
+                drawCircle(color, radius = s * 0.24f, center = Offset(s * 0.5f, s * 0.3f), style = Stroke(s * 0.08f))
+                drawCircle(color, radius = s * 0.24f, center = Offset(s * 0.3f, s * 0.66f))
+                drawCircle(color, radius = s * 0.24f, center = Offset(s * 0.7f, s * 0.66f), style = Stroke(s * 0.08f))
+            }
             LibraryTab.IMAGE -> {
                 drawRoundRect(color, size = Size(s, s * 0.8f), topLeft = Offset(0f, s * 0.1f),
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.12f), style = Stroke(s * 0.09f))
@@ -395,6 +403,75 @@ private fun TabGlyph(tab: LibraryTab, color: Color) {
                 }
                 drawPath(p, color)
                 drawCircle(color, radius = s * 0.07f, center = Offset(s * 0.7f, s * 0.32f))
+            }
+        }
+    }
+}
+
+private val SolidColours = listOf(
+    0xFF000000, 0xFFFFFFFF, 0xFF9E9E9E, 0xFF37474F, 0xFFD32F2F, 0xFFFF5252, 0xFFFF9800, 0xFFFFC107,
+    0xFFFFEB3B, 0xFF8BC34A, 0xFF2E7D32, 0xFF009688, 0xFF03A9F4, 0xFF1565C0, 0xFF1A237E, 0xFF7C4DFF,
+    0xFF8E24AA, 0xFFFF80AB, 0xFF795548, 0xFFF5E6CA, 0xFF800000, 0xFF0D1B2A,
+).map { it.toInt() }
+
+private val Gradients = listOf(
+    0xFFFF512F to 0xFFDD2476, 0xFF2193B0 to 0xFF6DD5ED, 0xFFF7971E to 0xFFFFD200, 0xFF11998E to 0xFF38EF7D,
+    0xFF8E2DE2 to 0xFF4A00E0, 0xFF232526 to 0xFF414345, 0xFFEE9CA7 to 0xFFFFDDE1, 0xFF0F2027 to 0xFF2C5364,
+    0xFFFC4A1A to 0xFFF7B733, 0xFF000428 to 0xFF004E92,
+).map { (a, b) -> a.toInt() to b.toInt() }
+
+/**
+ * Plain colours and blends to add as a scene (for titles, intros, endings and gaps). They are
+ * drawn on the phone in the project's shape, so nothing is downloaded.
+ */
+@Composable
+private fun ColourGrid(vm: EditorViewModel) {
+    var custom by remember { mutableStateOf(0xFF2196F3.toInt()) }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(64.dp),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Text(
+                "Tap a colour to add it as a scene at the end of your video. Then add text on it for a title.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) { Text("Plain colours", fontWeight = FontWeight.SemiBold) }
+        items(SolidColours) { c ->
+            Box(
+                Modifier
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(c))
+                    .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                    .clickable { vm.addColourClip(c) },
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Text("Colour blends", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
+        }
+        items(Gradients) { (top, bottom) ->
+            Box(
+                Modifier
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(top), Color(bottom))))
+                    .clickable { vm.addColourClip(top, bottom) },
+            )
+        }
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Any colour", fontWeight = FontWeight.SemiBold)
+                ColorPicker(custom) { custom = it }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(Color(custom)))
+                    Spacer(Modifier.width(10.dp))
+                    Button(onClick = { vm.addColourClip(custom) }) { Text("Add this colour") }
+                }
             }
         }
     }

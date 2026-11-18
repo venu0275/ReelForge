@@ -20,7 +20,9 @@ object MediaUtils {
 
     fun probe(context: Context, uri: Uri): MediaInfo? {
         val mime = context.contentResolver.getType(uri).orEmpty()
-        if (mime.startsWith("image")) {
+        val picture = mime.isEmpty() &&
+            uri.path.orEmpty().lowercase().let { p -> listOf(".png", ".jpg", ".jpeg", ".webp").any { p.endsWith(it) } }
+        if (mime.startsWith("image") || picture) {
             return MediaInfo(ClipType.IMAGE, DEFAULT_IMAGE_DURATION_MS, false)
         }
         val r = MediaMetadataRetriever()

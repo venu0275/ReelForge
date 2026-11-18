@@ -1182,6 +1182,53 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------------ colour clips
+
+    /**
+     * Adds a plain colour (or a top-to-bottom blend of [top] and [bottom]) as a photo clip the
+     * shape of the project, for titles, intros, endings and gaps. Made on the phone: no download.
+     */
+    fun addColourClip(top: Int, bottom: Int = top) {
+        val p = project ?: return
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                runCatching {
+                    val short = 1080f
+                    val ratio = p.aspect.w.toFloat() / p.aspect.h
+                    val w = (if (ratio >= 1f) short * ratio else short).toInt() / 2 * 2
+                    val h = (if (ratio >= 1f) short else short / ratio).toInt() / 2 * 2
+                    fun hex(c: Int) = "%06X".format(c and 0xFFFFFF)
+                    val name = if (top == bottom) "Colour_${hex(top)}" else "Gradient_${hex(top)}_${hex(bottom)}"
+                    val dir = File(ctx.filesDir, "colours").apply { mkdirs() }
+                    val f = File(dir, "${name}_${w}x$h.png")
+                    if (f.length() == 0L) {
+                        val bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                        val canvas = android.graphics.Canvas(bitmap)
+                        val paint = android.graphics.Paint()
+                        if (top == bottom) {
+                            canvas.drawColor(top or (0xFF shl 24))
+                        } else {
+                            paint.shader = android.graphics.LinearGradient(
+                                0f, 0f, 0f, h.toFloat(), top or (0xFF shl 24), bottom or (0xFF shl 24),
+                                android.graphics.Shader.TileMode.CLAMP,
+                            )
+                            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
+                        }
+                        f.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                        bitmap.recycle()
+                    }
+                    f
+                }.getOrNull()
+            }
+            if (file == null) {
+                message = "Could not make the colour picture"
+                return@launch
+            }
+            addMedia(listOf(Uri.fromFile(file)))
+            message = "Colour added to the end of your video"
+        }
+    }
+
     fun addVideoLayer(uri: Uri) {
         val p = project ?: return
         if (p.videoLayers.size >= ExportManager.MAX_VIDEO_LAYERS) {
