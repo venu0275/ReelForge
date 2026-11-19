@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -132,11 +133,17 @@ fun MediaBrowser(
     }
 
     Row(modifier.background(MaterialTheme.colorScheme.surface)) {
-        // Left rail: All, Video, Image.
+        // Left rail: All, Video, Image, Colour. It scrolls, and sits closer together when the
+        // screen is short (landscape), so the last tab is never cut off.
+        val short = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
         Column(
-            Modifier.width(64.dp).fillMaxHeight().padding(vertical = 8.dp),
+            Modifier
+                .width(64.dp)
+                .fillMaxHeight()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(vertical = if (short) 4.dp else 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(if (short) 4.dp else 14.dp),
         ) {
             LibraryTab.entries.forEach { t ->
                 val on = t == tab

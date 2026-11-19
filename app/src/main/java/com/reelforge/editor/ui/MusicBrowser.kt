@@ -164,10 +164,16 @@ fun MusicBrowser(
     }
 
     Row(modifier.background(MaterialTheme.colorScheme.surface)) {
+        // Scrolls, and sits closer together on short (landscape) screens, so no tab is cut off.
+        val short = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 480
         Column(
-            Modifier.width(64.dp).fillMaxHeight().padding(vertical = 8.dp),
+            Modifier
+                .width(64.dp)
+                .fillMaxHeight()
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(vertical = if (short) 4.dp else 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(if (short) 4.dp else 12.dp),
         ) {
             MusicTab.entries.forEach { t ->
                 val on = t == tab
