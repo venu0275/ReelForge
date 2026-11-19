@@ -1089,6 +1089,19 @@ private fun Timeline(
         if (dragged) {
             userScrolling = true
             vm.pause()
+        } else if (userScrolling && !scroll.isScrollInProgress) {
+            // A short drag can end before the effect below saw the scroll start; without this,
+            // userScrolling stayed true and the timeline stopped following playback.
+            userScrolling = false
+            scroll.scrollTo((vm.playheadMs * latestPxPerMs).roundToInt())
+        }
+    }
+    // Playing means nobody is scrubbing or pinching: clear any flag a cut-short gesture left
+    // behind, so the timeline always moves with the video.
+    LaunchedEffect(vm.isPlaying) {
+        if (vm.isPlaying) {
+            userScrolling = false
+            zoomAnchorMs = null
         }
     }
     LaunchedEffect(scroll.isScrollInProgress) {
@@ -1100,7 +1113,7 @@ private fun Timeline(
     LaunchedEffect(userScrolling) {
         if (userScrolling) {
             snapshotFlow { scroll.value }.collect { px ->
-                if (zoomAnchorMs == null) vm.scrubTo((px / latestPxPerMs).toLong())
+                if (zoomAnchorMs == null && !vm.isPlaying) vm.scrubTo((px / latestPxPerMs).toLong())
             }
         }
     }
@@ -1114,7 +1127,7 @@ private fun Timeline(
             return@LaunchedEffect
         }
         snapshotFlow { vm.playheadMs }.collect { ms ->
-            if (!userScrolling) scroll.scrollTo((ms * pxPerMs).roundToInt())
+            if (!userScrolling || vm.isPlaying) scroll.scrollTo((ms * pxPerMs).roundToInt())
         }
     }
 
@@ -1144,17 +1157,21 @@ private fun Timeline(
                 // Two fingers zoom the timeline; one finger is left to the scroll below.
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
-                    do {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val fingers = event.changes.count { it.pressed }
-                        if (fingers >= 2) {
-                            if (zoomAnchorMs == null) zoomAnchorMs = vm.playheadMs
-                            val zoom = event.calculateZoom()
-                            if (zoom != 1f) dpPerSecond = (dpPerSecond * zoom).coerceIn(4f, 240f)
-                            event.changes.forEach { it.consume() }
-                        }
-                    } while (event.changes.any { it.pressed })
-                    zoomAnchorMs = null
+                    try {
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val fingers = event.changes.count { it.pressed }
+                            if (fingers >= 2) {
+                                if (zoomAnchorMs == null) zoomAnchorMs = vm.playheadMs
+                                val zoom = event.calculateZoom()
+                                if (zoom != 1f) dpPerSecond = (dpPerSecond * zoom).coerceIn(4f, 240f)
+                                event.changes.forEach { it.consume() }
+                            }
+                        } while (event.changes.any { it.pressed })
+                    } finally {
+                        // Also when the gesture is cancelled; a leftover anchor froze the timeline.
+                        zoomAnchorMs = null
+                    }
                 }
             }
     ) {
