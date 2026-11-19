@@ -145,7 +145,10 @@ class ScreenshotTest {
     private fun waitForText(text: String) {
         closeSystemDialogs()
         rule.waitUntil(20_000) {
-            rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            runCatching {
+                rule.onAllNodesWithText(text, substring = true, useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
+            }.getOrDefault(false)
         }
     }
 

@@ -194,11 +194,16 @@ class GreenBackgroundOverlay(
         val h = size?.height ?: mask.height
         val full = Bitmap.createScaledBitmap(mask, w, h, true)
         if (full !== mask) mask.recycle()
+        // The previous frame's picture has already been copied to the GPU and is only compared
+        // by identity, so it can be freed now (about 8 MB each at 1080p).
+        last?.takeIf { it !== full && !it.isRecycled }?.recycle()
         last = full
         return full
     }
 
     override fun close() {
         runCatching { retriever.release() }
+        last?.recycle()
+        last = null
     }
 }

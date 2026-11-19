@@ -24,7 +24,11 @@ class EditorUiTest {
 
     private fun waitForText(text: String) {
         rule.waitUntil(15_000) {
-            rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            // While the activity is being recreated (rotation, screen setting) there is briefly
+            // no screen to search; keep waiting instead of failing.
+            runCatching {
+                rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            }.getOrDefault(false)
         }
     }
 
