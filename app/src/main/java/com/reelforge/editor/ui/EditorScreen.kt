@@ -118,7 +118,15 @@ fun EditorScreen(vm: EditorViewModel) {
 
     LaunchedEffect(Unit) {
         while (true) {
-            vm.tick()
+            // One failed tick (a player or recorder in a bad state) must not end this loop,
+            // or the playhead and timeline freeze while the video keeps playing.
+            try {
+                vm.tick()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("ReelForge", "Playhead tick failed", e)
+            }
             delay(40)
         }
     }
@@ -1852,34 +1860,38 @@ private fun PreviewArea(
                                 var moved = false
                                 var travel = Offset.Zero
                                 var pinch = 1f
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    if (event.changes.any { it.isConsumed }) break
-                                    val pan = event.calculatePan()
-                                    val zoom = event.calculateZoom()
-                                    if (!moved) {
-                                        travel += pan
-                                        pinch *= zoom
-                                        moved = travel.getDistance() > viewConfiguration.touchSlop ||
-                                            abs(pinch - 1f) > 0.03f
-                                        if (moved) {
-                                            liveClipId = clipId
-                                            livePan = travel
-                                            liveZoom = pinch
+                                try {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        if (event.changes.any { it.isConsumed }) break
+                                        val pan = event.calculatePan()
+                                        val zoom = event.calculateZoom()
+                                        if (!moved) {
+                                            travel += pan
+                                            pinch *= zoom
+                                            moved = travel.getDistance() > viewConfiguration.touchSlop ||
+                                                abs(pinch - 1f) > 0.03f
+                                            if (moved) {
+                                                liveClipId = clipId
+                                                livePan = travel
+                                                liveZoom = pinch
+                                            }
+                                        } else {
+                                            livePan += pan
+                                            liveZoom *= zoom
                                         }
-                                    } else {
-                                        livePan += pan
-                                        liveZoom *= zoom
+                                        if (moved) event.changes.forEach { it.consume() }
+                                        if (event.changes.none { it.pressed }) break
                                     }
-                                    if (moved) event.changes.forEach { it.consume() }
-                                    if (event.changes.none { it.pressed }) break
+                                    if (moved) {
+                                        vm.frameClip(clipId, livePan.x / size.width, livePan.y / size.height, liveZoom)
+                                    }
+                                } finally {
+                                    // Also when the touch is cancelled, so the picture never stays shifted.
+                                    liveClipId = null
+                                    livePan = Offset.Zero
+                                    liveZoom = 1f
                                 }
-                                if (moved) {
-                                    vm.frameClip(clipId, livePan.x / size.width, livePan.y / size.height, liveZoom)
-                                }
-                                liveClipId = null
-                                livePan = Offset.Zero
-                                liveZoom = 1f
                             }
                         },
                 )
