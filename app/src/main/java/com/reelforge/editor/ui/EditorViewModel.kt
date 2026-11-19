@@ -222,6 +222,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private var effectSignature = ""
     private var musicSignature = ""
     private var effectsEverSet = false
+    // Set when this phone's preview cannot play the effects; the preview then shows the plain
+    // picture and sound (the exported video still has everything).
+    private var previewEffectsOff = false
+    private var lastPlayerErrorAt = 0L
     private val history = History<Project>()
     private var saveJob: Job? = null
     private var transformer: Transformer? = null
@@ -244,9 +248,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
-            override fun onPlayerError(error: PlaybackException) {
-                message = "Playback error: ${error.errorCodeName}"
-            }
+            override fun onPlayerError(error: PlaybackException) = recoverFromPlayerError(error)
         })
         refreshProjects()
         startFrameLoader()
@@ -404,6 +406,16 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun updateClip(id: String, block: (Clip) -> Clip) = mutate { p ->
         p.copy(clips = p.clips.map { if (it.id == id) block(it) else it })
     }
+
+    /** Saves a drag / pinch of the picture in the preview (one Undo step). */
+    fun frameClip(id: String, dxFraction: Float, dyFraction: Float, pinch: Float) {
+        val clip = project?.clips?.firstOrNull { it.id == id } ?: return
+        val f = com.reelforge.editor.model.ClipFraming.after(clip, dxFraction, dyFraction, pinch)
+        updateClip(id) { it.copy(zoom = f.zoom, panX = f.panX, panY = f.panY) }
+    }
+
+    /** Puts the picture back to its normal size and place in the frame. */
+    fun resetFraming(id: String) = updateClip(id) { it.copy(zoom = 1f, panX = 0f, panY = 0f) }
 
     fun deleteClip(id: String) {
         mutate { ProjectOps.delete(it, id) }
@@ -1566,9 +1578,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         // Effect and clean-up are picked up live, so changing them is heard straight away.
-        voiceFx.fx = clip.audioFx
-        voiceFx.clean = clip.clean
-        val voicePitch = clip.audioFx.pitch
+        voiceFx.fx = if (previewEffectsOff) com.reelforge.editor.model.AudioFx.NONE else clip.audioFx
+        voiceFx.clean = clip.clean && !previewEffectsOff
+        val voicePitch = if (previewEffectsOff) 1f else clip.audioFx.pitch
         if (voicePlayer.playbackParameters.pitch != voicePitch) {
             voicePlayer.playbackParameters = PlaybackParameters(1f, voicePitch)
         }
@@ -2179,6 +2191,39 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // ---------------------------------------------------------------- playback
 
     /** One piece for the player: a single clip, or several that were only split apart. */
+    /**
+     * The preview player stopped with an error. The full error goes to the app's log (and so into
+     * bug reports). The player is started again where it was; if it fails again soon after, the
+     * preview's effects are switched off, which is the usual cause on phones whose video drivers
+     * cannot run them, and it starts once more.
+     */
+    private fun recoverFromPlayerError(error: PlaybackException) {
+        android.util.Log.e("CutMitra", "Preview error ${error.errorCodeName}", error)
+        val now = SystemClock.elapsedRealtime()
+        val again = now - lastPlayerErrorAt < 8_000
+        lastPlayerErrorAt = now
+        if (again && !previewEffectsOff) {
+            previewEffectsOff = true
+            mainFx.fx = com.reelforge.editor.model.AudioFx.NONE
+            mainFx.clean = false
+            voiceFx.fx = com.reelforge.editor.model.AudioFx.NONE
+            voiceFx.clean = false
+            runCatching { if (effectsEverSet) player.setVideoEffects(emptyList()) }
+            message = "The preview had a problem on this phone, so filters and sound effects are " +
+                "hidden in the preview. Your exported video still has them."
+        } else if (again) {
+            message = "The preview could not play this part (${error.errorCodeName}). " +
+                "Try Report a bug in Settings so we can fix it."
+            return
+        }
+        // Start again from the same place; playlists keep their position after prepare().
+        val wasPlaying = player.playWhenReady
+        runCatching {
+            player.prepare()
+            player.playWhenReady = wasPlaying
+        }
+    }
+
     private fun toMediaItem(clips: List<Clip>, range: IntRange): MediaItem {
         val clip = clips[range.first]
         if (range.first == range.last) return toMediaItem(clip)
@@ -2252,6 +2297,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             if (clip.type == ClipType.VIDEO) (clip.pitch * clip.audioFx.pitch).coerceIn(0.4f, 2.5f) else 1f,
         )
         setMainVolume(clip, 1f)
+        if (previewEffectsOff) {
+            mainFx.fx = com.reelforge.editor.model.AudioFx.NONE
+            return
+        }
         val signature = EffectFactory.previewSignature(clip, p)
         if (signature != effectSignature) {
             effectSignature = signature

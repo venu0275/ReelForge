@@ -540,13 +540,15 @@ object ExportManager {
         }
         video += EffectFactory.color(clip)
         if (EffectFactory.usesBackground(clip, project)) {
-            video += EffectFactory.background(project, width, height)
+            // The backdrop stays put while the picture is resized / moved over it.
+            video += EffectFactory.background(project, width, height, clip)
         } else {
             video += Presentation.createForWidthAndHeight(
                 width,
                 height,
                 if (clip.fill) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT,
             )
+            EffectFactory.framing(clip)?.let { video += it }
         }
         val durationUs = clip.durationMs * 1000
         val inUs = clip.fadeInMs * 1000

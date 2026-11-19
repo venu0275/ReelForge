@@ -24,7 +24,6 @@ import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.Brightness
 import androidx.media3.effect.Contrast
-import androidx.media3.effect.Crop
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.RgbAdjustment
@@ -34,6 +33,7 @@ import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.effect.VideoCompositorSettings
 import com.reelforge.editor.model.Background
 import com.reelforge.editor.model.Clip
+import com.reelforge.editor.model.ClipFraming
 import com.reelforge.editor.model.FilterPreset
 import com.reelforge.editor.model.Keyframe
 import com.reelforge.editor.model.LoopFx
@@ -368,9 +368,10 @@ class BackgroundFitEffect(
     private val outHeight: Int,
     private val blur: Boolean,
     private val color: Int,
+    private val framing: ClipFraming = ClipFraming.NONE,
 ) : GlEffect {
     override fun toGlShaderProgram(context: Context, useHdr: Boolean): GlShaderProgram =
-        BackgroundFitProgram(outWidth, outHeight, blur, color)
+        BackgroundFitProgram(outWidth, outHeight, blur, color, framing)
 }
 
 @OptIn(UnstableApi::class)
@@ -379,6 +380,7 @@ private class BackgroundFitProgram(
     private val outHeight: Int,
     private val blur: Boolean,
     color: Int,
+    private val framing: ClipFraming,
 ) : BaseGlShaderProgram(/* useHighPrecisionColorComponents= */ false, /* texturePoolCapacity= */ 1) {
 
     private val program: GlProgram = try {
@@ -424,6 +426,8 @@ private class BackgroundFitProgram(
             program.setFloatsUniform("uBg", bg)
             program.setFloatsUniform("uColor", rgba)
             program.setFloatUniform("uBlur", if (blur) 1f else 0f)
+            program.setFloatUniform("uZoom", framing.zoom)
+            program.setFloatsUniform("uPan", floatArrayOf(framing.ndcX, framing.ndcY))
             program.bindAttributesAndUniforms()
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
         } catch (e: GlUtil.GlException) {
@@ -457,9 +461,12 @@ private class BackgroundFitProgram(
             uniform vec2 uBg;
             uniform vec4 uColor;
             uniform float uBlur;
+            uniform float uZoom;
+            uniform vec2 uPan;
             varying vec2 vPos;
             void main() {
-              vec2 p = vPos / uFg;
+              // The picture, resized and moved by the user; the backdrop stays where it is.
+              vec2 p = (vPos - uPan) / (uFg * uZoom);
               if (abs(p.x) <= 1.0 && abs(p.y) <= 1.0) {
                 gl_FragColor = texture2D(uTexSampler, p * 0.5 + 0.5);
               } else if (uBlur > 0.5) {
@@ -631,7 +638,7 @@ object EffectFactory {
         0f, 0f, 0f, 1f,
     )
 
-    /** Mirror, rotation and centre zoom. */
+    /** Mirror and rotation. (Size and position in the frame are [framing].) */
     fun geometry(clip: Clip): List<Effect> {
         val out = mutableListOf<Effect>()
         if (clip.rotation % 360 != 0 || clip.flipH) {
@@ -640,11 +647,26 @@ object EffectFactory {
                 .setRotationDegrees(-clip.rotation.toFloat()) // model is clockwise
                 .build()
         }
-        if (clip.zoom > 1.01f) {
-            val edge = 1f / clip.zoom.coerceIn(1f, 4f)
-            out += Crop(-edge, edge, -edge, edge)
-        }
         return out
+    }
+
+    /** True when the user has resized or moved the picture inside the frame. */
+    fun isFramed(clip: Clip): Boolean =
+        kotlin.math.abs(clip.zoom - 1f) > 0.005f || kotlin.math.abs(clip.panX) > 0.001f || kotlin.math.abs(clip.panY) > 0.001f
+
+    /**
+     * Resizes and moves the whole fitted frame (export only, after the fit step). Where the
+     * picture moves away from an edge, the frame shows black, as in the preview.
+     */
+    fun framing(clip: Clip): Effect? {
+        if (!isFramed(clip)) return null
+        val f = ClipFraming.of(clip)
+        return MatrixTransformation {
+            android.graphics.Matrix().apply {
+                setScale(f.zoom, f.zoom)
+                postTranslate(f.ndcX, f.ndcY)
+            }
+        }
     }
 
     fun color(clip: Clip): List<Effect> {
@@ -682,8 +704,11 @@ object EffectFactory {
     fun usesBackground(clip: Clip, project: Project): Boolean =
         !clip.fill && project.background != Background.BLACK
 
-    fun background(project: Project, width: Int, height: Int): Effect =
-        BackgroundFitEffect(width, height, project.background == Background.BLUR, project.backgroundColor)
+    fun background(project: Project, width: Int, height: Int, clip: Clip? = null): Effect =
+        BackgroundFitEffect(
+            width, height, project.background == Background.BLUR, project.backgroundColor,
+            clip?.let { ClipFraming.of(it) } ?: ClipFraming.NONE,
+        )
 
     fun preview(clip: Clip, project: Project): List<Effect> {
         val out = (geometry(clip) + color(clip)).toMutableList()
@@ -697,7 +722,7 @@ object EffectFactory {
     /** A string that changes whenever [preview] would return something different. */
     fun previewSignature(clip: Clip, project: Project): String =
         "${clip.rotation % 360}|${clip.filter}|${clip.brightness}|${clip.contrast}|" +
-            "${clip.saturation}|${clip.flipH}|${if (clip.zoom > 1.01f) clip.zoom else 1.0f}|" +
+            "${clip.saturation}|${clip.flipH}|" +
             if (usesBackground(clip, project)) {
                 "${project.background}|${project.backgroundColor}|${project.aspect}"
             } else "-"

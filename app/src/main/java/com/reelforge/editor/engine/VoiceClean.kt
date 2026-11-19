@@ -159,10 +159,13 @@ class LiveAudioFx : BaseAudioProcessor() {
     override fun onFlush() = rebuild()
 
     override fun queueInput(inputBuffer: ByteBuffer) {
-        if (effects.isEmpty() || fx != usedFx || clean != usedClean) rebuild()
-        val count = effects.size
+        if (effects.isEmpty() || fx != usedFx || clean != usedClean) {
+            // A problem setting up the effect must never stop playback: play the sound as it is.
+            runCatching { rebuild() }.onFailure { usedFx = AudioFx.NONE; usedClean = false }
+        }
+        val count = effects.size.coerceAtLeast(1)
         val out = replaceOutputBuffer(inputBuffer.remaining())
-        if (usedFx.filterless && !usedClean) {
+        if ((usedFx.filterless && !usedClean) || effects.isEmpty()) {
             out.put(inputBuffer)
         } else {
             while (inputBuffer.remaining() >= 2 * count) {

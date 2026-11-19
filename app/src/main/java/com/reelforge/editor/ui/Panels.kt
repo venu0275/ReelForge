@@ -256,7 +256,7 @@ fun AdjustPanel(vm: EditorViewModel, clip: Clip) {
     CommitSlider("Saturation", clip.saturation, -100f..100f, { "%+.0f".format(it) }) { v ->
         vm.updateClip(clip.id) { it.copy(saturation = v) }
     }
-    CommitSlider("Zoom", clip.zoom, 1f..3f, { "%.1fx".format(it) }) { v ->
+    CommitSlider("Size", clip.zoom, 0.3f..4f, { "%.1fx".format(it) }) { v ->
         vm.updateClip(clip.id) { it.copy(zoom = v) }
     }
     CommitSlider("Opacity", clip.opacity, 0f..1f, { "${(it * 100).roundToInt()}%" }) { v ->

@@ -217,3 +217,36 @@ class BugReportTest {
         assertEquals("CutMitra bug: ".length + 60, com.reelforge.editor.ui.BugReportText("x".repeat(200), "", null).subject.length)
     }
 }
+
+class PictureFramingTest {
+    private val photo = Clip(uri = "p", type = ClipType.IMAGE, sourceDurationMs = 3_000)
+
+    @Test fun `drag and pinch add to where the picture already is`() {
+        val f = com.reelforge.editor.model.ClipFraming.after(photo.copy(zoom = 1.2f, panX = 0.1f), 0.2f, -0.1f, 1.5f)
+        assertEquals(1.8f, f.zoom, 1e-4f)
+        assertEquals(0.3f, f.panX, 1e-4f)
+        assertEquals(-0.1f, f.panY, 1e-4f)
+    }
+
+    @Test fun `the picture can not be resized or pushed out of reach`() {
+        val tiny = com.reelforge.editor.model.ClipFraming.after(photo, 5f, -5f, 0.01f)
+        assertEquals(com.reelforge.editor.model.ClipFraming.MIN_ZOOM, tiny.zoom, 1e-4f)
+        assertTrue(tiny.panX < 1f && tiny.panY > -1f)
+        val huge = com.reelforge.editor.model.ClipFraming.after(photo, 0f, 0f, 100f)
+        assertEquals(com.reelforge.editor.model.ClipFraming.MAX_ZOOM, huge.zoom, 1e-4f)
+    }
+
+    @Test fun `moving right and down is right and down in video units`() {
+        val f = com.reelforge.editor.model.ClipFraming.of(photo.copy(panX = 0.25f, panY = 0.1f))
+        assertEquals(0.5f, f.ndcX, 1e-4f)
+        assertEquals(-0.2f, f.ndcY, 1e-4f)
+    }
+
+    @Test fun `size and position survive saving`() {
+        val moved = photo.copy(zoom = 1.6f, panX = -0.2f, panY = 0.3f)
+        val saved = ProjectJson.decode(ProjectJson.encode(Project(name = "p", clips = listOf(moved)))).clips.single()
+        assertEquals(1.6f, saved.zoom, 1e-4f)
+        assertEquals(-0.2f, saved.panX, 1e-4f)
+        assertEquals(0.3f, saved.panY, 1e-4f)
+    }
+}

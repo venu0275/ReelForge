@@ -53,7 +53,9 @@ data class Clip(
     val name: String = "",      // the file's name, shown on the timeline
     val hasAudio: Boolean = true,
     val opacity: Float = 1f,      // 0..1, blended over black
-    val zoom: Float = 1f,         // 1..3, centre zoom
+    val zoom: Float = 1f,         // size of the picture in the frame: 0.3..4 (1 = as fitted)
+    val panX: Float = 0f,         // move right, as a part of the frame width (-1..1)
+    val panY: Float = 0f,         // move down, as a part of the frame height (-1..1)
     val flipH: Boolean = false,   // mirror
     val fill: Boolean = false,    // true = crop to fill the frame, false = fit with bars
     val transition: TransitionStyle = TransitionStyle.FADE,
@@ -141,6 +143,40 @@ enum class PhotoMotion(val label: String) {
 }
 
 data class MotionPose(val scale: Float, val dx: Float, val dy: Float)
+
+/**
+ * Where the user has put the picture in the frame, clamped to sensible limits. [ndcX]/[ndcY]
+ * are the same shift in the -1..1 frame units the video effects use (y up).
+ */
+data class ClipFraming(val zoom: Float, val panX: Float, val panY: Float) {
+    val ndcX: Float get() = panX * 2f
+    val ndcY: Float get() = -panY * 2f
+
+    companion object {
+        const val MIN_ZOOM = 0.3f
+        const val MAX_ZOOM = 4f
+        val NONE = ClipFraming(1f, 0f, 0f)
+
+        fun of(clip: Clip) = ClipFraming(
+            clip.zoom.coerceIn(MIN_ZOOM, MAX_ZOOM), clip.panX.coerceIn(-1f, 1f), clip.panY.coerceIn(-1f, 1f),
+        )
+
+        /**
+         * The result of dragging by ([dxFraction], [dyFraction]) of the frame and pinching by
+         * [pinch], starting from [clip]. The picture keeps at least a little of itself inside
+         * the frame, so it cannot be lost off the edge.
+         */
+        fun after(clip: Clip, dxFraction: Float, dyFraction: Float, pinch: Float): ClipFraming {
+            val zoom = (clip.zoom * pinch).coerceIn(MIN_ZOOM, MAX_ZOOM)
+            val limit = (zoom / 2f + 0.4f).coerceAtMost(1f)
+            return ClipFraming(
+                zoom,
+                (clip.panX + dxFraction).coerceIn(-limit, limit),
+                (clip.panY + dyFraction).coerceIn(-limit, limit),
+            )
+        }
+    }
+}
 
 /**
  * Speed that changes inside a clip. [curve] gives the speed (times the clip's own speed) at each

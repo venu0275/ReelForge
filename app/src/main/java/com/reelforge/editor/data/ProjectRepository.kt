@@ -162,6 +162,8 @@ object ProjectJson {
         put("hasAudio", c.hasAudio)
         put("opacity", c.opacity.toDouble())
         put("zoom", c.zoom.toDouble())
+        put("panX", c.panX.toDouble())
+        put("panY", c.panY.toDouble())
         put("flipH", c.flipH)
         put("fill", c.fill)
         put("transition", c.transition.name)
@@ -269,6 +271,8 @@ object ProjectJson {
                 hasAudio = c.optBoolean("hasAudio", true),
                 opacity = c.optDouble("opacity", 1.0).toFloat(),
                 zoom = c.optDouble("zoom", 1.0).toFloat(),
+                panX = c.optDouble("panX", 0.0).toFloat(),
+                panY = c.optDouble("panY", 0.0).toFloat(),
                 flipH = c.optBoolean("flipH", false),
                 fill = c.optBoolean("fill", false),
                 transition = runCatching { TransitionStyle.valueOf(c.optString("transition")) }

@@ -20,8 +20,8 @@ android {
         applicationId = "com.reelforge.editor"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.1.0"
+        versionCode = 5
+        versionName = "1.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPPORT_EMAIL", "\"${localProps.getProperty("support.email", "developervt0909@gmail.com").trim()}\"")
     }

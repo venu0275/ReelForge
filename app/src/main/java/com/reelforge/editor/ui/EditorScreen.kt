@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -79,6 +80,7 @@ import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -776,9 +778,10 @@ private fun EditorMenu(
         if (clip != null) {
             Text(
                 if (vm.canCutSelectedClip) {
-                    "Trim left removes what is before the red line. Trim right removes what is after it."
+                    "Trim left removes what is before the red line. Trim right removes what is after it. " +
+                        "Drag or pinch the picture above to move or resize it."
                 } else {
-                    "To trim or split, move the red line onto this clip."
+                    "To trim or split, or to move the picture, move the red line onto this clip."
                 },
                 modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp),
                 style = MaterialTheme.typography.bodySmall,
@@ -855,6 +858,9 @@ private fun EditorMenu(
                 }
                 MenuTile("Fine trim") { openPanel(Panel.TRIM) }
                 MenuTile("Replace") { replace(id) }
+                if (com.reelforge.editor.engine.EffectFactory.isFramed(clip)) {
+                    MenuTile("Reset position") { vm.resetFraming(id) }
+                }
                 if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
                 if (isVideo) {
                     // Shows its progress on the tile; tap again to stop.
@@ -1760,6 +1766,11 @@ private fun PreviewArea(
                 }
             }
 
+            // A drag / pinch of the picture in progress, shown live and saved when the finger lifts.
+            var liveClipId by remember { mutableStateOf<String?>(null) }
+            var livePan by remember { mutableStateOf(Offset.Zero) }
+            var liveZoom by remember { mutableFloatStateOf(1f) }
+
             AndroidView(
                 factory = { context ->
                     PlayerView(context).apply {
@@ -1781,27 +1792,81 @@ private fun PreviewArea(
                 onRelease = { it.player = null },
                 modifier = Modifier
                     .fillMaxSize()
-                    // Photo zoom / pan (Ken Burns), read per frame so the screen is not rebuilt.
+                    // The picture's size and place in the frame, and Photo zoom (Ken Burns). Read per
+                    // frame here, so moving them does not rebuild the screen.
                     .graphicsLayer {
                         val at = project.locate(vm.playheadMs)
                         val shown = at?.let { project.clips.getOrNull(it.first) }
                         val into = at?.second ?: 0L
-                        if (shown != null && shown.type == ClipType.IMAGE &&
-                            shown.motion != com.reelforge.editor.model.PhotoMotion.NONE
-                        ) {
-                            val pose = shown.motion.pose(into.toFloat() / shown.durationMs.coerceAtLeast(1))
-                            scaleX = pose.scale
-                            scaleY = pose.scale
-                            translationX = pose.dx * size.width / 2
-                            translationY = -pose.dy * size.height / 2
-                        } else {
-                            scaleX = 1f
-                            scaleY = 1f
-                            translationX = 0f
-                            translationY = 0f
+                        var scale = 1f
+                        var dx = 0f
+                        var dy = 0f
+                        if (shown != null) {
+                            val f = com.reelforge.editor.model.ClipFraming.of(shown)
+                            val live = shown.id == liveClipId
+                            scale = f.zoom * (if (live) liveZoom else 1f)
+                            dx = f.panX * size.width + (if (live) livePan.x else 0f)
+                            dy = f.panY * size.height + (if (live) livePan.y else 0f)
+                            if (shown.type == ClipType.IMAGE && shown.motion != com.reelforge.editor.model.PhotoMotion.NONE) {
+                                val pose = shown.motion.pose(into.toFloat() / shown.durationMs.coerceAtLeast(1))
+                                scale *= pose.scale
+                                dx += pose.dx * size.width / 2 * scale
+                                dy -= pose.dy * size.height / 2 * scale
+                            }
                         }
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = dx
+                        translationY = dy
                     },
             )
+
+            // With the clip under the red line selected, drag moves the picture and pinching
+            // resizes it. Texts and layers on top get their own touches first.
+            val selectedHere = current != null && vm.selectedClipId == current.id
+            if (selectedHere) {
+                val clipId = current!!.id
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(clipId) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = true)
+                                var moved = false
+                                var travel = Offset.Zero
+                                var pinch = 1f
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.any { it.isConsumed }) break
+                                    val pan = event.calculatePan()
+                                    val zoom = event.calculateZoom()
+                                    if (!moved) {
+                                        travel += pan
+                                        pinch *= zoom
+                                        moved = travel.getDistance() > viewConfiguration.touchSlop ||
+                                            abs(pinch - 1f) > 0.03f
+                                        if (moved) {
+                                            liveClipId = clipId
+                                            livePan = travel
+                                            liveZoom = pinch
+                                        }
+                                    } else {
+                                        livePan += pan
+                                        liveZoom *= zoom
+                                    }
+                                    if (moved) event.changes.forEach { it.consume() }
+                                    if (event.changes.none { it.pressed }) break
+                                }
+                                if (moved) {
+                                    vm.frameClip(clipId, livePan.x / size.width, livePan.y / size.height, liveZoom)
+                                }
+                                liveClipId = null
+                                livePan = Offset.Zero
+                                liveZoom = 1f
+                            }
+                        },
+                )
+            }
 
             if (current == null) {
                 Text(
