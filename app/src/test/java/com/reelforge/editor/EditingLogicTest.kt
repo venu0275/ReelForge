@@ -693,7 +693,10 @@ class KeyframeAndFxTest {
     }
 
     @Test fun `hall and robot change the sound but stay within range`() {
-        for (fx in listOf(AudioFx.REVERB, AudioFx.ROBOT, AudioFx.ECHO)) {
+        for (fx in listOf(
+            AudioFx.REVERB, AudioFx.ROBOT, AudioFx.ECHO, AudioFx.MONSTER, AudioFx.ALIEN, AudioFx.GHOST,
+            AudioFx.CAVE, AudioFx.MEGAPHONE, AudioFx.RADIO, AudioFx.UNDERWATER,
+        )) {
             val channel = FxChannel(fx, 48_000)
             var peak = 0f
             var different = false
@@ -706,6 +709,31 @@ class KeyframeAndFxTest {
             assertTrue("$fx should change the sound", different)
             assertTrue("$fx is too loud: $peak", peak < 1.5f)
         }
+    }
+
+    @Test fun `effect strength mixes the effect with the plain sound`() {
+        val plain = FxChannel(AudioFx.ROBOT, 48_000, 0f)
+        for (x in listOf(-0.5f, 0.1f, 0.7f)) assertEquals(x, plain.process(x), 0.0001f)
+        val full = FxChannel(AudioFx.ROBOT, 48_000, 1f)
+        val half = FxChannel(AudioFx.ROBOT, 48_000, 0.5f)
+        repeat(500) { n ->
+            val x = (0.5 * kotlin.math.sin(n / 7.0)).toFloat()
+            assertEquals(x + (full.process(x) - x) * 0.5f, half.process(x), 0.0001f)
+        }
+    }
+
+    @Test fun `underwater and radio cut the high sound`() {
+        assertTrue(loudness(AudioFx.UNDERWATER, 200.0) > loudness(AudioFx.UNDERWATER, 6_000.0) * 8)
+        assertTrue(loudness(AudioFx.RADIO, 1_000.0) > loudness(AudioFx.RADIO, 10_000.0) * 4)
+    }
+
+    @Test fun `semitones turn into pitch and back`() {
+        assertEquals(2f, com.reelforge.editor.model.pitchOfSemitones(12f), 0.0001f)
+        assertEquals(0.5f, com.reelforge.editor.model.pitchOfSemitones(-12f), 0.0001f)
+        assertEquals(5f, com.reelforge.editor.model.semitonesOfPitch(com.reelforge.editor.model.pitchOfSemitones(5f)), 0.001f)
+        val clip = AudioClip(uri = "u", title = "Voice 1", startMs = 0, durationMs = 1_000,
+            audioFx = AudioFx.CHIPMUNK, pitch = 2f)
+        assertEquals(AudioClip.MAX_PITCH, clip.totalPitch, 0f)
     }
 
     @Test fun `every effect works at common sample rates and on silence`() {

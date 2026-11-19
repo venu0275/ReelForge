@@ -135,6 +135,8 @@ class VoiceCleanProcessor : BaseAudioProcessor() {
 class LiveAudioFx : BaseAudioProcessor() {
     @Volatile var fx: AudioFx = AudioFx.NONE
     @Volatile var clean: Boolean = false
+    /** How strong the effect is (0..1); changes are heard without restarting it. */
+    @Volatile var amount: Float = 1f
 
     private var usedFx = AudioFx.NONE
     private var usedClean = false
@@ -169,6 +171,8 @@ class LiveAudioFx : BaseAudioProcessor() {
             runCatching { rebuild() }.onFailure { usedFx = AudioFx.NONE; usedClean = false }
         }
         val count = effects.size.coerceAtLeast(1)
+        val mix = amount
+        for (effect in effects) effect.amount = mix
         val out = replaceOutputBuffer(inputBuffer.remaining())
         if ((usedFx.filterless && !usedClean) || effects.isEmpty()) {
             out.put(inputBuffer)

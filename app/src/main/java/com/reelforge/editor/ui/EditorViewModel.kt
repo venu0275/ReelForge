@@ -1558,6 +1558,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val clip = AudioClip(
                 uri = uri.toString(), title = "Voice $number", startMs = start, durationMs = duration, voice = true,
                 clean = recordingClean,
+                audioFx = settings.recordFx,
+                pitch = com.reelforge.editor.model.pitchOfSemitones(settings.recordSemitones.toFloat()),
             )
             val replace = replaceVoice
             // One step for Undo: cutting out the old voice (if replacing) and adding the new one.
@@ -1586,7 +1588,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // Effect and clean-up are picked up live, so changing them is heard straight away.
         voiceFx.fx = if (previewEffectsOff) com.reelforge.editor.model.AudioFx.NONE else clip.audioFx
         voiceFx.clean = clip.clean && !previewEffectsOff
-        val voicePitch = if (previewEffectsOff) 1f else clip.audioFx.pitch
+        voiceFx.amount = clip.fxAmount
+        val voicePitch = if (previewEffectsOff) 1f else clip.totalPitch
         if (voicePlayer.playbackParameters.pitch != voicePitch) {
             voicePlayer.playbackParameters = PlaybackParameters(1f, voicePitch)
         }
@@ -2298,6 +2301,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         shownClipIndex = shown.first
         // The preview player tops out at 8x; faster clips still export at their full speed.
         mainFx.fx = if (clip.type == ClipType.VIDEO) clip.audioFx else com.reelforge.editor.model.AudioFx.NONE
+        mainFx.amount = 1f
         player.playbackParameters = PlaybackParameters(
             clip.effectiveSpeed.coerceIn(0.1f, 8f),
             if (clip.type == ClipType.VIDEO) (clip.pitch * clip.audioFx.pitch).coerceIn(0.4f, 2.5f) else 1f,

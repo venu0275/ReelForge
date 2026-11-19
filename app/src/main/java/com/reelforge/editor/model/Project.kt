@@ -1,6 +1,8 @@
 package com.reelforge.editor.model
 
 import java.util.UUID
+import kotlin.math.ln
+import kotlin.math.pow
 
 fun newId(): String = UUID.randomUUID().toString()
 
@@ -93,20 +95,37 @@ data class Keyframe(
  * A sound effect. [pitch] above 1 raises the voice (Chipmunk), below 1 lowers it (Deep voice);
  * the length of the sound stays the same.
  */
-enum class AudioFx(val label: String, val pitch: Float = 1f) {
-    NONE("None"),
-    CHIPMUNK("Chipmunk", 1.6f),
-    DEEP("Deep voice", 0.72f),
+enum class AudioFx(val label: String, val pitch: Float = 1f, private val filter: Boolean = true) {
+    NONE("None", filter = false),
+    CHIPMUNK("Chipmunk", 1.6f, filter = false),
+    KID("Kid", 1.3f, filter = false),
+    DEEP("Deep voice", 0.72f, filter = false),
+    MONSTER("Monster", 0.6f),
     ROBOT("Robot"),
+    ALIEN("Alien", 1.15f),
+    GHOST("Ghost", 0.92f),
     ECHO("Echo"),
     REVERB("Hall"),
+    CAVE("Cave"),
     PHONE("Telephone"),
+    MEGAPHONE("Megaphone"),
+    RADIO("Old radio"),
+    UNDERWATER("Underwater"),
     BASS("Bass boost"),
     TREBLE("Treble boost");
 
     /** True when the effect only changes pitch (or nothing), with no filter to run. */
-    val filterless: Boolean get() = this == NONE || pitch != 1f
+    val filterless: Boolean get() = !filter
+
+    /** True when the effect has a sound filter whose strength can be turned down. */
+    val adjustable: Boolean get() = filter
 }
+
+/** Pitch as a multiplier for a shift of [semitones] (12 semitones = one octave). */
+fun pitchOfSemitones(semitones: Float): Float = 2f.pow(semitones / 12f)
+
+/** The shift in semitones for a pitch multiplier. */
+fun semitonesOfPitch(pitch: Float): Float = 12f * ln(pitch.coerceAtLeast(0.01f)) / ln(2f)
 
 /** Slow movement over a photo while it is on screen, so a slideshow feels alive (Ken Burns). */
 enum class PhotoMotion(val label: String) {
@@ -453,7 +472,17 @@ data class AudioClip(
     val audioFx: AudioFx = AudioFx.NONE,
     val voice: Boolean = false, // a voice-over (recorded or spoken); other sound is lowered under it
     val clean: Boolean = false, // background noise lowered and loudness evened out (Clean voice)
-)
+    val pitch: Float = 1f,      // voice pitch on top of the style (1 = as recorded); length unchanged
+    val fxAmount: Float = 1f,   // how strong the style's filter is, 0..1
+) {
+    /** The total pitch heard: the style's pitch times the user's own pitch. */
+    val totalPitch: Float get() = (pitch * audioFx.pitch).coerceIn(MIN_PITCH, MAX_PITCH)
+
+    companion object {
+        const val MIN_PITCH = 0.4f
+        const val MAX_PITCH = 2.5f
+    }
+}
 
 data class MusicTrack(
     val uri: String,

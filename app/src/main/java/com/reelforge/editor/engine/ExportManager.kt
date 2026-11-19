@@ -429,10 +429,15 @@ object ExportManager {
      * The processors for a sound effect, optionally after Clean voice. Pitch styles (Chipmunk,
      * Deep voice) change pitch without changing length; the others run a filter.
      */
-    private fun fxChain(fx: AudioFx, clean: Boolean = false): List<AudioProcessor> = buildList {
+    private fun fxChain(
+        fx: AudioFx,
+        clean: Boolean = false,
+        pitch: Float = fx.pitch,
+        amount: Float = 1f,
+    ): List<AudioProcessor> = buildList {
         if (clean) add(VoiceCleanProcessor())
-        if (fx.pitch != 1f) add(SonicAudioProcessor().apply { setPitch(fx.pitch) })
-        if (!fx.filterless) add(AudioFxProcessor(fx))
+        if (pitch != 1f) add(SonicAudioProcessor().apply { setPitch(pitch) })
+        if (!fx.filterless && amount > 0f) add(AudioFxProcessor(fx, amount))
     }
 
     /** A voice-over / sound clip: silence up to its start, then the audio itself. */
@@ -470,7 +475,7 @@ object ExportManager {
             .setRemoveVideo(true)
             .setEffects(
                 Effects(
-                    fxChain(clip.audioFx, clip.clean) +
+                    fxChain(clip.audioFx, clip.clean, clip.totalPitch, clip.fxAmount) +
                         audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs),
                     emptyList(),
                 )

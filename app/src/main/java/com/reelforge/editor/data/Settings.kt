@@ -30,6 +30,10 @@ data class AppSettings(
     val voiceCountdown: Int = 3,
     /** Record voice-overs with the phone's noise and echo removal, then clean them up further. */
     val cleanVoice: Boolean = true,
+    /** Voice style given to each new voice-over (it can still be changed afterwards). */
+    val recordFx: com.reelforge.editor.model.AudioFx = com.reelforge.editor.model.AudioFx.NONE,
+    /** Pitch shift in semitones given to each new voice-over (-12..12). */
+    val recordSemitones: Int = 0,
 ) {
     /** The same settings with every value forced into its allowed range. */
     fun sanitized(): AppSettings = copy(
@@ -39,6 +43,7 @@ data class AppSettings(
         exportFps = if (exportFps in FPS) exportFps else 30,
         exportQuality = exportQuality.coerceIn(0, 2),
         voiceCountdown = voiceCountdown.coerceIn(0, 5),
+        recordSemitones = recordSemitones.coerceIn(-12, 12),
     )
 
     companion object {
@@ -67,6 +72,10 @@ class SettingsStore(context: Context) {
             silentWhileRecording = prefs.getBoolean("silentWhileRecording", d.silentWhileRecording),
             voiceCountdown = prefs.getInt("voiceCountdown", d.voiceCountdown),
             cleanVoice = prefs.getBoolean("cleanVoice", d.cleanVoice),
+            recordFx = runCatching {
+                com.reelforge.editor.model.AudioFx.valueOf(prefs.getString("recordFx", d.recordFx.name)!!)
+            }.getOrDefault(d.recordFx),
+            recordSemitones = prefs.getInt("recordSemitones", d.recordSemitones),
         ).sanitized()
     }
 
@@ -84,6 +93,8 @@ class SettingsStore(context: Context) {
             .putBoolean("silentWhileRecording", s.silentWhileRecording)
             .putInt("voiceCountdown", s.voiceCountdown)
             .putBoolean("cleanVoice", s.cleanVoice)
+            .putString("recordFx", s.recordFx.name)
+            .putInt("recordSemitones", s.recordSemitones)
             .apply()
     }
 }

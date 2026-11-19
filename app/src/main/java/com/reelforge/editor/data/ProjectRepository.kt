@@ -121,6 +121,8 @@ object ProjectJson {
                     put("voice", a.voice)
                     put("clean", a.clean)
                     put("audioFx", a.audioFx.name)
+                    put("pitch", a.pitch.toDouble())
+                    put("fxAmount", a.fxAmount.toDouble())
                 })
             }
         })
@@ -408,6 +410,8 @@ object ProjectJson {
                 // Older projects did not mark voice-overs; their recordings are named "Voice …".
                 voice = a.optBoolean("voice", a.optString("title").startsWith("Voice")),
                 clean = a.optBoolean("clean", false),
+                pitch = a.optDouble("pitch", 1.0).toFloat().coerceIn(AudioClip.MIN_PITCH, AudioClip.MAX_PITCH),
+                fxAmount = a.optDouble("fxAmount", 1.0).toFloat().coerceIn(0f, 1f),
             )
         }
         return Project(

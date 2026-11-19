@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
@@ -900,6 +901,20 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
         else "New voice-overs are recorded exactly as the microphone hears them.",
         style = MaterialTheme.typography.bodySmall,
     )
+    Spacer(Modifier.height(8.dp))
+    FxChips(vm.settings.recordFx, voice = true, title = "Voice style for new recordings", hint = false) { fx ->
+        vm.updateSettings { it.copy(recordFx = fx) }
+    }
+    CommitSlider(
+        label = "Pitch for new recordings",
+        value = vm.settings.recordSemitones.toFloat(),
+        range = -12f..12f,
+        format = { semitoneText(it.roundToInt()) },
+    ) { v -> vm.updateSettings { it.copy(recordSemitones = v.roundToInt()) } }
+    Text(
+        "Each new voice-over gets this style and pitch. You can still change it on the clip below.",
+        style = MaterialTheme.typography.bodySmall,
+    )
     SwitchRow("Play the video silently while recording", vm.settings.silentWhileRecording) { on ->
         vm.updateSettings { it.copy(silentWhileRecording = on) }
     }
@@ -960,6 +975,7 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
         CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
         SwitchRow("Clean voice", clip.clean) { on -> vm.updateAudioClip(clip.id) { it.copy(clean = on) } }
         FxChips(clip.audioFx, voice = true) { fx -> vm.updateAudioClip(clip.id) { it.copy(audioFx = fx) } }
+        VoiceTuning(vm, clip)
         CommitSlider(
             label = "Starts at",
             value = clip.startMs.toFloat(),
@@ -1168,23 +1184,83 @@ private fun RemoveBackgroundRow(vm: EditorViewModel, video: Boolean, onRemove: (
     )
 }
 
+/** Voice styles in groups, so the long list is easy to scan. */
+private val FX_GROUPS = listOf(
+    "Pitch" to listOf(AudioFx.NONE, AudioFx.CHIPMUNK, AudioFx.KID, AudioFx.DEEP, AudioFx.MONSTER),
+    "Character" to listOf(
+        AudioFx.ROBOT, AudioFx.ALIEN, AudioFx.GHOST, AudioFx.MEGAPHONE, AudioFx.RADIO,
+        AudioFx.PHONE, AudioFx.UNDERWATER,
+    ),
+    "Room" to listOf(AudioFx.ECHO, AudioFx.REVERB, AudioFx.CAVE),
+    "Tone" to listOf(AudioFx.BASS, AudioFx.TREBLE),
+)
+
 /** Sound effect choices. They are added when the video is exported. */
 @Composable
-private fun FxChips(current: AudioFx, voice: Boolean = false, onChange: (AudioFx) -> Unit) {
-    Text(if (voice) "Voice style" else "Sound effect", style = MaterialTheme.typography.labelLarge)
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        AudioFx.entries.forEach { fx ->
-            FilterChip(selected = current == fx, onClick = { onChange(fx) }, label = { Text(fx.label) })
+private fun FxChips(
+    current: AudioFx,
+    voice: Boolean = false,
+    title: String = if (voice) "Voice style" else "Sound effect",
+    hint: Boolean = true,
+    onChange: (AudioFx) -> Unit,
+) {
+    Text(title, style = MaterialTheme.typography.labelLarge)
+    FX_GROUPS.forEach { (group, styles) ->
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(group, Modifier.width(72.dp), style = MaterialTheme.typography.bodySmall)
+            styles.forEach { fx ->
+                FilterChip(selected = current == fx, onClick = { onChange(fx) }, label = { Text(fx.label) })
+            }
         }
     }
-    if (current != AudioFx.NONE) {
+    if (hint && current != AudioFx.NONE) {
         Text(
             "Play the video to hear it; the exported video sounds the same.",
             style = MaterialTheme.typography.bodySmall,
         )
+    }
+}
+
+/** "+3" / "-5" / "0" for a pitch shift in semitones. */
+private fun semitoneText(semitones: Int) = when {
+    semitones > 0 -> "+$semitones"
+    else -> "$semitones"
+}
+
+/** Fine pitch (in semitones, on top of the style) and how strong the style is, for one voice clip. */
+@Composable
+private fun VoiceTuning(vm: EditorViewModel, clip: com.reelforge.editor.model.AudioClip) {
+    val semis = com.reelforge.editor.model.semitonesOfPitch(clip.pitch).roundToInt()
+    CommitSlider(
+        label = "Pitch",
+        value = semis.toFloat(),
+        range = -12f..12f,
+        format = { semitoneText(it.roundToInt()) },
+    ) { v ->
+        val p = com.reelforge.editor.model.pitchOfSemitones(v.roundToInt().toFloat())
+        vm.updateAudioClip(clip.id) { it.copy(pitch = p) }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "Lower or raise the voice without changing its speed.",
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (semis != 0) {
+            TextButton(onClick = { vm.updateAudioClip(clip.id) { it.copy(pitch = 1f) } }) { Text("Reset") }
+        }
+    }
+    if (clip.audioFx.adjustable) {
+        CommitSlider(
+            label = "Effect strength",
+            value = clip.fxAmount,
+            range = 0f..1f,
+            format = { "${(it * 100).roundToInt()}%" },
+        ) { v -> vm.updateAudioClip(clip.id) { it.copy(fxAmount = v) } }
     }
 }
 
