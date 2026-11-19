@@ -93,6 +93,9 @@ const val CAPTION_PREFIX = "cap_"
 
 // Timeline frames kept in memory (each is small, about 60 KB).
 private const val MAX_FRAMES = 400
+
+// Full-size photo stills kept for the preview (up to about 4 MB each).
+private const val MAX_STILLS = 16
 private const val MAX_LAYERED_EXPORT_ATTEMPTS = 3
 
 sealed interface ExportState {
@@ -182,6 +185,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Timeline thumbnails keyed by [thumbKey]; full-size stills for image clips keyed by uri. */
     val thumbs = mutableStateMapOf<String, ImageBitmap>()
     val previews = mutableStateMapOf<String, ImageBitmap>()
+    // Full-size stills are large (several MB each), so only the most recently loaded are kept;
+    // the screen asks again for any it needs that was dropped.
+    private val previewOrder = LinkedHashSet<String>()
 
     /** Frames shown along video clips on the timeline, keyed by [frameKey]. */
     val frames = mutableStateMapOf<String, ImageBitmap>()
@@ -2641,7 +2647,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             val bitmap = withContext(Dispatchers.IO) {
                 MediaUtils.decodeImage(ctx, Uri.parse(uri), 1280)
             }
-            if (bitmap != null) previews[uri] = bitmap.asImageBitmap()
+            if (bitmap != null) {
+                previews[uri] = bitmap.asImageBitmap()
+                previewOrder.remove(uri)
+                previewOrder.add(uri)
+                while (previewOrder.size > MAX_STILLS) {
+                    val oldest = previewOrder.first()
+                    previewOrder.remove(oldest)
+                    previews.remove(oldest)
+                    requested.remove("p:$oldest")
+                }
+            } else {
+                // Allow another try later (for example after a permission is granted).
+                requested.remove("p:$uri")
+            }
         }
     }
 

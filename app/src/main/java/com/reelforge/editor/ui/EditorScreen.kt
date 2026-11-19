@@ -1878,8 +1878,9 @@ private fun PreviewArea(
 
             // Photos are drawn by Compose; the player only keeps time for them.
             if (current != null && current.type == ClipType.IMAGE) {
-                LaunchedEffect(current.uri) { vm.requestPreview(current) }
                 val still = vm.previews[current.uri]
+                // Asked for whenever it is missing, including after being dropped to save memory.
+                if (still == null) SideEffect { vm.requestPreview(current) }
                 val backdrop = if (!current.fill && project.background == Background.COLOR) {
                     Color(project.backgroundColor)
                 } else Color.Black
@@ -1891,11 +1892,28 @@ private fun PreviewArea(
                         Image(
                             bitmap = still,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize().graphicsLayer(
-                                scaleX = current.zoom * (if (current.flipH) -1f else 1f),
-                                scaleY = current.zoom,
-                                rotationZ = current.rotation.toFloat(),
-                            ),
+                            // Same placement as the export: the user's size and position (and a
+                            // drag / pinch in progress), plus Photo zoom movement. The playhead is
+                            // read here only, so playing does not rebuild the screen.
+                            modifier = Modifier.fillMaxSize().graphicsLayer {
+                                val f = com.reelforge.editor.model.ClipFraming.of(current)
+                                val live = current.id == liveClipId
+                                var scale = f.zoom * (if (live) liveZoom else 1f)
+                                var dx = f.panX * size.width + (if (live) livePan.x else 0f)
+                                var dy = f.panY * size.height + (if (live) livePan.y else 0f)
+                                if (current.motion != com.reelforge.editor.model.PhotoMotion.NONE) {
+                                    val into = project.locate(vm.playheadMs)?.second ?: 0L
+                                    val pose = current.motion.pose(into.toFloat() / current.durationMs.coerceAtLeast(1))
+                                    scale *= pose.scale
+                                    dx += pose.dx * size.width / 2 * scale
+                                    dy -= pose.dy * size.height / 2 * scale
+                                }
+                                scaleX = scale * (if (current.flipH) -1f else 1f)
+                                scaleY = scale
+                                translationX = dx
+                                translationY = dy
+                                rotationZ = current.rotation.toFloat()
+                            },
                             contentScale = if (current.fill) ContentScale.Crop else ContentScale.Fit,
                         )
                     }
@@ -1952,8 +1970,8 @@ private fun PreviewArea(
                 .filter { now >= it.startMs && now < it.endMs }
                 .forEach { layer ->
                     key(layer.id) {
-                        LaunchedEffect(layer.uri) { vm.requestStill(layer.uri) }
                         val still = vm.previews[layer.uri]
+                        if (still == null) SideEffect { vm.requestStill(layer.uri) }
                         val anim = overlayAnim(
                             now - layer.startMs, layer.endMs - layer.startMs, layer.animIn, layer.animOut, layer.loop
                         )
