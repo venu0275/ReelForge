@@ -28,6 +28,7 @@ jobs:
         if: always()
         run: grep -rh "PERF" app/build/test-results/testDebugUnitTest/*.xml || true
       - run: ./gradlew assembleDebug --stacktrace
+      - run: ./gradlew assembleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         timeout-minutes: 5

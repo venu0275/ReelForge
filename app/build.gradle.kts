@@ -20,15 +20,17 @@ android {
         applicationId = "com.reelforge.editor"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.1.1"
+        versionCode = 6
+        versionName = "1.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SUPPORT_EMAIL", "\"${localProps.getProperty("support.email", "developervt0909@gmail.com").trim()}\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
     compileOptions {
@@ -77,6 +79,8 @@ dependencies {
     // "Update available" check: asks the Play Store app on the phone whether a newer version is
     // published, and installs it from inside the app. Free Google Play library; sends nothing of ours.
     implementation("com.google.android.play:app-update-ktx:2.1.0")
+    // Play's update library pulls in androidx.fragment 1.1.0; require a current one.
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 
     // Unit tests (run on the build machine).
     testImplementation("junit:junit:4.13.2")
