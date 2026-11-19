@@ -12,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.reelforge.editor.ui.MainActivity
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +23,18 @@ class EditorUiTest {
 
     @get:Rule
     val rule = createAndroidComposeRule<MainActivity>()
+
+    /** Media and notification access is granted up front, so no system dialog covers the app. */
+    @org.junit.Before
+    fun grantAccess() {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
+        val permissions = if (android.os.Build.VERSION.SDK_INT >= 33) listOf(
+            "android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+            "android.permission.READ_MEDIA_AUDIO", "android.permission.POST_NOTIFICATIONS",
+        ) else listOf("android.permission.READ_EXTERNAL_STORAGE")
+        permissions.forEach { runCatching { automation.grantRuntimePermission(pkg, it) } }
+    }
 
     private fun waitForText(text: String) {
         rule.waitUntil(15_000) {

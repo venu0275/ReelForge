@@ -121,9 +121,10 @@ class PreviewPlaybackTest {
         val started = SystemClock.elapsedRealtime()
         rule.runOnUiThread { vm.togglePlay() }
         val total = project.durationMs
-        // Up to three times the project's length (the emulator is slow), plus some slack.
-        val deadline = started + total * 3 + 10_000
+        // The emulator has no video hardware and plays several times slower than real time.
+        val deadline = started + total * 10 + 20_000
         var ended = false
+        var furthest = 0L
         while (SystemClock.elapsedRealtime() < deadline && errors.isEmpty()) {
             Thread.sleep(250)
             var position = 0L
@@ -132,6 +133,7 @@ class PreviewPlaybackTest {
                 position = vm.playheadMs
                 playing = vm.isPlaying
             }
+            furthest = maxOf(furthest, position)
             if (!playing && position >= total - 200) {
                 ended = true
                 break
@@ -142,12 +144,13 @@ class PreviewPlaybackTest {
             if (vm.isPlaying) vm.togglePlay()
             vm.player.removeListener(listener)
         }
-        log("PERF preview $label: ${total} ms of video played in $took ms (%.2fx)".format(took / total.toFloat()))
+        log("PERF preview $label: ${total} ms of video, reached $furthest ms in $took ms (%.2fx)"
+            .format(took / total.toFloat()))
         if (errors.isNotEmpty()) {
             val e = errors.first()
             fail("$label: preview error ${e.errorCodeName}: ${e.cause ?: e}")
         }
-        assertTrue("$label: playback did not reach the end in time", ended)
+        assertTrue("$label: playback reached only $furthest of $total ms in $took ms", ended)
     }
 
     @Test

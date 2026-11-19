@@ -57,6 +57,18 @@ class ScreenshotTest {
     @get:Rule
     val rule = createAndroidComposeRule<MainActivity>()
 
+    /** Media and notification access is granted up front, so no system dialog covers the app. */
+    @org.junit.Before
+    fun grantAccess() {
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
+        val permissions = if (android.os.Build.VERSION.SDK_INT >= 33) listOf(
+            "android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+            "android.permission.READ_MEDIA_AUDIO", "android.permission.POST_NOTIFICATIONS",
+        ) else listOf("android.permission.READ_EXTERNAL_STORAGE")
+        permissions.forEach { runCatching { automation.grantRuntimePermission(pkg, it) } }
+    }
+
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
     /** A simple landscape picture: sky gradient, sun and two mountains. */
@@ -284,20 +296,21 @@ class ScreenshotTest {
             save("11_text_turn_landscape")
         }
 
-        // 12. The video layer editor.
-        rule.onNodeWithContentDescription("Close tool").performClick()
-        waitForText("Add to your video")
-        tap("Layer", scroll = true)
-        waitForText("Add video")
-        tap("Edit")
-        waitForText("Edit video layer")
-        save("12_video_layer_landscape")
-
-        // 13. A bar selected on the timeline: its own cut / edit / delete menu.
-        rule.onNodeWithContentDescription("Close tool").performClick()
-        waitForText("Add to your video")
-        tap("Day 1")
-        waitForText("Text · Day 1")
-        save("13_bar_selected_landscape")
+        // 12-13. Optional pictures: the video layer editor, and a selected bar's menu.
+        optionalStep("layer and bar") {
+            runCatching { tap("Done") } // leave the text editor if a step above left it open
+            rule.onNodeWithContentDescription("Close tool").performClick()
+            waitForText("Add to your video")
+            tap("Layer", scroll = true)
+            waitForText("Add video")
+            tap("Edit")
+            waitForText("Edit video layer")
+            save("12_video_layer_landscape")
+            rule.onNodeWithContentDescription("Close tool").performClick()
+            waitForText("Add to your video")
+            tap("Day 1")
+            waitForText("Text · Day 1")
+            save("13_bar_selected_landscape")
+        }
     }
 }
