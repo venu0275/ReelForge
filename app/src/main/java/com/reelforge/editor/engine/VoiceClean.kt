@@ -107,6 +107,7 @@ class VoiceCleanProcessor : BaseAudioProcessor() {
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        if (!inputBuffer.hasRemaining()) return
         if (channels.isEmpty()) onFlush()
         val count = channels.size
         val out = replaceOutputBuffer(inputBuffer.remaining())
@@ -159,6 +160,10 @@ class LiveAudioFx : BaseAudioProcessor() {
     override fun onFlush() = rebuild()
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        // Nothing to do for an empty buffer. (Writing it would also copy the shared empty
+        // buffer into itself, which throws and stopped the preview with
+        // ERROR_CODE_FAILED_RUNTIME_CHECK.)
+        if (!inputBuffer.hasRemaining()) return
         if (effects.isEmpty() || fx != usedFx || clean != usedClean) {
             // A problem setting up the effect must never stop playback: play the sound as it is.
             runCatching { rebuild() }.onFailure { usedFx = AudioFx.NONE; usedClean = false }

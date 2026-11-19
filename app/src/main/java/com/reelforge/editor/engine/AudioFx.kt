@@ -178,6 +178,7 @@ class AudioFxProcessor(private val fx: AudioFx) : BaseAudioProcessor() {
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        if (!inputBuffer.hasRemaining()) return
         if (channels.isEmpty()) onFlush()
         val count = channels.size
         val out = replaceOutputBuffer(inputBuffer.remaining())

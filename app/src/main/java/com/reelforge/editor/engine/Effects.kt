@@ -247,6 +247,7 @@ class AudioFadeProcessor(
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        if (!inputBuffer.hasRemaining()) return
         val channels = inputAudioFormat.channelCount.coerceAtLeast(1)
         val sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(1)
         val out = replaceOutputBuffer(inputBuffer.remaining())
@@ -287,6 +288,7 @@ class DuckProcessor(
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        if (!inputBuffer.hasRemaining()) return
         val channels = inputAudioFormat.channelCount.coerceAtLeast(1)
         val sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(1)
         val out = replaceOutputBuffer(inputBuffer.remaining())

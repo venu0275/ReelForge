@@ -4,6 +4,7 @@ import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -28,6 +29,15 @@ class EditorUiTest {
             // no screen to search; keep waiting instead of failing.
             runCatching {
                 rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun waitForDescription(description: String) {
+        rule.waitUntil(15_000) {
+            runCatching {
+                rule.onAllNodesWithContentDescription(description, useUnmergedTree = true)
+                    .fetchSemanticsNodes().isNotEmpty()
             }.getOrDefault(false)
         }
     }
@@ -75,6 +85,9 @@ class EditorUiTest {
         tap("New project")
         waitForText("Create")
         tap("Create")
+        // A new, empty project opens the media picker first; close it to see the editor.
+        waitForDescription("Close media")
+        rule.onNodeWithContentDescription("Close media", useUnmergedTree = true).performClick()
         waitForText("Start by adding media")
 
         // Negative: with no clips there is nothing to export, undo, play or decorate.
@@ -91,10 +104,10 @@ class EditorUiTest {
         rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
         rule.onNodeWithText("Export").assertIsNotEnabled()
 
-        // Open a tool in landscape: it replaces the menu, and its back arrow returns to the menu.
+        // Music with no music yet opens the music screen; closing it returns to the editor.
         tap("Music", scroll = true)
-        waitForText("Choose audio")
-        rule.onNodeWithContentDescription("Close tool").performClick()
+        waitForDescription("Close music")
+        rule.onNodeWithContentDescription("Close music", useUnmergedTree = true).performClick()
         waitForText("Start by adding media")
 
         // Back to portrait: same project, menu under the timeline, tool opens as a sheet.
@@ -102,6 +115,6 @@ class EditorUiTest {
         waitForText("Start by adding media")
         rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
         tap("Music", scroll = true)
-        waitForText("Choose audio")
+        waitForDescription("Close music")
     }
 }
