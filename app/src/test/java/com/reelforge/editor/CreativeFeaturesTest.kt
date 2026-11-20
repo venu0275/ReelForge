@@ -3,6 +3,7 @@ package com.reelforge.editor
 import com.reelforge.editor.data.ProjectJson
 import com.reelforge.editor.engine.BeatFinder
 import com.reelforge.editor.engine.Reverser
+import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.Clip
 import com.reelforge.editor.model.ClipType
 import com.reelforge.editor.model.CreativeOps
@@ -290,13 +291,12 @@ class ExtractSoundTest {
 
 class RatioTest {
     @Test fun `the closest frame shape is picked for common videos and photos`() {
-        val a = com.reelforge.editor.model.AspectRatio
-        assertEquals(a.LANDSCAPE, a.closest(1920f / 1080f))
-        assertEquals(a.PORTRAIT, a.closest(1080f / 1920f))
-        assertEquals(a.PORTRAIT, a.closest(720f / 1600f))   // tall phone screen recording
-        assertEquals(a.SQUARE, a.closest(1f))
-        assertEquals(a.FOUR_THREE, a.closest(4000f / 3000f)) // phone photo
-        assertEquals(a.THREE_FOUR, a.closest(3000f / 4000f))
-        assertEquals(a.CINEMA, a.closest(2.4f))
+        assertEquals(AspectRatio.LANDSCAPE, AspectRatio.closest(1920f / 1080f))
+        assertEquals(AspectRatio.PORTRAIT, AspectRatio.closest(1080f / 1920f))
+        assertEquals(AspectRatio.PORTRAIT, AspectRatio.closest(720f / 1600f))   // tall phone screen recording
+        assertEquals(AspectRatio.SQUARE, AspectRatio.closest(1f))
+        assertEquals(AspectRatio.FOUR_THREE, AspectRatio.closest(4000f / 3000f)) // phone photo
+        assertEquals(AspectRatio.THREE_FOUR, AspectRatio.closest(3000f / 4000f))
+        assertEquals(AspectRatio.CINEMA, AspectRatio.closest(2.4f))
     }
 }
