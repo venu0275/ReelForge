@@ -300,3 +300,48 @@ class RatioTest {
         assertEquals(AspectRatio.CINEMA, AspectRatio.closest(2.4f))
     }
 }
+
+class BlackBarsTest {
+    private val bars = com.reelforge.editor.util.BlackBars
+
+    /** A 90 x 160 (9:16) frame with a grey 90 x 50 picture in the middle, black above and below. */
+    private fun letterboxed(): IntArray {
+        val w = 90
+        val h = 160
+        return IntArray(w * h) { i -> if (i / w in 55 until 105) 0xFF808080.toInt() else 0xFF000000.toInt() }
+    }
+
+    @Test fun `finds the picture between black bars`() {
+        val box = bars.boxOf(letterboxed(), 90, 160)!!
+        assertEquals(0f, box.left, 0.001f)
+        assertEquals(1f, box.right, 0.001f)
+        assertEquals(55f / 160, box.top, 0.001f)
+        assertEquals(105f / 160, box.bottom, 0.001f)
+        assertTrue(box.hasBars)
+        // 90 x 50 picture: about 16:9.
+        assertEquals(AspectRatio.LANDSCAPE, AspectRatio.closest(box.aspect(90f / 160f)))
+    }
+
+    @Test fun `a frame without bars or an all-black frame`() {
+        val full = IntArray(90 * 160) { 0xFF707070.toInt() }
+        assertTrue(!bars.boxOf(full, 90, 160)!!.hasBars)
+        assertEquals(null, bars.boxOf(IntArray(90 * 160) { 0xFF000000.toInt() }, 90, 160))
+    }
+
+    @Test fun `zoom makes the picture fill the frame`() {
+        val box = com.reelforge.editor.util.ContentBox(0f, 0.34375f, 1f, 0.65625f)
+        // Frame changed to 16:9, 9:16 video fitted: the picture must grow to fill the frame.
+        val wide = bars.fillFraming(box, 9f / 16f, 16f / 9f, fill = false)
+        val videoW = (9f / 16f) / (16f / 9f)
+        assertTrue(box.width * videoW * wide.zoom >= 0.999f)
+        assertTrue(box.height * wide.zoom >= 0.999f)
+        assertEquals(0f, wide.panX, 0.001f)
+        assertEquals(0f, wide.panY, 0.001f)
+        // Kept at 9:16: the picture fills the height (sides cut off).
+        val tall = bars.fillFraming(box, 9f / 16f, 9f / 16f, fill = false)
+        assertEquals(1f / box.height, tall.zoom, 0.01f)
+        // A picture lower down is moved up into the middle.
+        val low = bars.fillFraming(com.reelforge.editor.util.ContentBox(0f, 0.5f, 1f, 0.8f), 9f / 16f, 9f / 16f, false)
+        assertTrue(low.panY < 0f)
+    }
+}

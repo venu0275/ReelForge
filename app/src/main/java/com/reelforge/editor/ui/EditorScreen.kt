@@ -591,6 +591,37 @@ fun EditorScreen(vm: EditorViewModel) {
         }
     }
 
+    vm.barsOffer?.let { offer ->
+        val same = offer.pictureShape == project.aspect
+        AlertDialog(
+            onDismissRequest = { vm.barsOffer = null },
+            title = { Text("This video has black bars") },
+            text = {
+                Text(
+                    if (same) "The picture inside this video has black bars around it. Zoom in so the picture fills the frame?"
+                    else "The picture inside this video is about ${offer.pictureShape.label}, with black bars " +
+                        "around it, so it shows small. Change the frame to ${offer.pictureShape.label} and remove " +
+                        "the bars? Or keep ${project.aspect.label} and zoom in (the sides of the picture are cut off)."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.applyBarsFix(offer, changeRatio = !same) }) {
+                    Text(if (same) "Remove bars" else "Use ${ratioName(offer.pictureShape)}")
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { vm.barsOffer = null }) { Text("Not now") }
+                    if (!same) {
+                        TextButton(onClick = { vm.applyBarsFix(offer, changeRatio = false) }) {
+                            Text("Zoom, keep ${project.aspect.label}")
+                        }
+                    }
+                }
+            },
+        )
+    }
+
     vm.aspectSuggestion?.let { better ->
         AlertDialog(
             onDismissRequest = { vm.aspectSuggestion = null },
@@ -889,6 +920,7 @@ private fun EditorMenu(
                 if (com.reelforge.editor.engine.EffectFactory.isFramed(clip)) {
                     MenuTile("Reset position") { vm.resetFraming(id) }
                 }
+                if (isVideo) MenuTile("Remove black bars") { vm.removeBlackBars(id) }
                 if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
                 if (isVideo) {
                     // Shows its progress on the tile; tap again to stop.

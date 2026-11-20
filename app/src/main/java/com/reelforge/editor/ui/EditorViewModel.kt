@@ -406,13 +406,19 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             if (clips.isNotEmpty()) {
                 val first = project?.clips?.isEmpty() == true
                 mutate { it.copy(clips = it.clips + clips) }
-                // The first video in a project: offer to match the frame to it if the shapes differ.
+                // The first clip in a project: offer to remove black bars baked into it, or to
+                // match the frame to its shape if the shapes differ.
                 if (first) {
-                    val shape = withContext(Dispatchers.IO) {
-                        MediaUtils.mediaAspect(ctx, Uri.parse(clips[0].uri), clips[0].type)
+                    val bars = barsOfferFor(clips[0])
+                    if (bars != null) {
+                        barsOffer = bars
+                    } else {
+                        val shape = withContext(Dispatchers.IO) {
+                            MediaUtils.mediaAspect(ctx, Uri.parse(clips[0].uri), clips[0].type)
+                        }
+                        val best = shape?.let { AspectRatio.closest(it) }
+                        if (best != null && best != project?.aspect) aspectSuggestion = best
                     }
-                    val best = shape?.let { AspectRatio.closest(it) }
-                    if (best != null && best != project?.aspect) aspectSuggestion = best
                 }
             }
         }
@@ -427,6 +433,62 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun setAspect(aspect: AspectRatio) {
         aspectSuggestion = null
         if (project?.aspect != aspect) mutate { it.copy(aspect = aspect) }
+    }
+
+    /** Black bars found inside a video clip, offered for removal. */
+    data class BarsOffer(
+        val clipId: String,
+        val box: com.reelforge.editor.util.ContentBox,
+        val videoAspect: Float,
+        /** The frame shape nearest to the picture inside the bars. */
+        val pictureShape: AspectRatio,
+    )
+
+    var barsOffer by mutableStateOf<BarsOffer?>(null)
+
+    /** Looks for black bars baked into a video clip; null if there are none (or it is a photo). */
+    private suspend fun barsOfferFor(clip: Clip): BarsOffer? {
+        if (clip.type != ClipType.VIDEO) return null
+        return withContext(Dispatchers.IO) {
+            val uri = Uri.parse(clip.uri)
+            val shape = MediaUtils.videoAspect(ctx, uri) ?: return@withContext null
+            val box = com.reelforge.editor.util.BlackBars.find(ctx, uri, clip.sourceDurationMs)
+                ?.takeIf { it.hasBars } ?: return@withContext null
+            BarsOffer(clip.id, box, shape, AspectRatio.closest(box.aspect(shape)))
+        }
+    }
+
+    /** Remove black bars: finds bars baked into the clip and offers to zoom them away. */
+    fun removeBlackBars(id: String) {
+        val clip = project?.clips?.firstOrNull { it.id == id } ?: return
+        viewModelScope.launch {
+            val offer = barsOfferFor(clip)
+            if (offer == null) message = "No black bars found in this clip"
+            else if (offer.pictureShape == project?.aspect) applyBarsFix(offer, changeRatio = false)
+            else barsOffer = offer
+        }
+    }
+
+    /**
+     * Zooms the clip so its picture fills the frame, optionally first changing the frame to the
+     * picture's shape (so nothing is cut off). One Undo step.
+     */
+    fun applyBarsFix(offer: BarsOffer, changeRatio: Boolean) {
+        barsOffer = null
+        aspectSuggestion = null
+        mutate { p ->
+            val aspect = if (changeRatio) offer.pictureShape else p.aspect
+            p.copy(
+                aspect = aspect,
+                clips = p.clips.map { c ->
+                    if (c.id != offer.clipId) c else {
+                        val f = com.reelforge.editor.util.BlackBars.fillFraming(offer.box, offer.videoAspect, aspect.ratio, c.fill)
+                        c.copy(zoom = f.zoom, panX = f.panX, panY = f.panY)
+                    }
+                },
+            )
+        }
+        message = "Black bars removed. Tap Reset position on the clip to undo just this."
     }
 
     /** Sets the frame to the shape of the clip under the red line (or the first clip). */
