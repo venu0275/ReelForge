@@ -199,7 +199,6 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // Sound effects and Clean voice are heard in the preview too, not only in the export.
     private val mainFx = com.reelforge.editor.engine.LiveAudioFx()
-    private val voiceFx = com.reelforge.editor.engine.LiveAudioFx()
     val player: ExoPlayer = ExoPlayer.Builder(app, com.reelforge.editor.engine.renderersWithFx(app, mainFx)).build()
     // Music files are often long MP3s with no seek table; without this setting the player cannot
     // jump into the middle of them and keeps restarting from the beginning.
@@ -209,9 +208,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         )
         .build()
     private var lastMusicSeekAt = 0L
-    private val voicePlayer: ExoPlayer =
-        ExoPlayer.Builder(app, com.reelforge.editor.engine.renderersWithFx(app, voiceFx)).build()
-    private var voiceClipId: String? = null
+    // Voice-overs and other sounds (effects, sound taken from a video) play on separate players,
+    // so a voice-over can be heard over a sound in the preview, as in the export.
+    private val voiceLane = SoundLane(app)
+    private val soundLane = SoundLane(app)
 
     var isRecording by mutableStateOf(false)
         private set
@@ -1572,38 +1572,67 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun stopVoice() {
-        if (voiceClipId != null) {
-            voicePlayer.pause()
-            voiceClipId = null
-        }
+        voiceLane.stop()
+        soundLane.stop()
     }
 
-    /** Plays the voice / sound clip under the playhead in the preview. */
+    /** Plays the voice-over and the other sound clip under the playhead in the preview. */
     private fun syncVoice(p: Project) {
-        val clip = p.audio.firstOrNull { playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
-        if (clip == null || isRecording) {
+        if (isRecording) {
             stopVoice()
             return
         }
-        // Effect and clean-up are picked up live, so changing them is heard straight away.
-        voiceFx.fx = if (previewEffectsOff) com.reelforge.editor.model.AudioFx.NONE else clip.audioFx
-        voiceFx.clean = clip.clean && !previewEffectsOff
-        voiceFx.amount = clip.fxAmount
-        val voicePitch = if (previewEffectsOff) 1f else clip.totalPitch
-        if (voicePlayer.playbackParameters.pitch != voicePitch) {
-            voicePlayer.playbackParameters = PlaybackParameters(1f, voicePitch)
+        val here = p.audio.filter { playheadMs >= it.startMs && playheadMs < it.startMs + it.durationMs }
+        val voice = here.firstOrNull { it.voice }
+        voiceLane.sync(p, voice)
+        // A sound taken from a video is lowered under voice-overs, as the video's own sound is.
+        val sound = here.firstOrNull { !it.voice }
+        soundLane.sync(p, sound, if (sound?.duck == true && voice != null) p.duckLevel else 1f)
+    }
+
+    /** One preview player for sound clips, with its live effect. */
+    private inner class SoundLane(app: Application) {
+        val fx = com.reelforge.editor.engine.LiveAudioFx()
+        val player: ExoPlayer = ExoPlayer.Builder(app, com.reelforge.editor.engine.renderersWithFx(app, fx)).build()
+        private var clipId: String? = null
+
+        fun stop() {
+            if (clipId != null) {
+                player.pause()
+                clipId = null
+            }
         }
-        if (clip.id != voiceClipId) {
-            voiceClipId = clip.id
-            voicePlayer.setMediaItem(MediaItem.fromUri(Uri.parse(clip.uri)))
-            voicePlayer.prepare()
-            voicePlayer.seekTo(clip.offsetMs + playheadMs - clip.startMs)
-            voicePlayer.play()
+
+        fun effectsOff() {
+            fx.fx = com.reelforge.editor.model.AudioFx.NONE
+            fx.clean = false
         }
-        val length = minOf(clip.durationMs, p.durationMs - clip.startMs)
-        val voiceVolume = clip.volume.coerceIn(0f, 1f) *
-            fadeAlpha(playheadMs - clip.startMs, length, clip.fadeInMs, clip.fadeOutMs)
-        if (kotlin.math.abs(voicePlayer.volume - voiceVolume) > 0.005f) voicePlayer.volume = voiceVolume
+
+        fun sync(p: Project, clip: AudioClip?, level: Float = 1f) {
+            if (clip == null) {
+                stop()
+                return
+            }
+            // Effect and clean-up are picked up live, so changing them is heard straight away.
+            fx.fx = if (previewEffectsOff) com.reelforge.editor.model.AudioFx.NONE else clip.audioFx
+            fx.clean = clip.clean && !previewEffectsOff
+            fx.amount = clip.fxAmount
+            val pitch = if (previewEffectsOff) 1f else clip.totalPitch
+            if (player.playbackParameters.pitch != pitch) {
+                player.playbackParameters = PlaybackParameters(1f, pitch)
+            }
+            if (clip.id != clipId) {
+                clipId = clip.id
+                player.setMediaItem(MediaItem.fromUri(Uri.parse(clip.uri)))
+                player.prepare()
+                player.seekTo(clip.offsetMs + playheadMs - clip.startMs)
+                player.play()
+            }
+            val length = minOf(clip.durationMs, p.durationMs - clip.startMs)
+            val volume = clip.volume.coerceIn(0f, 1f) * level *
+                fadeAlpha(playheadMs - clip.startMs, length, clip.fadeInMs, clip.fadeOutMs)
+            if (kotlin.math.abs(player.volume - volume) > 0.005f) player.volume = volume
+        }
     }
 
     // ------------------------------------------------------------ auto captions
@@ -1989,6 +2018,137 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         reverseJob?.cancel()
     }
 
+    // ------------------------------------------------------------ extract sound
+
+    /** What is shown while a sound is being taken out of a video (null when idle). */
+    var soundWork by mutableStateOf<String?>(null)
+        private set
+    private var soundJob: Job? = null
+    private val soundHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** True when [clip] is a video with sound that can be extracted. */
+    fun canExtractSound(clip: Clip) = clip.type == ClipType.VIDEO && clip.hasAudio
+
+    fun cancelSoundWork() {
+        soundJob?.cancel()
+    }
+
+    private fun soundFile() =
+        File(File(ctx.filesDir, "sounds").apply { mkdirs() }, "sound_${System.currentTimeMillis()}.m4a")
+
+    /** Runs one sound job with progress shown as "[label]… 40%"; only one runs at a time. */
+    private fun soundTask(label: String, failed: String, work: suspend () -> Unit) {
+        if (soundJob?.isActive == true) return
+        pause()
+        soundJob = viewModelScope.launch {
+            soundWork = "$label… 0%"
+            try {
+                work()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                android.util.Log.e("CutMitra", failed, e)
+                message = failed
+            } finally {
+                soundHandler.removeCallbacksAndMessages(null)
+                soundWork = null
+            }
+        }
+    }
+
+    private suspend fun extractTo(uri: Uri, fromMs: Long, toMs: Long, speed: Float, pitch: Float, label: String): File {
+        val out = soundFile()
+        com.reelforge.editor.engine.SoundExtractor.extract(ctx, uri, fromMs, toMs, speed, pitch, out) { f ->
+            postStatus(soundHandler, "$label… ${(f * 100).toInt()}%") { soundWork = it }
+        }
+        if (!out.exists() || out.length() == 0L) error("no sound written")
+        return out
+    }
+
+    /**
+     * Extract sound: the video clip's sound becomes its own sound clip at the same place, and the
+     * clip itself is muted, so the sound can be moved, cut, changed or kept after the picture is
+     * replaced. It still sounds the same (speed, voice changer and effect carry over) and is still
+     * lowered under voice-overs. One step for Undo.
+     */
+    fun extractSound(id: String) {
+        val clip = project?.clips?.firstOrNull { it.id == id } ?: return
+        if (!canExtractSound(clip)) {
+            message = "This clip has no sound to extract"
+            return
+        }
+        val label = "Extracting sound"
+        soundTask(label, "Could not extract the sound of this clip on this phone") {
+            val out = extractTo(Uri.parse(clip.uri), clip.trimStartMs, clip.trimEndMs, clip.effectiveSpeed, clip.pitch, label)
+            val now = project ?: return@soundTask
+            val index = now.clips.indexOfFirst { it.id == id }
+            if (index < 0) {
+                out.delete()
+                return@soundTask
+            }
+            val current = now.clips[index]
+            val sound = AudioClip(
+                uri = Uri.fromFile(out).toString(),
+                title = "Sound: " + current.name.ifBlank { "clip ${index + 1}" },
+                startMs = now.clipStartMs(index),
+                durationMs = current.durationMs,
+                volume = if (current.muted) 1f else current.volume.coerceIn(0f, 2f),
+                fadeInMs = current.fadeInMs,
+                fadeOutMs = current.fadeOutMs,
+                audioFx = current.audioFx,
+                duck = true,
+            )
+            mutate { p ->
+                p.copy(
+                    clips = p.clips.map { if (it.id == id) it.copy(muted = true) else it },
+                    audio = p.audio + sound,
+                )
+            }
+            message = "Sound extracted to its own clip in Voice-over and sounds. The video clip is now muted " +
+                "(Undo puts it back)."
+        }
+    }
+
+    /** Takes the whole sound of a video from the gallery and adds it as a sound clip at the red line. */
+    fun addSoundFromVideo(uri: Uri) {
+        val start = playheadMs
+        val label = "Taking the sound"
+        soundTask(label, "This video has no sound, or its sound cannot be read on this phone") {
+            val name = withContext(Dispatchers.IO) { MediaUtils.displayName(ctx, uri) }
+            val length = withContext(Dispatchers.IO) { MediaUtils.audioDurationMs(ctx, uri) }
+            if (length <= 0) error("unknown length")
+            val out = extractTo(uri, 0, length, 1f, 1f, label)
+            val duration = withContext(Dispatchers.IO) { MediaUtils.audioDurationMs(ctx, Uri.fromFile(out)) }
+                .takeIf { it > 0 } ?: length
+            val sound = AudioClip(
+                uri = Uri.fromFile(out).toString(),
+                title = "Sound: " + name.substringBeforeLast('.').ifBlank { "video" },
+                startMs = start,
+                durationMs = duration,
+                duck = true,
+            )
+            mutate { it.copy(audio = it.audio + sound) }
+            message = "Sound added at the red line"
+        }
+    }
+
+    /**
+     * Saves a sound clip (the part used on the timeline, without its style) to the phone's
+     * Music/CutMitra folder as an .m4a file, to use in other apps or share.
+     */
+    fun saveSoundToPhone(id: String) {
+        val clip = project?.audio?.firstOrNull { it.id == id } ?: return
+        val label = "Saving sound"
+        soundTask(label, "Could not save this sound on this phone") {
+            val out = extractTo(Uri.parse(clip.uri), clip.offsetMs, clip.offsetMs + clip.durationMs, 1f, 1f, label)
+            val saved = withContext(Dispatchers.IO) {
+                com.reelforge.editor.engine.SoundExtractor.saveToMusic(ctx, out, clip.title)
+            }
+            out.delete()
+            message = if (saved != null) "Saved to Music/CutMitra on your phone" else "Could not save this sound"
+        }
+    }
+
     // ------------------------------------------------------------ beat sync
 
     /** What is shown while beats are being found (null when idle). */
@@ -2215,8 +2375,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             previewEffectsOff = true
             mainFx.fx = com.reelforge.editor.model.AudioFx.NONE
             mainFx.clean = false
-            voiceFx.fx = com.reelforge.editor.model.AudioFx.NONE
-            voiceFx.clean = false
+            voiceLane.effectsOff()
+            soundLane.effectsOff()
             runCatching { if (effectsEverSet) player.setVideoEffects(emptyList()) }
             message = "The preview had a problem on this phone, so filters and sound effects are " +
                 "hidden in the preview. Your exported video still has them."
@@ -2781,7 +2941,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { recorder?.release() }
         player.release()
         musicPlayer.release()
-        voicePlayer.release()
+        voiceLane.player.release()
+        soundLane.player.release()
         releaseLayerPlayers()
     }
 }

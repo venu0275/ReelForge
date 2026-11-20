@@ -550,6 +550,43 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun extractSound_writesTheClipsSoundAndExportsWithIt() {
+        val source = videoClip(baseVideo(2_000))
+        val out = File(context.cacheDir, "extract_${System.nanoTime()}.m4a")
+        kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                kotlinx.coroutines.withTimeout(120_000) {
+                    com.reelforge.editor.engine.SoundExtractor.extract(
+                        context, Uri.parse(source.uri), 200, 1_800, 2f, 1.25f, out,
+                    ) { }
+                }
+            }
+        }
+        val r = MediaMetadataRetriever()
+        try {
+            r.setDataSource(out.absolutePath)
+            assertEquals("yes", r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
+            // 1.6 s of sound at double speed lasts about 0.8 s.
+            assertNear("extracted length", 800, r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong(), 250)
+        } finally {
+            r.release()
+        }
+        // The muted clip plus its extracted sound (lowered under a voice-over) still exports.
+        val project = Project(
+            name = "extracted",
+            clips = listOf(source.copy(muted = true)),
+            duckLevel = 0.3f,
+            audio = listOf(
+                AudioClip(uri = Uri.fromFile(out).toString(), title = "Sound: a", startMs = 0, durationMs = 800, duck = true),
+                AudioClip(uri = Uri.fromFile(out).toString(), title = "Voice 1", startMs = 300, durationMs = 400, voice = true),
+            ),
+        )
+        val info = inspect(exportOk(project).file!!)
+        assertTrue(info.hasAudio)
+        assertNear("duration", source.durationMs, info.durationMs, 500)
+    }
+
+    @Test
     fun everySoundEffect_exportsOnClipsAndSounds() {
         val source = videoClip(baseVideo(1_200))
         val clips = AudioFx.entries.map { source.copy(audioFx = it, trimEndMs = 600) }

@@ -250,3 +250,40 @@ class PictureFramingTest {
         assertEquals(0.3f, saved.panY, 1e-4f)
     }
 }
+
+class ExtractSoundTest {
+    private fun video(id: String, ms: Long) =
+        Clip(id = id, uri = "content://v/$id", type = ClipType.VIDEO, sourceDurationMs = ms)
+
+    @Test fun `voice ranges are measured from the start of the sound`() {
+        val voice = com.reelforge.editor.model.AudioClip(
+            uri = "v", title = "Voice 1", startMs = 3_000, durationMs = 2_000, voice = true,
+        )
+        val p = Project(name = "p", clips = listOf(video("a", 10_000)), audio = listOf(voice), duckLevel = 0.3f)
+        val ranges = com.reelforge.editor.model.voiceRangesIn(p, 2_000, 8_000)
+        assertEquals(listOf(1_000_000L..3_000_000L), ranges)
+        // Same answer as for the video clip itself, so the sound is lowered exactly as before.
+        assertEquals(
+            com.reelforge.editor.model.voiceRangesInClip(p, 0),
+            com.reelforge.editor.model.voiceRangesIn(p, 0, 10_000),
+        )
+        assertTrue(com.reelforge.editor.model.voiceRangesIn(p.copy(duckLevel = 1f), 0, 10_000).isEmpty())
+    }
+
+    @Test fun `extracted sound settings are saved with the project`() {
+        val sound = com.reelforge.editor.model.AudioClip(
+            uri = "file:///sounds/s.m4a", title = "Sound: beach", startMs = 1_000, durationMs = 4_000,
+            duck = true, pitch = 1.5f, fxAmount = 0.4f, audioFx = com.reelforge.editor.model.AudioFx.CAVE,
+        )
+        val saved = ProjectJson.decode(ProjectJson.encode(Project(name = "p", audio = listOf(sound)))).audio.single()
+        assertEquals(sound, saved)
+        val old = ProjectJson.decode(ProjectJson.encode(Project(name = "p", audio = listOf(sound.copy(duck = false)))))
+        assertTrue(!old.audio.single().duck)
+    }
+
+    @Test fun `saved sound names are safe file names`() {
+        assertEquals("Sound_beach_trip", com.reelforge.editor.engine.SoundExtractor.fileName("Sound: beach trip!"))
+        assertEquals("Sound", com.reelforge.editor.engine.SoundExtractor.fileName("✈️:/"))
+        assertTrue(com.reelforge.editor.engine.SoundExtractor.fileName("x".repeat(99)).length <= 40)
+    }
+}

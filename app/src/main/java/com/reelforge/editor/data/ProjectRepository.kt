@@ -123,6 +123,7 @@ object ProjectJson {
                     put("audioFx", a.audioFx.name)
                     put("pitch", a.pitch.toDouble())
                     put("fxAmount", a.fxAmount.toDouble())
+                    put("duck", a.duck)
                 })
             }
         })
@@ -412,6 +413,7 @@ object ProjectJson {
                 clean = a.optBoolean("clean", false),
                 pitch = a.optDouble("pitch", 1.0).toFloat().coerceIn(AudioClip.MIN_PITCH, AudioClip.MAX_PITCH),
                 fxAmount = a.optDouble("fxAmount", 1.0).toFloat().coerceIn(0f, 1f),
+                duck = a.optBoolean("duck", false),
             )
         }
         return Project(

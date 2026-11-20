@@ -474,6 +474,7 @@ data class AudioClip(
     val clean: Boolean = false, // background noise lowered and loudness evened out (Clean voice)
     val pitch: Float = 1f,      // voice pitch on top of the style (1 = as recorded); length unchanged
     val fxAmount: Float = 1f,   // how strong the style's filter is, 0..1
+    val duck: Boolean = false,  // lowered under voice-overs, like a video's own sound (Extract sound)
 ) {
     /** The total pitch heard: the style's pitch times the user's own pitch. */
     val totalPitch: Float get() = (pitch * audioFx.pitch).coerceIn(MIN_PITCH, MAX_PITCH)
@@ -575,12 +576,16 @@ fun duckGain(tUs: Long, ranges: List<LongRange>, level: Float, rampUs: Long = 15
 
 /** The stretches of time, in microseconds from the start of clip [index], where a voice-over plays. */
 fun voiceRangesInClip(project: Project, index: Int): List<LongRange> {
-    if (project.duckLevel >= 1f) return emptyList()
     val clipStart = project.clipStartMs(index)
-    val clipEnd = clipStart + project.clips[index].durationMs
+    return voiceRangesIn(project, clipStart, clipStart + project.clips[index].durationMs)
+}
+
+/** Where a voice-over plays between [startMs] and [endMs], in microseconds from [startMs]. */
+fun voiceRangesIn(project: Project, startMs: Long, endMs: Long): List<LongRange> {
+    if (project.duckLevel >= 1f) return emptyList()
     return project.audio.filter { it.voice }.mapNotNull { a ->
-        val from = maxOf(a.startMs, clipStart)
-        val to = minOf(a.startMs + a.durationMs, clipEnd)
-        if (to > from) ((from - clipStart) * 1000)..((to - clipStart) * 1000) else null
+        val from = maxOf(a.startMs, startMs)
+        val to = minOf(a.startMs + a.durationMs, endMs)
+        if (to > from) ((from - startMs) * 1000)..((to - startMs) * 1000) else null
     }
 }

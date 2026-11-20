@@ -154,6 +154,9 @@ fun EditorScreen(vm: EditorViewModel) {
     val pickVideoLayer = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) vm.addVideoLayer(uri) }
+    val pickVideoSound = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) vm.addSoundFromVideo(uri) }
     val pickSound = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) vm.addAudioClip(uri) }
@@ -411,6 +414,9 @@ fun EditorScreen(vm: EditorViewModel) {
                 vm, project,
                 record = record,
                 pickSound = { openMusic() },
+                pickVideoSound = {
+                    pickVideoSound.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                },
             )
             Panel.MUSIC -> MusicPanel(vm, project) { openMusic() }
             Panel.STORE -> StorePanel(vm)
@@ -871,6 +877,13 @@ private fun EditorMenu(
                 }
                 if (!isVideo) MenuTile("Photo zoom") { openPanel(Panel.PHOTO_ZOOM) }
                 if (isVideo) MenuTile("Volume") { openPanel(Panel.VOLUME) }
+                if (isVideo && vm.canExtractSound(clip) && (!clip.muted || vm.soundWork != null)) {
+                    // Shows its progress on the tile; tap again to stop.
+                    val working = vm.soundWork
+                    MenuTile(working ?: "🎵 Extract sound", accent = working != null) {
+                        if (working != null) vm.cancelSoundWork() else vm.extractSound(id)
+                    }
+                }
                 MenuTile("Filter") { openPanel(Panel.FILTER) }
                 MenuTile("Adjust") { openPanel(Panel.ADJUST) }
                 MenuTile("Fade") { openPanel(Panel.FADE) }

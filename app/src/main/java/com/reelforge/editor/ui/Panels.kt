@@ -870,7 +870,13 @@ fun LayerPanel(
 
 /** Voice-over recordings and sound clips placed on the timeline. */
 @Composable
-fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSound: () -> Unit) {
+fun AudioPanel(
+    vm: EditorViewModel,
+    project: Project,
+    record: () -> Unit,
+    pickSound: () -> Unit,
+    pickVideoSound: () -> Unit = {},
+) {
     PanelTitle("Voice-over and sounds")
     if (vm.isRecording) {
         Text("Recording… the video is playing so you can speak along with it.")
@@ -881,6 +887,20 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = record) { Text("Record at playhead") }
         TextButton(onClick = pickSound) { Text("Add audio file") }
+    }
+    val soundWork = vm.soundWork
+    if (soundWork != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(soundWork, Modifier.weight(1f))
+            TextButton(onClick = { vm.cancelSoundWork() }) { Text("Cancel") }
+        }
+    } else {
+        OutlinedButton(onClick = pickVideoSound) { Text("🎵 Sound from a video") }
+        Text(
+            "Takes the sound out of any video on your phone and adds it at the red line. To take the " +
+                "sound out of a clip on the timeline, select the clip and tap Extract sound.",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
     Text("Countdown before recording", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -970,10 +990,16 @@ fun AudioPanel(vm: EditorViewModel, project: Project, record: () -> Unit, pickSo
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            TextButton(onClick = { vm.saveSoundToPhone(clip.id) }, enabled = vm.soundWork == null) {
+                Text("Save to phone")
+            }
             TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
         }
         CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
         SwitchRow("Clean voice", clip.clean) { on -> vm.updateAudioClip(clip.id) { it.copy(clean = on) } }
+        if (!clip.voice) {
+            SwitchRow("Lower under voice-overs", clip.duck) { on -> vm.updateAudioClip(clip.id) { it.copy(duck = on) } }
+        }
         FxChips(clip.audioFx, voice = true) { fx -> vm.updateAudioClip(clip.id) { it.copy(audioFx = fx) } }
         VoiceTuning(vm, clip)
         CommitSlider(

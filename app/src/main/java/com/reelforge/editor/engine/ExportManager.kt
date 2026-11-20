@@ -259,7 +259,7 @@ object ExportManager {
         if (project.audio.isNotEmpty()) {
             val silence = Uri.fromFile(MediaUtils.silenceFile(context, SILENCE_MS))
             project.audio.forEach { clip ->
-                buildAudioClipSequence(clip, total, silence)?.let { sequences += it }
+                buildAudioClipSequence(clip, total, silence, project)?.let { sequences += it }
             }
         }
 
@@ -440,11 +440,19 @@ object ExportManager {
         if (!fx.filterless && amount > 0f) add(AudioFxProcessor(fx, amount))
     }
 
+    /** A sound taken from a video is lowered under voice-overs, as it was inside the video. */
+    private fun duckFor(clip: AudioClip, playMs: Long, project: Project?): List<AudioProcessor> {
+        if (project == null || !clip.duck || clip.voice) return emptyList()
+        val ranges = com.reelforge.editor.model.voiceRangesIn(project, clip.startMs, clip.startMs + playMs)
+        return if (ranges.isEmpty()) emptyList() else listOf(DuckProcessor(ranges, project.duckLevel))
+    }
+
     /** A voice-over / sound clip: silence up to its start, then the audio itself. */
     private fun buildAudioClipSequence(
         clip: AudioClip,
         videoDurationMs: Long,
         silence: Uri,
+        project: Project? = null,
     ): EditedMediaItemSequence? {
         val available = videoDurationMs - clip.startMs
         if (available < 100) return null
@@ -476,7 +484,8 @@ object ExportManager {
             .setEffects(
                 Effects(
                     fxChain(clip.audioFx, clip.clean, clip.totalPitch, clip.fxAmount) +
-                        audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs),
+                        audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs) +
+                        duckFor(clip, playMs, project),
                     emptyList(),
                 )
             )
