@@ -74,7 +74,17 @@ object MediaUtils {
         context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
         val turned = runCatching {
             context.contentResolver.openInputStream(uri)?.use {
-                android.media.ExifInterface(it).rotationDegrees
+                when (
+                    android.media.ExifInterface(it).getAttributeInt(
+                        android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL,
+                    )
+                ) {
+                    android.media.ExifInterface.ORIENTATION_ROTATE_90,
+                    android.media.ExifInterface.ORIENTATION_TRANSPOSE -> 90
+                    android.media.ExifInterface.ORIENTATION_ROTATE_270,
+                    android.media.ExifInterface.ORIENTATION_TRANSVERSE -> 270
+                    else -> 0
+                }
             } ?: 0
         }.getOrDefault(0)
         val w = bounds.outWidth.toFloat()
