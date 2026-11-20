@@ -63,15 +63,83 @@ fun UpdatePrompt() {
     // Hidden with "Later" until the app is next started.
     var later by rememberSaveable { mutableStateOf(false) }
 
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
-        // If the update was cancelled or failed, the box simply stays up.
+    // Shown under the buttons when the update could not start or failed.
+    var problem by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        busy = false
+        when (result.resultCode) {
+            android.app.Activity.RESULT_OK -> Unit
+            // Closed by the user: the box stays up so they can try again.
+            android.app.Activity.RESULT_CANCELED -> problem = null
+            // Play could not install it (no space, no connection, Play busy): offer the store page.
+            else -> {
+                problem = "The update could not be installed here. Opening the Play Store instead."
+                openStoreListing(context)
+            }
+        }
     }
 
-    fun startUpdate(update: AppUpdateInfo) {
-        val started = update.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE) && runCatching {
-            manager.startUpdateFlowForResult(update, launcher, AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build())
-        }.getOrDefault(false)
-        if (!started) openStoreListing(context)
+    // A flexible update downloads in the background; once it is downloaded it is installed
+    // (the app restarts into the new version).
+    val installListener = remember {
+        com.google.android.play.core.install.InstallStateUpdatedListener { state ->
+            when (state.installStatus()) {
+                com.google.android.play.core.install.model.InstallStatus.DOWNLOADED -> manager.completeUpdate()
+                com.google.android.play.core.install.model.InstallStatus.FAILED -> {
+                    busy = false
+                    problem = "The download failed. Opening the Play Store instead."
+                    openStoreListing(context)
+                }
+                else -> Unit
+            }
+        }
+    }
+    DisposableEffect(manager) {
+        manager.registerListener(installListener)
+        onDispose { manager.unregisterListener(installListener) }
+    }
+
+    /** Starts the update from fresh details (Play allows each set of details to be used once). */
+    fun startUpdate() {
+        busy = true
+        problem = null
+        manager.appUpdateInfo
+            .addOnSuccessListener { fresh ->
+                val type = when {
+                    fresh.updateAvailability() == UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS ->
+                        AppUpdateType.IMMEDIATE
+                    fresh.updateAvailability() != UpdateAvailability.UPDATE_AVAILABLE -> null
+                    fresh.isUpdateTypeAllowed(AppUpdateType.IMMEDIATE) -> AppUpdateType.IMMEDIATE
+                    fresh.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE) -> AppUpdateType.FLEXIBLE
+                    else -> null
+                }
+                val started = type != null && runCatching {
+                    manager.startUpdateFlowForResult(fresh, launcher, AppUpdateOptions.newBuilder(type).build())
+                }.getOrDefault(false)
+                if (!started) {
+                    busy = false
+                    openStoreListing(context)
+                }
+            }
+            .addOnFailureListener {
+                busy = false
+                openStoreListing(context)
+            }
+    }
+
+    /** Carries on with an update that is already downloaded or installing. */
+    fun resume(update: AppUpdateInfo) {
+        if (update.installStatus() == com.google.android.play.core.install.model.InstallStatus.DOWNLOADED) {
+            manager.completeUpdate()
+        } else {
+            runCatching {
+                manager.startUpdateFlowForResult(
+                    update, launcher, AppUpdateOptions.newBuilder(AppUpdateType.IMMEDIATE).build(),
+                )
+            }
+        }
     }
 
     // Checked whenever the app comes to the front, which includes opening it.
@@ -81,11 +149,17 @@ fun UpdatePrompt() {
             if (event != Lifecycle.Event.ON_RESUME) return@LifecycleEventObserver
             manager.appUpdateInfo.addOnSuccessListener { update ->
                 when (update.updateAvailability()) {
-                    UpdateAvailability.UPDATE_AVAILABLE -> info = update
+                    UpdateAvailability.UPDATE_AVAILABLE -> {
+                        info = update
+                        // Downloaded earlier in the background but not installed yet.
+                        if (update.installStatus() == com.google.android.play.core.install.model.InstallStatus.DOWNLOADED) {
+                            manager.completeUpdate()
+                        }
+                    }
                     // An update the user started earlier is still installing: carry on with it.
                     UpdateAvailability.DEVELOPER_TRIGGERED_UPDATE_IN_PROGRESS -> {
                         info = update
-                        startUpdate(update)
+                        resume(update)
                     }
                     else -> info = null
                 }
@@ -96,8 +170,7 @@ fun UpdatePrompt() {
         onDispose { lifecycle.removeObserver(observer) }
     }
 
-    val update = info ?: return
-    if (later) return
+    if (info == null || later) return
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
@@ -124,8 +197,11 @@ fun UpdatePrompt() {
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(8.dp))
-                Button(onClick = { startUpdate(update) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Update now")
+                Button(onClick = { startUpdate() }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (busy) "Starting…" else "Update now")
+                }
+                problem?.let {
+                    Text(it, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = { later = true }, modifier = Modifier.fillMaxWidth()) {
                     Text("Later")
