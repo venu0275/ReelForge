@@ -65,6 +65,25 @@ object MediaUtils {
     }
 
     /** Width / height of a video as it is displayed (rotation applied), or null if unreadable. */
+    /** Width / height of a photo or video as it is shown (turned upright), or null. */
+    fun mediaAspect(context: Context, uri: Uri, type: ClipType): Float? =
+        if (type == ClipType.VIDEO) videoAspect(context, uri) else photoAspect(context, uri)
+
+    private fun photoAspect(context: Context, uri: Uri): Float? = try {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        val turned = runCatching {
+            context.contentResolver.openInputStream(uri)?.use {
+                android.media.ExifInterface(it).rotationDegrees
+            } ?: 0
+        }.getOrDefault(0)
+        val w = bounds.outWidth.toFloat()
+        val h = bounds.outHeight.toFloat()
+        if (w <= 0f || h <= 0f) null else if (turned == 90 || turned == 270) h / w else w / h
+    } catch (e: Exception) {
+        null
+    }
+
     fun videoAspect(context: Context, uri: Uri): Float? {
         val r = MediaMetadataRetriever()
         return try {

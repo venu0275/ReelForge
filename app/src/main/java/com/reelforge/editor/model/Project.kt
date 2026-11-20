@@ -15,7 +15,15 @@ enum class AspectRatio(val w: Int, val h: Int, val label: String) {
     FOUR_FIVE(4, 5, "4:5"),
     THREE_FOUR(3, 4, "3:4"),
     FOUR_THREE(4, 3, "4:3"),
-    CINEMA(47, 20, "2.35:1"),
+    CINEMA(47, 20, "2.35:1");
+
+    val ratio: Float get() = w.toFloat() / h
+
+    companion object {
+        /** The frame shape nearest to a picture that is [ratio] wide per 1 high. */
+        fun closest(ratio: Float): AspectRatio =
+            entries.minBy { kotlin.math.abs(ln(it.ratio) - ln(ratio.coerceIn(0.1f, 10f))) }
+    }
 }
 
 enum class FilterPreset(val label: String) {

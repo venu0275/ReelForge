@@ -404,8 +404,44 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (clips.size < uris.size) message = "Some files could not be read"
             if (clips.isNotEmpty()) {
+                val first = project?.clips?.isEmpty() == true
                 mutate { it.copy(clips = it.clips + clips) }
+                // The first video in a project: offer to match the frame to it if the shapes differ.
+                if (first) {
+                    val shape = withContext(Dispatchers.IO) {
+                        MediaUtils.mediaAspect(ctx, Uri.parse(clips[0].uri), clips[0].type)
+                    }
+                    val best = shape?.let { AspectRatio.closest(it) }
+                    if (best != null && best != project?.aspect) aspectSuggestion = best
+                }
             }
+        }
+    }
+
+    // ------------------------------------------------------------ frame shape (ratio)
+
+    /** A frame shape that fits the first video better than the project's, to offer once. */
+    var aspectSuggestion by mutableStateOf<AspectRatio?>(null)
+
+    /** Changes the shape of the video (9:16, 16:9, …). Texts and layers keep their places. */
+    fun setAspect(aspect: AspectRatio) {
+        aspectSuggestion = null
+        if (project?.aspect != aspect) mutate { it.copy(aspect = aspect) }
+    }
+
+    /** Sets the frame to the shape of the clip under the red line (or the first clip). */
+    fun matchAspect() {
+        val p = project ?: return
+        val clip = p.locate(playheadMs)?.let { p.clips[it.first] } ?: p.clips.firstOrNull() ?: return
+        viewModelScope.launch {
+            val shape = withContext(Dispatchers.IO) { MediaUtils.mediaAspect(ctx, Uri.parse(clip.uri), clip.type) }
+            if (shape == null) {
+                message = "Could not read the shape of this clip"
+                return@launch
+            }
+            val best = AspectRatio.closest(shape)
+            setAspect(best)
+            message = "Frame set to ${best.label} to match the clip"
         }
     }
 

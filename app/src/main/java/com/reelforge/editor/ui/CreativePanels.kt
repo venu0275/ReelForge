@@ -261,3 +261,40 @@ fun CoverPanel(vm: EditorViewModel, project: Project) {
         style = MaterialTheme.typography.bodySmall,
     )
 }
+
+
+/** Ratio: the shape of the video. */
+@Composable
+fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project) {
+    PanelTitle("Ratio")
+    Text(
+        "The shape of your video. Clips that are a different shape get bars (or the Backdrop) around " +
+            "them; select a clip and tap Fill to fill the frame instead.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    androidx.compose.foundation.layout.Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        com.reelforge.editor.model.AspectRatio.entries.forEach { a ->
+            FilterChip(
+                selected = project.aspect == a,
+                onClick = { vm.setAspect(a) },
+                label = { Text(ratioName(a)) },
+            )
+        }
+    }
+    if (project.clips.isNotEmpty()) {
+        OutlinedButton(onClick = { vm.matchAspect() }) { Text("Match video") }
+        Text("Sets the shape to the clip under the red line.", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** "9:16 Reels / Shorts" and so on. */
+fun ratioName(a: com.reelforge.editor.model.AspectRatio) = when (a) {
+    com.reelforge.editor.model.AspectRatio.PORTRAIT -> "9:16 Reels"
+    com.reelforge.editor.model.AspectRatio.LANDSCAPE -> "16:9 YouTube"
+    com.reelforge.editor.model.AspectRatio.SQUARE -> "1:1 Square"
+    com.reelforge.editor.model.AspectRatio.FOUR_FIVE -> "4:5 Post"
+    else -> a.label
+}

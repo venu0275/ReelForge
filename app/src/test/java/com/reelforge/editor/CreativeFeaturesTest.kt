@@ -287,3 +287,16 @@ class ExtractSoundTest {
         assertTrue(com.reelforge.editor.engine.SoundExtractor.fileName("x".repeat(99)).length <= 40)
     }
 }
+
+class RatioTest {
+    @Test fun `the closest frame shape is picked for common videos and photos`() {
+        val a = com.reelforge.editor.model.AspectRatio
+        assertEquals(a.LANDSCAPE, a.closest(1920f / 1080f))
+        assertEquals(a.PORTRAIT, a.closest(1080f / 1920f))
+        assertEquals(a.PORTRAIT, a.closest(720f / 1600f))   // tall phone screen recording
+        assertEquals(a.SQUARE, a.closest(1f))
+        assertEquals(a.FOUR_THREE, a.closest(4000f / 3000f)) // phone photo
+        assertEquals(a.THREE_FOUR, a.closest(3000f / 4000f))
+        assertEquals(a.CINEMA, a.closest(2.4f))
+    }
+}

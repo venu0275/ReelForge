@@ -97,6 +97,7 @@ enum class Panel(val title: String) {
     PHOTO_ZOOM("Photo zoom"),
     TEMPLATES("Templates"),
     COVER("Cover"),
+    RATIO("Ratio"),
     LAYER("Layers"),
     AUDIO("Voice and sounds"),
     MUSIC("Music"),
@@ -424,6 +425,7 @@ fun EditorScreen(vm: EditorViewModel) {
             Panel.PHOTO_ZOOM -> clip?.let { PhotoZoomPanel(vm, it) }
             Panel.TEMPLATES -> TemplatesPanel(vm, project) { panel = null }
             Panel.COVER -> CoverPanel(vm, project)
+            Panel.RATIO -> RatioPanel(vm, project)
             Panel.RECORD -> RecordPanel(vm, onStarted = { panel = null })
             Panel.EXPORT -> Unit
         }
@@ -587,6 +589,25 @@ fun EditorScreen(vm: EditorViewModel) {
                 }
             }
         }
+    }
+
+    vm.aspectSuggestion?.let { better ->
+        AlertDialog(
+            onDismissRequest = { vm.aspectSuggestion = null },
+            title = { Text("Change the frame to ${better.label}?") },
+            text = {
+                Text(
+                    "Your video is ${better.label} but this project's frame is ${project.aspect.label}, so the " +
+                        "video shows small with bars around it. You can change this any time with Ratio."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.setAspect(better) }) { Text("Use ${ratioName(better)}") }
+            },
+            dismissButton = {
+                TextButton(onClick = { vm.aspectSuggestion = null }) { Text("Keep ${project.aspect.label}") }
+            },
+        )
     }
 
     if (askReplaceVoice) {
@@ -818,6 +839,7 @@ private fun EditorMenu(
                 MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }
                 // Opens the music screen; with music already added, its settings are one tap away there.
                 MenuTile("Music") { if (project.music == null) openMusic() else openPanel(Panel.MUSIC) }
+                MenuTile("Ratio ${project.aspect.label}") { openPanel(Panel.RATIO) }
                 MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
                 MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
                 MenuTile("Cover", enabled = hasClips) { openPanel(Panel.COVER) }
@@ -1735,13 +1757,15 @@ private fun PreviewArea(
     val current = location?.let { project.clips[it.first] }
     val local = location?.second ?: 0L
 
+    // Dark grey around the frame, so the frame's own edges (and black bars) can be seen.
     Box(
-        modifier.fillMaxWidth().background(Color.Black),
+        modifier.fillMaxWidth().background(Color(0xFF26272B)),
         contentAlignment = Alignment.Center,
     ) {
         BoxWithConstraints(
             Modifier
                 .aspectRatio(project.aspect.w.toFloat() / project.aspect.h)
+                .background(Color.Black)
                 .clipToBounds()
                 // Tapping the picture itself, away from any item, lets go of the selection.
                 .onEmptyTap { onPick(null) }
