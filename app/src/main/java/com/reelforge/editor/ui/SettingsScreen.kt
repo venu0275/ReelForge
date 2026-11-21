@@ -105,6 +105,7 @@ fun SettingsScreen(vm: EditorViewModel) {
         TextButton(onClick = { showBugReport = true }) { Text("Report a bug") }
         Note("Something not working? Describe it, add screenshots if you like, and send it from your email app.")
         TextButton(onClick = { openStoreListing(context) }) { Text("Check for updates") }
+        TextButton(onClick = { shareApp(context) }) { Text("Share CutMitra with friends") }
         Note("You are using version ${vm.appVersion}. When a newer version is out, the app also tells you when it opens.")
 
         Section("Privacy")

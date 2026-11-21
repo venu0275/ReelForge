@@ -89,7 +89,15 @@ fun HomeScreen(vm: EditorViewModel) {
         topBar = {
             TopAppBar(
                 title = { Text("CutMitra") },
-                actions = { TextButton(onClick = { vm.showSettings = true }) { Text("Settings") } },
+                actions = {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    IconButton(onClick = { shareApp(context) }) {
+                        Icon(Icons.Rounded.Share, contentDescription = "Share app")
+                    }
+                    IconButton(onClick = { vm.showSettings = true }) {
+                        Icon(Icons.Rounded.Settings, contentDescription = "Settings")
+                    }
+                },
             )
         },
     ) { padding ->
@@ -321,5 +329,25 @@ private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) {
         Icon(icon, contentDescription = null)
         Text(label, Modifier.padding(start = 20.dp), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+
+/** Shares a link to CutMitra on the Play Store, with a short line, through any app. */
+fun shareApp(context: android.content.Context) {
+    val link = "https://play.google.com/store/apps/details?id=${context.packageName}"
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_SUBJECT, "CutMitra – video editor")
+        putExtra(
+            android.content.Intent.EXTRA_TEXT,
+            "I edit my videos with CutMitra: trim, text, captions, music and more, free. Try it: $link",
+        )
+    }
+    runCatching {
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share CutMitra")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 }
