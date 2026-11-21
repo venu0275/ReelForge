@@ -322,6 +322,28 @@ class BlackBarsTest {
         assertEquals(AspectRatio.LANDSCAPE, AspectRatio.closest(box.aspect(90f / 160f)))
     }
 
+    @Test fun `noisy grey bars, text in a bar and a dark line in the picture are handled`() {
+        val w = 90
+        val h = 160
+        var seed = 7
+        fun rnd(n: Int): Int { seed = seed * 1_103_515_245 + 12_345; return ((seed ushr 16) and 0x7fff) % n }
+        fun grey(v: Int) = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+        val px = IntArray(w * h) { grey(20 + rnd(36)) }                       // "black" that is noisy grey
+        for (y in 55 until 105) for (x in 0 until w) px[y * w + x] = grey(70 + rnd(150))
+        for (x in 0 until w) px[80 * w + x] = grey(20)                         // dark line inside the picture
+        for (y in 122 until 130) for (x in 20 until 60) if (rnd(2) == 0) px[y * w + x] = grey(240) // caption
+        val box = bars.boxOf(px, w, h)!!
+        assertEquals(55f / 160, box.top, 0.01f)
+        assertEquals(105f / 160, box.bottom, 0.01f)
+        assertEquals(AspectRatio.LANDSCAPE, AspectRatio.closest(box.aspect(9f / 16f)))
+    }
+
+    @Test fun `one odd frame does not decide the bars`() {
+        val good = com.reelforge.editor.util.ContentBox(0f, 0.34f, 1f, 0.66f)
+        val odd = com.reelforge.editor.util.ContentBox(0f, 0.1f, 1f, 0.9f)
+        assertEquals(good, bars.combine(listOf(good, odd, good, good, good)))
+    }
+
     @Test fun `a frame without bars or an all-black frame`() {
         val full = IntArray(90 * 160) { 0xFF707070.toInt() }
         assertTrue(!bars.boxOf(full, 90, 160)!!.hasBars)

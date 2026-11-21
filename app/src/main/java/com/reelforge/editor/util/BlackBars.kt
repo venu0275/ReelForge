@@ -25,53 +25,96 @@ data class ContentBox(val left: Float, val top: Float, val right: Float, val bot
 }
 
 object BlackBars {
-    /** Brightness (0..255) above which a pixel counts as picture rather than bar. */
-    private const val LIGHT = 36
+    /**
+     * Brightness (0..255) above which a pixel counts as picture. Kept well above black, because
+     * shared videos often have "black" bars that are really dark grey and full of noise.
+     */
+    private const val LIGHT = 60
+
+    /** A row or column is picture when at least this share of it is lighter than a bar. */
+    private const val SHARE = 0.15f
+
+    /** Gaps up to this share of the frame (a dark line inside the picture) do not split it. */
+    private const val GAP = 0.04f
+
+    private fun lum(c: Int) = (((c shr 16) and 0xff) * 3 + ((c shr 8) and 0xff) * 6 + (c and 0xff)) / 10
 
     /**
-     * The picture's box in one frame, from its ARGB [pixels] ([w] x [h]); null if the frame is
-     * (almost) all dark, so it says nothing about the bars. A row or column belongs to the picture
-     * when more than 3 % of it is lighter than a bar.
+     * The longest stretch of [isPicture] lines, joining stretches split by short gaps. Text or a
+     * logo in a bar sits apart from the picture, so it is left out.
      */
-    fun boxOf(pixels: IntArray, w: Int, h: Int): ContentBox? {
-        if (w <= 0 || h <= 0 || pixels.size < w * h) return null
-        val rowLight = IntArray(h)
-        val colLight = IntArray(w)
-        for (y in 0 until h) for (x in 0 until w) {
-            val c = pixels[y * w + x]
-            val lum = (((c shr 16) and 0xff) * 3 + ((c shr 8) and 0xff) * 6 + (c and 0xff)) / 10
-            if (lum > LIGHT) {
-                rowLight[y]++
-                colLight[x]++
+    private fun longestRun(count: Int, isPicture: (Int) -> Boolean): IntRange? {
+        val gap = maxOf(1, (count * GAP).toInt())
+        var best: IntRange? = null
+        var start = -1
+        var end = -1
+        fun close() {
+            if (start >= 0 && (best == null || end - start > best!!.last - best!!.first)) best = start..end
+        }
+        for (i in 0 until count) {
+            if (!isPicture(i)) continue
+            if (start >= 0 && i - end - 1 <= gap) {
+                end = i
+            } else {
+                close()
+                start = i
+                end = i
             }
         }
-        val rowMin = maxOf(1, w * 3 / 100)
-        val colMin = maxOf(1, h * 3 / 100)
-        val top = rowLight.indexOfFirst { it >= rowMin }
-        val bottom = rowLight.indexOfLast { it >= rowMin }
-        val left = colLight.indexOfFirst { it >= colMin }
-        val right = colLight.indexOfLast { it >= colMin }
-        if (top < 0 || left < 0 || bottom - top < h / 10 || right - left < w / 10) return null
-        return ContentBox(left / w.toFloat(), top / h.toFloat(), (right + 1) / w.toFloat(), (bottom + 1) / h.toFloat())
+        close()
+        return best
     }
 
     /**
-     * Looks at a few frames spread through the video and returns the area the picture uses in any
-     * of them (so dark scenes do not count as bars), or null if it cannot tell.
+     * The picture's box in one frame, from its ARGB [pixels] ([w] x [h]); null if the frame is
+     * (almost) all dark, so it says nothing about the bars.
+     */
+    fun boxOf(pixels: IntArray, w: Int, h: Int): ContentBox? {
+        if (w <= 0 || h <= 0 || pixels.size < w * h) return null
+        val light = BooleanArray(w * h) { lum(pixels[it]) > LIGHT }
+        val rows = longestRun(h) { y ->
+            var n = 0
+            for (x in 0 until w) if (light[y * w + x]) n++
+            n >= w * SHARE
+        } ?: return null
+        // Columns are judged only inside the picture's rows.
+        val tall = rows.last - rows.first + 1
+        val cols = longestRun(w) { x ->
+            var n = 0
+            for (y in rows) if (light[y * w + x]) n++
+            n >= tall * SHARE
+        } ?: return null
+        if (tall < h / 10 || cols.last - cols.first + 1 < w / 10) return null
+        return ContentBox(
+            cols.first / w.toFloat(), rows.first / h.toFloat(),
+            (cols.last + 1) / w.toFloat(), (rows.last + 1) / h.toFloat(),
+        )
+    }
+
+    /** The middle value of each edge, so one odd frame (a dark scene, a title) does not decide. */
+    fun combine(boxes: List<ContentBox>): ContentBox? {
+        if (boxes.isEmpty()) return null
+        fun mid(pick: (ContentBox) -> Float) = boxes.map(pick).sorted()[boxes.size / 2]
+        return ContentBox(mid { it.left }, mid { it.top }, mid { it.right }, mid { it.bottom })
+    }
+
+    /**
+     * Looks at a few frames spread through the video and returns where the picture is in most of
+     * them, or null if it cannot tell.
      */
     fun find(context: Context, uri: Uri, durationMs: Long): ContentBox? {
         val r = MediaMetadataRetriever()
         return try {
             r.setDataSource(context, uri)
-            val boxes = listOf(0.1, 0.3, 0.5, 0.7, 0.9).mapNotNull { at ->
+            val boxes = listOf(0.1, 0.25, 0.4, 0.55, 0.7, 0.85).mapNotNull { at ->
                 val frame = r.getScaledFrameAtTime(
-                    (durationMs * at * 1000).toLong(), MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 160, 160,
+                    (durationMs * at * 1000).toLong(), MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 240, 240,
                 ) ?: return@mapNotNull null
                 val box = boxOf(frame)
                 frame.recycle()
                 box
             }
-            if (boxes.size < 2) null else boxes.reduce { a, b -> a.union(b) }
+            if (boxes.size < 3) null else combine(boxes)
         } catch (e: Exception) {
             null
         } finally {
