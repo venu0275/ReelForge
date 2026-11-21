@@ -1190,6 +1190,11 @@ private fun ItemMenu(
 private val RULER_HEIGHT = 22.dp
 private val TRACK_HEIGHT = 56.dp
 private val ROW_HEIGHT = 24.dp
+/** Text bars are taller (like KineMaster), so the words and the T mark are easy to see and grab. */
+private val TEXT_ROW_HEIGHT = 40.dp
+/** KineMaster-style gold for text bars, and the bright yellow frame of a selected bar. */
+private val TEXT_GOLD = Color(0xFFA8860F)
+private val SELECTED_YELLOW = Color(0xFFFFC107)
 private val TILE_WIDTH = 64.dp
 
 private class Bar(val id: String, val label: String, val startMs: Long, val endMs: Long)
@@ -1276,7 +1281,8 @@ private fun Timeline(
     }
     val rows = listOf(textBars, layerBars, audioBars, videoBars).count { it.isNotEmpty() } +
         (if (project.music != null) 1 else 0)
-    val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp
+    val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp +
+        (if (textBars.isNotEmpty()) TEXT_ROW_HEIGHT - ROW_HEIGHT else 0.dp)
     val configuration = LocalConfiguration.current
     val sideways = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val cap = configuration.screenHeightDp.dp * (if (sideways) 0.42f else 0.34f)
@@ -1356,8 +1362,10 @@ private fun Timeline(
                     }
                 if (textBars.isNotEmpty()) {
                     BarRow(
-                        textBars, pxPerMs, Color(0xFF7C4DFF), selectedId, { onSelect(ItemKind.TEXT, it) },
+                        textBars, pxPerMs, TEXT_GOLD, selectedId, { onSelect(ItemKind.TEXT, it) },
                         limitMs = total,
+                        rowHeight = TEXT_ROW_HEIGHT,
+                        mark = "T",
                         onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.TEXT, id, atStart, deltaMs, snapMs) },
                     ) { id, deltaMs ->
                         vm.updateText(id) {
@@ -1714,6 +1722,9 @@ private fun BarRow(
     rowModifier: Modifier = Modifier,
     limitMs: Long? = null,
     onResize: ((id: String, atStart: Boolean, deltaMs: Long) -> Unit)? = null,
+    rowHeight: androidx.compose.ui.unit.Dp = ROW_HEIGHT,
+    /** A letter shown in a little box at the start of each bar (e.g. "T" for texts). */
+    mark: String? = null,
     onMove: (id: String, deltaMs: Long) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -1723,7 +1734,7 @@ private fun BarRow(
     val handleWidth = 18.dp
     val handlePx = with(density) { handleWidth.toPx() }
     val minPx = with(density) { 14.dp.toPx() }
-    Box(Modifier.fillMaxWidth().height(ROW_HEIGHT).then(rowModifier)) {
+    Box(Modifier.fillMaxWidth().height(rowHeight).then(rowModifier)) {
         bars.forEach { bar ->
             key(bar.id) {
                 var drag by remember { mutableFloatStateOf(0f) }
@@ -1762,7 +1773,10 @@ private fun BarRow(
                                 )
                             }
                         }
-                        .then(if (selected) Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp)) else Modifier)
+                        .then(
+                            if (selected) Modifier.border(2.dp, if (mark != null) SELECTED_YELLOW else Color.White, RoundedCornerShape(4.dp))
+                            else Modifier
+                        )
                         .clickable { onTap(bar.id) }
                         .pointerInput(bar.id) {
                             detectDragGesturesAfterLongPress(
@@ -1779,7 +1793,23 @@ private fun BarRow(
                         .padding(horizontal = if (selected && onResize != null) handleWidth else 6.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    Text(label, fontSize = 11.sp, maxLines = 1, color = Color.White)
+                    if (mark != null && !resizing) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(22.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                                    .background(Color.Black.copy(alpha = 0.28f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(mark, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.9f))
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            Text(label, fontSize = 12.sp, maxLines = 1, color = Color.White, overflow = TextOverflow.Ellipsis)
+                        }
+                    } else {
+                        Text(label, fontSize = 11.sp, maxLines = 1, color = Color.White)
+                    }
                 }
                 if (selected && onResize != null && drag == 0f) {
                     BarHandle(
