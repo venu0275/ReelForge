@@ -175,14 +175,15 @@ class EditorUiTest {
 /** The one-time Ratio tour (this class does not skip tours). */
 @RunWith(AndroidJUnit4::class)
 class RatioTourUiTest {
-    @get:Rule
+    // Runs before the app starts, so the app reads "tour not seen yet".
+    @get:Rule(order = 0)
+    val tourNotSeen = SkipToursRule(seen = false)
+
+    @get:Rule(order = 1)
     val rule = createAndroidComposeRule<MainActivity>()
 
     @org.junit.Before
     fun setUp() {
-        InstrumentationRegistry.getInstrumentation().targetContext
-            .getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
-            .edit().putBoolean("ratioTourSeen", false).commit()
         val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
         val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
         if (android.os.Build.VERSION.SDK_INT >= 33) {
