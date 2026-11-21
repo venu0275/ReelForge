@@ -482,7 +482,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 aspect = aspect,
                 clips = p.clips.map { c ->
                     if (c.id != offer.clipId) c else {
-                        val f = com.reelforge.editor.util.BlackBars.fillFraming(offer.box, offer.videoAspect, aspect.ratio, c.fill)
+                        // Keeping a frame of another shape means filling it (the sides are cut, as
+                        // the dialog says); otherwise the whole picture is kept.
+                        val cover = !changeRatio && offer.pictureShape != p.aspect
+                        val f = com.reelforge.editor.util.BlackBars.fillFraming(
+                            offer.box, offer.videoAspect, aspect.ratio, c.fill, cover,
+                        )
                         c.copy(zoom = f.zoom, panX = f.panX, panY = f.panY)
                     }
                 },

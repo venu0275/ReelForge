@@ -91,12 +91,12 @@ object BlackBars {
         )
     }
 
-    /** The middle value of each edge, so one odd frame (a dark scene, a title) does not decide. */
-    fun combine(boxes: List<ContentBox>): ContentBox? {
-        if (boxes.isEmpty()) return null
-        fun mid(pick: (ContentBox) -> Float) = boxes.map(pick).sorted()[boxes.size / 2]
-        return ContentBox(mid { it.left }, mid { it.top }, mid { it.right }, mid { it.bottom })
-    }
+    /**
+     * The area the picture uses in any of the frames. Bars stay the same through a video, but in
+     * a dark scene the picture's own dark edges look like bars, so the largest area is the right
+     * one. (Text in a bar is already left out of each frame's box.)
+     */
+    fun combine(boxes: List<ContentBox>): ContentBox? = boxes.reduceOrNull { a, b -> a.union(b) }
 
     /**
      * Looks at a few frames spread through the video and returns where the picture is in most of
@@ -114,7 +114,7 @@ object BlackBars {
                 frame.recycle()
                 box
             }
-            if (boxes.size < 3) null else combine(boxes)
+            if (boxes.size < 2) null else combine(boxes)
         } catch (e: Exception) {
             null
         } finally {
@@ -131,17 +131,26 @@ object BlackBars {
     }
 
     /**
-     * The zoom and position that make the picture inside [box] fill a frame [frameAspect] wide
+     * The zoom and position that make the picture inside [box] fit (or, with [cover], fill) a frame [frameAspect] wide
      * per 1 high, for a video [videoAspect] wide per 1 high that is fitted ([fill] = false) or
      * filled into the frame. Matches how the preview and export place a clip.
      */
-    fun fillFraming(box: ContentBox, videoAspect: Float, frameAspect: Float, fill: Boolean): ClipFraming {
+    fun fillFraming(
+        box: ContentBox,
+        videoAspect: Float,
+        frameAspect: Float,
+        fill: Boolean,
+        cover: Boolean = false,
+    ): ClipFraming {
         // The video's size in the frame before zooming, as fractions of the frame's width/height.
         val wider = videoAspect > frameAspect
         val (videoW, videoH) = if (wider != fill) 1f to frameAspect / videoAspect else videoAspect / frameAspect to 1f
         val pictureW = box.width * videoW
         val pictureH = box.height * videoH
-        val zoom = maxOf(1f / pictureW, 1f / pictureH).coerceIn(ClipFraming.MIN_ZOOM, ClipFraming.MAX_ZOOM)
+        // Normally the whole picture fits (nothing cut off; a hair of bar may stay if the shapes
+        // differ a little). [cover] fills the frame instead, cutting off what sticks out.
+        val zoom = (if (cover) maxOf(1f / pictureW, 1f / pictureH) else minOf(1f / pictureW, 1f / pictureH))
+            .coerceIn(ClipFraming.MIN_ZOOM, ClipFraming.MAX_ZOOM)
         val centreX = ((box.left + box.right) / 2f - 0.5f) * videoW
         val centreY = ((box.top + box.bottom) / 2f - 0.5f) * videoH
         return ClipFraming(zoom, (-centreX * zoom).coerceIn(-1f, 1f), (-centreY * zoom).coerceIn(-1f, 1f))

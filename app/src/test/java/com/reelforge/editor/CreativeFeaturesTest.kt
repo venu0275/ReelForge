@@ -338,10 +338,21 @@ class BlackBarsTest {
         assertEquals(AspectRatio.LANDSCAPE, AspectRatio.closest(box.aspect(9f / 16f)))
     }
 
-    @Test fun `one odd frame does not decide the bars`() {
-        val good = com.reelforge.editor.util.ContentBox(0f, 0.34f, 1f, 0.66f)
-        val odd = com.reelforge.editor.util.ContentBox(0f, 0.1f, 1f, 0.9f)
-        assertEquals(good, bars.combine(listOf(good, odd, good, good, good)))
+    @Test fun `dark scenes do not make the picture look smaller`() {
+        val bright = com.reelforge.editor.util.ContentBox(0f, 0.34f, 1f, 0.66f)
+        val dark = com.reelforge.editor.util.ContentBox(0.1f, 0.4f, 0.85f, 0.6f)
+        assertEquals(bright, bars.combine(listOf(dark, bright, dark, dark)))
+    }
+
+    @Test fun `the whole picture is kept unless filling a frame of another shape`() {
+        // Picture a little wider than the frame: fit keeps all of it, cover fills the frame.
+        val box = com.reelforge.editor.util.ContentBox(0f, 0.35f, 1f, 0.65f)
+        val videoW = (9f / 16f) / (16f / 9f)
+        val fit = bars.fillFraming(box, 9f / 16f, 16f / 9f, fill = false)
+        assertTrue(box.width * videoW * fit.zoom <= 1.001f)
+        assertTrue(box.height * fit.zoom <= 1.001f)
+        val cover = bars.fillFraming(box, 9f / 16f, 16f / 9f, fill = false, cover = true)
+        assertTrue(box.width * videoW * cover.zoom >= 0.999f && box.height * cover.zoom >= 0.999f)
     }
 
     @Test fun `a frame without bars or an all-black frame`() {
@@ -353,17 +364,17 @@ class BlackBarsTest {
     @Test fun `zoom makes the picture fill the frame`() {
         val box = com.reelforge.editor.util.ContentBox(0f, 0.34375f, 1f, 0.65625f)
         // Frame changed to 16:9, 9:16 video fitted: the picture must grow to fill the frame.
-        val wide = bars.fillFraming(box, 9f / 16f, 16f / 9f, fill = false)
+        val wide = bars.fillFraming(box, 9f / 16f, 16f / 9f, fill = false, cover = true)
         val videoW = (9f / 16f) / (16f / 9f)
         assertTrue(box.width * videoW * wide.zoom >= 0.999f)
         assertTrue(box.height * wide.zoom >= 0.999f)
         assertEquals(0f, wide.panX, 0.001f)
         assertEquals(0f, wide.panY, 0.001f)
         // Kept at 9:16: the picture fills the height (sides cut off).
-        val tall = bars.fillFraming(box, 9f / 16f, 9f / 16f, fill = false)
+        val tall = bars.fillFraming(box, 9f / 16f, 9f / 16f, fill = false, cover = true)
         assertEquals(1f / box.height, tall.zoom, 0.01f)
         // A picture lower down is moved up into the middle.
-        val low = bars.fillFraming(com.reelforge.editor.util.ContentBox(0f, 0.5f, 1f, 0.8f), 9f / 16f, 9f / 16f, false)
+        val low = bars.fillFraming(com.reelforge.editor.util.ContentBox(0f, 0.5f, 1f, 0.8f), 9f / 16f, 9f / 16f, false, true)
         assertTrue(low.panY < 0f)
     }
 }
