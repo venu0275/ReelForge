@@ -96,7 +96,6 @@ fun StorePanel(vm: EditorViewModel) {
                     TextButton(onClick = { vm.removeUnusedStickers() }) { Text("Delete unused") }
                 }
             }
-            Text("Stickers: Noto Emoji by Google, Apache 2.0 licence.", style = MaterialTheme.typography.bodySmall)
         }
         1 -> {
             Text("Tap a button to add it at the red line. No download needed.", style = MaterialTheme.typography.bodySmall)
@@ -221,7 +220,7 @@ fun MusicFinder(vm: EditorViewModel) {
                 Text(
                     listOf(
                         if (result.durationMs > 0) MediaUtils.formatTime(result.durationMs) else "",
-                        result.creator, "free, no credit",
+                        result.creator,
                     ).filter { it.isNotEmpty() }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
@@ -234,8 +233,7 @@ fun MusicFinder(vm: EditorViewModel) {
         }
     }
     Text(
-        "Only public-domain (CC0) results from openverse.org are shown: free to use, no payment and no credit " +
-            "needed. Each one downloads when you pick it.",
+        "Free to use in your videos. Each one downloads when you pick it.",
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 6.dp),
     )

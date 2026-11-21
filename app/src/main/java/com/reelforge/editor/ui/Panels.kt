@@ -1447,10 +1447,4 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
             Text("Delete ${language.label} model (frees ${language.sizeMb} MB)")
         }
     }
-    Spacer(Modifier.height(4.dp))
-    Text(
-        "Speech models: Vosk project (alphacephei.com), Apache 2.0 licence. Captions are made on " +
-            "your phone; your video and voice are never uploaded.",
-        style = MaterialTheme.typography.bodySmall,
-    )
 }

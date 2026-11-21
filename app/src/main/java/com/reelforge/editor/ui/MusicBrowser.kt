@@ -399,7 +399,7 @@ private fun FreeAudio(vm: EditorViewModel) {
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text("Free music and sounds (public domain, no credit needed)", fontWeight = FontWeight.SemiBold)
+        Text("Free music and sounds", fontWeight = FontWeight.SemiBold)
         MusicFinder(vm)
         Spacer(Modifier.size(8.dp))
         Text("Sound effects (made by the app)", fontWeight = FontWeight.SemiBold)

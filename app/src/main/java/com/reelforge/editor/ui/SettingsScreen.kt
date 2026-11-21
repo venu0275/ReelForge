@@ -112,12 +112,20 @@ fun SettingsScreen(vm: EditorViewModel) {
         TextButton(onClick = { showPolicy = true }) { Text("Privacy policy") }
 
         Section("About")
-        Note(
-            "CutMitra ${vm.appVersion}. Built with free libraries: AndroidX Media3, Jetpack Compose, " +
-                "Vosk speech recognition (Apache 2.0), LiteRT (Apache 2.0) and Google Play In-App Updates. " +
-                "Stickers: Noto Emoji (Apache 2.0). Fonts: Google Fonts (open licences). " +
-                "Music search: public-domain audio from openverse.org. Buttons and sound effects are made by the app."
-        )
+        Note("CutMitra ${vm.appVersion}")
+        // Kept here, out of the way: the free licences ask for their notices to come with the app.
+        var licences by remember { mutableStateOf(false) }
+        TextButton(onClick = { licences = !licences }) {
+            Text(if (licences) "Hide open-source licences" else "Open-source licences")
+        }
+        if (licences) {
+            Note(
+                "AndroidX Media3, Jetpack Compose and Material icons (Apache 2.0). Vosk speech " +
+                    "recognition (Apache 2.0). LiteRT (Apache 2.0). Google Play In-App Updates. Stickers: " +
+                    "Noto Emoji (Apache 2.0). Fonts: Google Fonts (open licences). Music search: public-domain " +
+                    "audio from openverse.org."
+            )
+        }
     }
 }
 
