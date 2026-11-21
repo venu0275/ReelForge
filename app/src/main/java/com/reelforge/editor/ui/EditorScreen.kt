@@ -115,7 +115,7 @@ enum class Panel(
     AUDIO("Voice & sounds", Icons.Rounded.GraphicEq, ToolColors.Sound, "Record voice-overs and add sound clips."),
     MUSIC("Music", Icons.Rounded.MusicNote, ToolColors.Sound, "Background music, volume and beat sync."),
     BACKGROUND("Backdrop", Icons.Rounded.Wallpaper, ToolColors.Style, "What shows around clips that do not fill the frame."),
-    STORE("Stickers & sounds", Icons.Rounded.Storefront, ToolColors.Style, "Free stickers, reactions, sound effects and music."),
+    STORE("Store", Icons.Rounded.Storefront, ToolColors.Style, "Animated buttons, free stickers, reactions, sound effects and music."),
     RECORD("Record screen", Icons.Rounded.Videocam, ToolColors.Finish, "Record your phone screen into the video."),
     DRAW("Draw", Icons.Rounded.Brush, ToolColors.Create, "Draw on your video by hand."),
     EXPORT("Export", Icons.Rounded.IosShare, ToolColors.Cut, "Save the finished video to your phone."),
@@ -927,7 +927,7 @@ private fun EditorMenu(
                         openPanel(Panel.RATIO)
                     }
                     ToolTile("Backdrop", I.Wallpaper, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.BACKGROUND) }
-                    ToolTile("Stickers & sounds", I.Storefront, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.STORE) }
+                    ToolTile("Store", I.Storefront, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.STORE) }
                 }
                 ToolGroup("Finish", ToolColors.Finish) {
                     ToolTile("Cover", I.Image, ToolColors.Finish, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.COVER) }

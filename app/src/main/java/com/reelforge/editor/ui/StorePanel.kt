@@ -52,16 +52,19 @@ import com.reelforge.editor.data.SoundEffect
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StorePanel(vm: EditorViewModel) {
-    var tab by remember { mutableIntStateOf(0) }
+    // -1 = Animated (shown first), 0 stickers, 1 buttons, 2 sounds, 3 music.
+    var tab by remember { mutableIntStateOf(-1) }
     // All four parts are always in view (no hidden tabs), each with an icon.
     val I = androidx.compose.material.icons.Icons.Rounded
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf(
+            Triple("Animated", I.AutoAwesome, ToolColors.Cut),
             Triple("Stickers", I.EmojiEmotions, ToolColors.Style),
             Triple("Buttons", I.ThumbUp, ToolColors.Create),
             Triple("Sounds", I.GraphicEq, ToolColors.Sound),
             Triple("Music", I.MusicNote, ToolColors.Sound),
-        ).forEachIndexed { i, (name, icon, color) ->
+        ).forEachIndexed { index, (name, icon, color) ->
+            val i = index - 1
             val on = tab == i
             androidx.compose.material3.Surface(
                 onClick = { tab = i },
@@ -71,17 +74,33 @@ fun StorePanel(vm: EditorViewModel) {
                 modifier = Modifier.weight(1f),
             ) {
                 androidx.compose.foundation.layout.Column(
-                    Modifier.padding(vertical = 8.dp),
+                    Modifier.padding(vertical = 7.dp, horizontal = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     androidx.compose.material3.Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
-                    Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    Text(name, style = MaterialTheme.typography.labelSmall, fontSize = 10.sp, maxLines = 1, softWrap = false)
                 }
             }
         }
     }
     Spacer(Modifier.height(8.dp))
     when (tab) {
+        -1 -> {
+            Text(
+                "Buttons that move on your video. Tap one to add it at the red line; drag or pinch it " +
+                    "on the video to place it.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                com.reelforge.editor.engine.AnimatedButton.entries.forEach { kind ->
+                    AnimatedButtonCard(kind) { vm.addAnimatedButton(kind) }
+                }
+            }
+        }
         0 -> {
             val missing = vm.storeStickers.size - vm.installedStickers.size
             val pack = vm.stickerPackProgress
@@ -142,21 +161,6 @@ fun StorePanel(vm: EditorViewModel) {
             }
         }
         1 -> {
-            PanelTitle("Animated")
-            Text(
-                "They move on your video: tap one to add it at the red line.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            Spacer(Modifier.height(6.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                com.reelforge.editor.engine.AnimatedButton.entries.forEach { kind ->
-                    AnimatedButtonCard(kind) { vm.addAnimatedButton(kind) }
-                }
-            }
-            PanelTitle("Still")
             Text("Tap a button to add it at the red line. No download needed.", style = MaterialTheme.typography.bodySmall)
             FlowRow(
                 Modifier.padding(top = 6.dp),
