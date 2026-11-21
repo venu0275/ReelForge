@@ -29,6 +29,8 @@ jobs:
         run: grep -rh "PERF" app/build/test-results/testDebugUnitTest/*.xml || true
       - run: ./gradlew assembleDebug --stacktrace
       - run: ./gradlew assembleRelease --stacktrace
+      # Compile the on-phone tests too, so a mistake there shows here instead of after the emulator starts.
+      - run: ./gradlew assembleDebugAndroidTest --stacktrace
       - uses: actions/upload-artifact@v4
         continue-on-error: true
         timeout-minutes: 5
