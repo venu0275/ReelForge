@@ -2382,33 +2382,28 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
             Column {
                 when (state) {
                     ExportState.Idle -> {
-                        val left: @Composable () -> Unit = {
-                            ExportLabel("Resolution")
+                        // Sideways, each choice sits on one line (name, then the options), so all of
+                        // them fit above the buttons; upright, the name is above the options.
+                        val sideways = LocalConfiguration.current.screenHeightDp < 500
+                        ExportOption("Resolution", sideways) {
                             ChipRow(sizes.map { it.second }, sizes.indexOfFirst { it.first == shortSide }) {
                                 shortSide = sizes[it].first
                             }
-                            ExportLabel("Frame rate")
+                        }
+                        ExportOption("Frame rate", sideways) {
                             ChipRow(listOf("30 fps", "60 fps"), if (fps == 60) 1 else 0) { fps = if (it == 1) 60 else 30 }
                         }
-                        val right: @Composable () -> Unit = {
-                            ExportLabel("Quality")
+                        ExportOption("Quality", sideways) {
                             ChipRow(listOf("Small file", "Balanced", "Best"), quality) { quality = it }
-                            if (canHevc) {
-                                ExportLabel("Format")
-                                ChipRow(listOf("H.264 (plays everywhere)", "H.265 (smaller file)"), if (hevc) 1 else 0) {
-                                    hevc = it == 1
-                                }
-                            }
                         }
-                        // Sideways the options sit in two columns, so they all fit without scrolling.
-                        if (LocalConfiguration.current.screenHeightDp < 500) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Column(Modifier.weight(1f)) { left() }
-                                Column(Modifier.weight(1f)) { right() }
+                        if (canHevc) {
+                            ExportOption("Format", sideways) {
+                                ChipRow(
+                                    if (sideways) listOf("H.264", "H.265 (smaller)")
+                                    else listOf("H.264 (plays everywhere)", "H.265 (smaller file)"),
+                                    if (hevc) 1 else 0,
+                                ) { hevc = it == 1 }
                             }
-                        } else {
-                            left()
-                            right()
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
@@ -2463,14 +2458,28 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
     )
 }
 
+/** One export choice: its name and its options, in one line when [inline]. */
 @Composable
-private fun ExportLabel(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
-    )
+private fun ExportOption(name: String, inline: Boolean, options: @Composable () -> Unit) {
+    if (inline) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                name,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.width(84.dp),
+            )
+            Box(Modifier.weight(1f)) { options() }
+        }
+    } else {
+        Text(
+            name,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+        )
+        options()
+    }
 }
 
 @Composable

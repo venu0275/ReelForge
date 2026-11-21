@@ -479,8 +479,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 if (first) {
                     val bars = barsOfferFor(clips[0])
                     if (bars != null) {
+                        val now = project?.aspect
                         toast(
-                            "Tip: this video has black bars. To remove them, select it and tap Remove black bars.",
+                            if (now != null && bars.pictureShape != now) {
+                                "Tip: the picture looks small because of black bars. Tap \u201cRatio ${now.label}\u201d " +
+                                    "below and choose ${ratioName(bars.pictureShape)}."
+                            } else {
+                                "Tip: the picture has black bars. Tap the clip, then \u201cRemove black bars\u201d."
+                            },
                             ToastKind.INFO,
                         )
                     } else {
@@ -491,7 +497,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         val now = project?.aspect
                         if (best != null && now != null && best != now) {
                             toast(
-                                "Tip: this video is ${best.label} and the frame is ${now.label}. Change it any time with Ratio.",
+                                "Tip: your video is ${best.label}. Tap \u201cRatio ${now.label}\u201d below and choose " +
+                                    "${ratioName(best)} to fill the screen.",
                                 ToastKind.INFO,
                             )
                         }

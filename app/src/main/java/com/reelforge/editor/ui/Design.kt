@@ -226,48 +226,42 @@ fun CutDialog(
     /** Centre the message; turn off for dialogs holding options. */
     centred: Boolean = true,
 ) {
-    // On short screens (a phone held sideways) the dialog is compact: small icon beside the
-    // title, less space, buttons side by side and a wider box, so its content fits without scrolling.
-    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
+    // Same look everywhere; on short screens (a phone held sideways) a little smaller, so more of
+    // the content fits above the buttons.
+    val short = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(
-            dismissOnClickOutside = dismissOnClickOutside,
-            usePlatformDefaultWidth = !compact,
-        ),
+        properties = DialogProperties(dismissOnClickOutside = dismissOnClickOutside),
     ) {
         Surface(
-            shape = RoundedCornerShape(if (compact) 22.dp else 28.dp),
+            shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
-            modifier = modifier.widthIn(max = if (compact) 600.dp else 420.dp).padding(horizontal = if (compact) 24.dp else 0.dp),
+            modifier = modifier.widthIn(max = if (short) 480.dp else 420.dp),
         ) {
-            if (compact) {
-                CompactDialogBody(icon, color, title, text, confirmButton, dismissButton, centred)
-                return@Surface
-            }
             // Only the message scrolls, so the buttons always stay in view. Content passed in must
             // not scroll by itself (a scroll inside a scroll crashes).
             Column(
-                Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
+                Modifier.padding(horizontal = 22.dp, vertical = if (short) 14.dp else 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (icon != null) {
                     Box(
-                        Modifier.size(52.dp).background(color.copy(alpha = 0.18f), CircleShape),
+                        Modifier.size(if (short) 40.dp else 52.dp).background(color.copy(alpha = 0.18f), CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(28.dp))
+                        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(if (short) 22.dp else 28.dp))
                     }
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(if (short) 6.dp else 12.dp))
                 }
                 if (title != null) {
                     CompositionLocalProvider(
-                        androidx.compose.material3.LocalTextStyle provides MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
-                        ),
+                        androidx.compose.material3.LocalTextStyle provides
+                            (if (short) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).copy(
+                                fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                            ),
                     ) { title() }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(if (short) 4.dp else 8.dp))
                 }
                 if (text != null) {
                     CompositionLocalProvider(
@@ -284,67 +278,13 @@ fun CutDialog(
                             contentAlignment = if (centred) Alignment.TopCenter else Alignment.TopStart,
                         ) { text() }
                     }
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(if (short) 10.dp else 18.dp))
                 }
                 DialogButtons {
                     confirmButton()
                     dismissButton?.invoke()
                 }
             }
-        }
-    }
-}
-
-/** The compact layout: icon and title in one line, message, then the buttons side by side. */
-@Composable
-private fun CompactDialogBody(
-    icon: ImageVector?,
-    color: Color,
-    title: (@Composable () -> Unit)?,
-    text: (@Composable () -> Unit)?,
-    confirmButton: @Composable () -> Unit,
-    dismissButton: (@Composable () -> Unit)?,
-    centred: Boolean,
-) {
-    Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
-                Box(
-                    Modifier.size(32.dp).background(color.copy(alpha = 0.18f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp)) }
-                Spacer(Modifier.width(10.dp))
-            }
-            if (title != null) {
-                CompositionLocalProvider(
-                    androidx.compose.material3.LocalTextStyle provides MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                ) { title() }
-            }
-        }
-        if (text != null) {
-            Spacer(Modifier.height(8.dp))
-            CompositionLocalProvider(
-                androidx.compose.material3.LocalTextStyle provides MaterialTheme.typography.bodyMedium.copy(
-                    textAlign = if (centred) TextAlign.Center else TextAlign.Start,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .weight(1f, fill = false)
-                        .verticalScroll(rememberScrollState()),
-                ) { text() }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (dismissButton != null) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { dismissButton() }
-            }
-            Box(Modifier.weight(1f)) { confirmButton() }
         }
     }
 }
@@ -391,9 +331,10 @@ fun DialogQuietButton(text: String, onClick: () -> Unit) {
 /** A dialog's main action: filled, full width. Takes content like Material's Button. */
 @Composable
 fun WideButton(onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    val short = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
     androidx.compose.material3.Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(48.dp),
+        modifier = Modifier.fillMaxWidth().height(if (short) 42.dp else 48.dp),
         shape = RoundedCornerShape(14.dp),
         content = content,
     )
