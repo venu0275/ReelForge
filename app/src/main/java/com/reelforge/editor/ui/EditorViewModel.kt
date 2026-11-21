@@ -3009,19 +3009,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // from one to the next; pick up the new clip's filter, volume and so on here.
         if (index != shownClipIndex) applyClipParams()
         val local = (source / clip.effectiveSpeed).toLong()
-        // With effects on, the player can stay on a photo past its length without ever saying it
-        // ended (seen in tests: still "playing" a minute after the end). Stop at the end of the
-        // video ourselves, and move on from a photo that has had its time.
-        if (local >= clip.durationMs + OVERSTAY_MS) {
-            if (index >= p.clips.lastIndex) {
-                player.pause()
-                if (playheadMs != p.durationMs) playheadMs = p.durationMs
-                return
-            }
-            if (clip.type == ClipType.IMAGE && player.hasNextMediaItem()) {
-                player.seekToNextMediaItem()
-                return
-            }
+        // With effects on, the player can stay on the last photo past its length without ever
+        // saying it ended (seen in tests: still "playing" a minute after the end). Stop at the end
+        // of the video ourselves. (Skipping ahead mid-video is left to the player: forcing it made
+        // the effects pipeline time out.)
+        if (index >= p.clips.lastIndex && local >= clip.durationMs + OVERSTAY_MS) {
+            player.pause()
+            if (playheadMs != p.durationMs) playheadMs = p.durationMs
+            return
         }
         val now = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
         if (now != playheadMs) playheadMs = now
