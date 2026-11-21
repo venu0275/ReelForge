@@ -535,8 +535,10 @@ fun EditorScreen(vm: EditorViewModel) {
                 GlyphButton("↶", "Undo", vm.canUndo) { vm.undo() }
                 GlyphButton("↷", "Redo", vm.canRedo) { vm.redo() }
                 Button(
-                    onClick = { panel = Panel.EXPORT },
-                    enabled = project.clips.isNotEmpty(),
+                    onClick = {
+                        if (project.clips.isNotEmpty()) panel = Panel.EXPORT
+                        else vm.toast("Add a video or photo first: tap Media", ToastKind.WARNING)
+                    },
                     modifier = Modifier.padding(end = 8.dp),
                 ) { Text("Export") }
             }
@@ -868,7 +870,8 @@ private fun EditorMenu(
                 .fillMaxWidth()
                 .verticalScroll(menuScroll)
                 .padding(horizontal = 8.dp)
-                .padding(bottom = 8.dp),
+                // Room under the last row, so it can scroll clear of the "More tools" pill.
+                .padding(bottom = 36.dp),
         ) {
             val I = Icons.Rounded
             val addFirst = "Add a video or photo first: tap Media"
@@ -1007,20 +1010,22 @@ private fun BoxScope.MoreBelowHint(state: ScrollState) {
     if (!state.canScrollForward) return
     val scope = rememberCoroutineScope()
     val bg = MaterialTheme.colorScheme.surface
+    // The fade only draws (taps go through to the tiles); just the small pill takes taps.
     Box(
         Modifier
             .align(Alignment.BottomCenter)
             .fillMaxWidth()
-            .height(40.dp)
+            .height(18.dp)
             .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bg.copy(alpha = 0f), bg)))
-            .clickable { scope.launch { state.animateScrollTo(state.value + state.viewportSize * 2 / 3) } },
-        contentAlignment = Alignment.BottomCenter,
+    )
+    Surface(
+        onClick = { scope.launch { state.animateScrollTo(state.value + state.viewportSize * 2 / 3) } },
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = 4.dp,
+        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 4.dp),
     ) {
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp),
-        ) {
+        run {
             Row(Modifier.padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("More tools", style = MaterialTheme.typography.labelSmall)
                 Icon(Icons.Rounded.KeyboardArrowDown, null, modifier = Modifier.size(16.dp))

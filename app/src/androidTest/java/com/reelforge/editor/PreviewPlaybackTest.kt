@@ -125,14 +125,21 @@ class PreviewPlaybackTest {
         val deadline = started + total * 10 + 20_000
         var ended = false
         var furthest = 0L
+        var polls = 0
         while (SystemClock.elapsedRealtime() < deadline && errors.isEmpty()) {
             Thread.sleep(250)
             var position = 0L
             var playing = true
+            var state = ""
             rule.runOnUiThread {
                 position = vm.playheadMs
                 playing = vm.isPlaying
+                val pl = vm.player
+                state = "state=${pl.playbackState} playWhenReady=${pl.playWhenReady} isPlaying=${pl.isPlaying} " +
+                    "suppressed=${pl.playbackSuppressionReason} pos=${pl.currentPosition} items=${pl.mediaItemCount} " +
+                    "error=${pl.playerError?.errorCodeName}"
             }
+            if (++polls % 8 == 1) log("STATE $label: playhead=$position $state")
             furthest = maxOf(furthest, position)
             if (!playing && position >= total - 200) {
                 ended = true

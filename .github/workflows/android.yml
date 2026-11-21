@@ -10,6 +10,10 @@ on:
         description: "Also run the emulator tests (slow, about 15 minutes)"
         type: boolean
         default: false
+      test_class:
+        description: "Only these test classes (comma separated, e.g. com.reelforge.editor.PreviewPlaybackTest); empty = all"
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -82,10 +86,8 @@ jobs:
           script: |
             adb logcat -G 32M
             adb logcat -c
-            timeout 2100 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.notClass=com.reelforge.editor.ScreenshotTest || touch tests-failed
-            ./gradlew --stop || true
-            timeout 600 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.reelforge.editor.ScreenshotTest || timeout 600 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.reelforge.editor.ScreenshotTest || touch tests-failed
-            timeout 120 adb logcat -d -s ReelForgeTest:V TestRunner:I || true
+            if [ -n "${{ inputs.test_class }}" ]; then timeout 2100 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=${{ inputs.test_class }} || touch tests-failed; else timeout 2100 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.notClass=com.reelforge.editor.ScreenshotTest || touch tests-failed; ./gradlew --stop || true; timeout 600 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.reelforge.editor.ScreenshotTest || timeout 600 ./gradlew connectedDebugAndroidTest --stacktrace -Pandroid.testInstrumentationRunnerArguments.class=com.reelforge.editor.ScreenshotTest || touch tests-failed; fi
+            timeout 120 adb logcat -d -s ReelForgeTest:V TestRunner:I AndroidRuntime:E CutMitra:V ExoPlayerImplInternal:V ExoPlayerImpl:V MediaCodecRenderer:V AudioFocus:V || true
             mkdir -p screenshots
             timeout 120 adb pull /sdcard/Pictures/ReelForgeTest/. screenshots/ || true
             test ! -f tests-failed
