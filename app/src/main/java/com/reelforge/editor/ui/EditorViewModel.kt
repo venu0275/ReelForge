@@ -3003,7 +3003,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             micLevel = maxOf(now, micLevel * 0.8f)
         }
         if (!player.isPlaying) return
-        val (index, source) = shownClip(p) ?: return
+        val shown = shownClip(p)
+        if (shown == null) {
+            // Past the end of the last piece the player no longer maps to a clip; if the red line
+            // is at the end, that is the end of the video: stop there.
+            if (player.currentMediaItemIndex >= player.mediaItemCount - 1 && playheadMs >= p.durationMs - 300) {
+                player.pause()
+                if (playheadMs != p.durationMs) playheadMs = p.durationMs
+            }
+            return
+        }
+        val (index, source) = shown
         val clip = p.clips.getOrNull(index) ?: return
         // Split clips share one piece of video, so the player gives no signal when it crosses
         // from one to the next; pick up the new clip's filter, volume and so on here.
