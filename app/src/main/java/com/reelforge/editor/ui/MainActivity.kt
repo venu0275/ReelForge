@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
                     vm.project == null -> HomeScreen(vm)
                     else -> EditorScreen(vm)
                 }
+                // Toasts show on every screen (home, editor, settings).
+                ToastHost(vm)
                 // "Update available" box, checked every time the app is opened.
                 UpdatePrompt()
             }

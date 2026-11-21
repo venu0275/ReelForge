@@ -130,12 +130,6 @@ fun EditorScreen(vm: EditorViewModel) {
             delay(40)
         }
     }
-    LaunchedEffect(vm.message) {
-        if (vm.message != null) {
-            delay(3500)
-            vm.message = null
-        }
-    }
 
     // The in-app media screen (folders and thumbnails, like a gallery) is open.
     var browsing by remember { mutableStateOf(false) }
@@ -309,17 +303,6 @@ fun EditorScreen(vm: EditorViewModel) {
                 TextButton(onClick = { vm.undoVoice() }) { Text("Undo") }
                 TextButton(onClick = { vm.lastVoice = null }) { Text("✕") }
             }
-        }
-        vm.message?.let { msg ->
-            Text(
-                msg,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable { vm.message = null }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.bodySmall,
-            )
         }
     }
 
@@ -838,7 +821,7 @@ private fun EditorMenu(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 if (showExport) {
-                    Button(onClick = { openPanel(Panel.EXPORT) }, enabled = hasClips) { Text("Export") }
+                    Button(onClick = { openPanel(Panel.EXPORT) }, enabled = hasClips, whyOff = addFirst) { Text("Export") }
                 }
             }
         }
@@ -856,6 +839,7 @@ private fun EditorMenu(
             )
         }
 
+        CompositionLocalProvider(LocalHint provides { text -> vm.toast(text, ToastKind.WARNING) }) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -864,17 +848,18 @@ private fun EditorMenu(
                 .padding(bottom = 8.dp),
         ) {
             val I = Icons.Rounded
+            val addFirst = "Add a video or photo first: tap Media"
             if (clip == null) {
                 ToolGroup("Create", ToolColors.Create) {
                     ToolTile("Media", I.AddPhotoAlternate, ToolColors.Create, active = !hasClips) { addMedia() }
-                    ToolTile("Text", I.TextFields, ToolColors.Create, enabled = hasClips) { openPanel(Panel.TEXT) }
+                    ToolTile("Text", I.TextFields, ToolColors.Create, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.TEXT) }
                     val captions = vm.captionWork != null
                     ToolTile(
                         if (captions) "Captions ${(vm.captionProgress * 100).toInt()}%" else "Captions",
-                        I.ClosedCaption, ToolColors.Create, enabled = hasClips, active = captions,
+                        I.ClosedCaption, ToolColors.Create, enabled = hasClips, active = captions, whyOff = addFirst,
                     ) { openPanel(Panel.CAPTIONS) }
-                    ToolTile("Layers", I.Layers, ToolColors.Create, enabled = hasClips) { openPanel(Panel.LAYER) }
-                    ToolTile("Draw", I.Brush, ToolColors.Create, enabled = hasClips) { openPanel(Panel.DRAW) }
+                    ToolTile("Layers", I.Layers, ToolColors.Create, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.LAYER) }
+                    ToolTile("Draw", I.Brush, ToolColors.Create, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.DRAW) }
                 }
                 ToolGroup("Sound", ToolColors.Sound) {
                     ToolTile(
@@ -887,21 +872,22 @@ private fun EditorMenu(
                         ToolColors.Sound,
                         enabled = hasClips,
                         active = vm.isRecording || vm.voiceCountdown > 0,
+                        whyOff = addFirst,
                     ) { recordVoice() }
-                    ToolTile("Voice & sounds", I.GraphicEq, ToolColors.Sound, enabled = hasClips) { openPanel(Panel.AUDIO) }
+                    ToolTile("Voice & sounds", I.GraphicEq, ToolColors.Sound, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.AUDIO) }
                     // Opens the music screen; with music already added, its settings are one tap away there.
                     ToolTile("Music", I.MusicNote, ToolColors.Sound) {
                         if (project.music == null) openMusic() else openPanel(Panel.MUSIC)
                     }
                 }
                 ToolGroup("Style", ToolColors.Style) {
-                    ToolTile("Templates", I.AutoAwesomeMosaic, ToolColors.Style, enabled = hasClips) { openPanel(Panel.TEMPLATES) }
+                    ToolTile("Templates", I.AutoAwesomeMosaic, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.TEMPLATES) }
                     ToolTile("Ratio ${project.aspect.label}", I.AspectRatio, ToolColors.Style) { openPanel(Panel.RATIO) }
-                    ToolTile("Backdrop", I.Wallpaper, ToolColors.Style, enabled = hasClips) { openPanel(Panel.BACKGROUND) }
-                    ToolTile("Stickers & sounds", I.Storefront, ToolColors.Style, enabled = hasClips) { openPanel(Panel.STORE) }
+                    ToolTile("Backdrop", I.Wallpaper, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.BACKGROUND) }
+                    ToolTile("Stickers & sounds", I.Storefront, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.STORE) }
                 }
                 ToolGroup("Finish", ToolColors.Finish) {
-                    ToolTile("Cover", I.Image, ToolColors.Finish, enabled = hasClips) { openPanel(Panel.COVER) }
+                    ToolTile("Cover", I.Image, ToolColors.Finish, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.COVER) }
                     // Shows its own time while recording.
                     val screenRec = com.reelforge.editor.record.ScreenRecording
                     ToolTile(
@@ -956,6 +942,7 @@ private fun EditorMenu(
                 ToolGroup("Frame", ToolColors.Frame) {
                     ToolTile(if (clip.fill) "Fit" else "Fill", if (clip.fill) I.FitScreen else I.Fullscreen, ToolColors.Frame) {
                         vm.updateClip(id) { it.copy(fill = !it.fill) }
+                        vm.toast(if (clip.fill) "Whole picture fits inside the frame" else "Picture fills the frame", undo = true)
                     }
                     if (isVideo) ToolTile("Remove black bars", I.Crop, ToolColors.Frame) { vm.removeBlackBars(id) }
                     if (com.reelforge.editor.engine.EffectFactory.isFramed(clip)) {
@@ -963,8 +950,12 @@ private fun EditorMenu(
                     }
                     ToolTile("Rotate", I.RotateRight, ToolColors.Frame) {
                         vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) }
+                        vm.toast("Turned to ${(clip.rotation + 90) % 360}°", undo = true)
                     }
-                    ToolTile("Mirror", I.Flip, ToolColors.Frame) { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
+                    ToolTile("Mirror", I.Flip, ToolColors.Frame) {
+                        vm.updateClip(id) { it.copy(flipH = !it.flipH) }
+                        vm.toast(if (clip.flipH) "Mirror off" else "Mirrored left to right", undo = true)
+                    }
                 }
                 ToolGroup("Arrange", ToolColors.Arrange) {
                     ToolTile("Copy", I.ContentCopy, ToolColors.Arrange) { vm.duplicateClip(id) }
@@ -972,6 +963,7 @@ private fun EditorMenu(
                     ToolTile("Move right", I.KeyboardArrowRight, ToolColors.Arrange) { vm.moveClip(id, 1) }
                 }
             }
+        }
         }
     }
 }
@@ -992,6 +984,7 @@ private fun ToolGroup(title: String, color: Color, tiles: @Composable () -> Unit
 private fun CutTile(label: String, kind: CutKind, enabled: Boolean, onClick: () -> Unit) {
     ToolTile(
         label, Icons.Rounded.ContentCut, ToolColors.Cut, enabled = enabled,
+        whyOff = "Move the red line onto this clip (away from its ends) to cut it",
         iconContent = { CutIcon(kind) },
         onClick = onClick,
     )

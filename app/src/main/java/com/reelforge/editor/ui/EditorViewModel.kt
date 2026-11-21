@@ -83,6 +83,27 @@ import java.io.File
 
 /** One finger stroke; points are fractions (0..1) of the frame width and height. */
 /** One pen line; [width] is a share of the picture's height. */
+/** How a toast looks: a tick, an "i", a warning sign or an error sign, each in its own colour. */
+enum class ToastKind { SUCCESS, INFO, WARNING, ERROR }
+
+/** A short message at the top of the editor. [id] makes each one new, even with the same words. */
+data class Toast(val text: String, val kind: ToastKind, val undo: Boolean, val id: Long) {
+    companion object {
+        /** Guesses the kind of an older plain message from its words. */
+        fun kindOf(text: String): ToastKind {
+            val t = text.lowercase()
+            return when {
+                listOf("could not", "couldn't", "failed", "problem", "cannot", "can't").any { it in t } -> ToastKind.ERROR
+                listOf("move the", "first", "no ", "too short", "up to", "needs", "only", "works on", "trim this")
+                    .any { it in t } -> ToastKind.WARNING
+                listOf("added", "saved", "removed", "applied", "extracted", "reversed", "set to", "found", "now")
+                    .any { it in t } -> ToastKind.SUCCESS
+                else -> ToastKind.INFO
+            }
+        }
+    }
+}
+
 class DrawStroke(val color: Int, val points: List<Offset>, val width: Float = 0.012f)
 
 private const val SCRUB_INTERVAL_MS = 90L
@@ -175,7 +196,25 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var isPlaying by mutableStateOf(false)
         private set
-    var message by mutableStateOf<String?>(null)
+    /** The message shown in the toast at the top of the editor (null when none). */
+    var toast by mutableStateOf<Toast?>(null)
+        private set
+
+    /** Shows a toast. [undo] adds an Undo button that takes the change back. */
+    fun toast(text: String, kind: ToastKind = ToastKind.SUCCESS, undo: Boolean = false) {
+        toast = Toast(text, kind, undo, System.nanoTime())
+    }
+
+    fun dismissToast(id: Long) {
+        if (toast?.id == id) toast = null
+    }
+
+    /** Older way to show a message; its kind is guessed from the words. */
+    var message: String?
+        get() = toast?.text
+        set(value) {
+            if (value == null) toast = null else toast(value, Toast.kindOf(value))
+        }
     var canUndo by mutableStateOf(false)
         private set
     var canRedo by mutableStateOf(false)
@@ -308,10 +347,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun renameProject(p: Project, name: String) {
-        if (name.isBlank()) return
+        if (name.isBlank()) {
+            toast("Type a name first", ToastKind.WARNING)
+            return
+        }
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.save(p.copy(name = name.trim())) }
             projects = withContext(Dispatchers.IO) { repo.list() }
+            toast("Renamed to “${name.trim()}”")
         }
     }
 
@@ -340,6 +383,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repo.delete(id) }
             projects = withContext(Dispatchers.IO) { repo.list() }
+            toast("Project deleted")
         }
     }
 
@@ -370,12 +414,24 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     fun undo() {
         val current = project ?: return
-        commit(history.undo(current) ?: return)
+        val back = history.undo(current)
+        if (back == null) {
+            toast("Nothing to undo", ToastKind.INFO)
+            return
+        }
+        commit(back)
+        toast("Undone", ToastKind.INFO)
     }
 
     fun redo() {
         val current = project ?: return
-        commit(history.redo(current) ?: return)
+        val again = history.redo(current)
+        if (again == null) {
+            toast("Nothing to redo", ToastKind.INFO)
+            return
+        }
+        commit(again)
+        toast("Redone", ToastKind.INFO)
     }
 
     // ------------------------------------------------------------------- clips
@@ -404,6 +460,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             if (clips.size < uris.size) message = "Some files could not be read"
+            else if (clips.isNotEmpty()) {
+                toast(if (clips.size == 1) "Added to the end of your video" else "${clips.size} clips added to the end")
+            }
             if (clips.isNotEmpty()) {
                 val first = project?.clips?.isEmpty() == true
                 mutate { it.copy(clips = it.clips + clips) }
@@ -433,7 +492,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Changes the shape of the video (9:16, 16:9, …). Texts and layers keep their places. */
     fun setAspect(aspect: AspectRatio) {
         aspectSuggestion = null
-        if (project?.aspect != aspect) mutate { it.copy(aspect = aspect) }
+        if (project?.aspect != aspect) {
+            mutate { it.copy(aspect = aspect) }
+            toast("Video shape is now ${aspect.label}", undo = true)
+        }
     }
 
     /** Black bars found inside a video clip, offered for removal. */
@@ -525,11 +587,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Puts the picture back to its normal size and place in the frame. */
-    fun resetFraming(id: String) = updateClip(id) { it.copy(zoom = 1f, panX = 0f, panY = 0f) }
+    fun resetFraming(id: String) {
+        updateClip(id) { it.copy(zoom = 1f, panX = 0f, panY = 0f) }
+        toast("Picture back to its normal size and place", undo = true)
+    }
 
     fun deleteClip(id: String) {
         mutate { ProjectOps.delete(it, id) }
         if (selectedClipId == id) selectedClipId = null
+        toast("Clip deleted", undo = true)
     }
 
     /** Tapping a clip on the timeline selects it; tapping it again clears the selection. */
@@ -558,6 +624,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val clipStart = p.clipStartMs(p.clips.indexOfFirst { it.id == id })
         mutate { result }
         seekTo(clipStart)
+        toast("Cut away the part before the red line", undo = true)
     }
 
     /** Removes everything in the selected clip after the playhead. */
@@ -572,6 +639,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         mutate { result }
         // Stay on the last frame that was kept.
         seekTo((playheadMs - 34).coerceAtLeast(0))
+        toast("Cut away the part after the red line", undo = true)
     }
 
     // ------------------------------------------------------------------ keyframes
@@ -736,9 +804,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun duplicateClip(id: String) = mutate { ProjectOps.duplicate(it, id) }
+    fun duplicateClip(id: String) {
+        mutate { ProjectOps.duplicate(it, id) }
+        toast("Copy added after the clip", undo = true)
+    }
 
-    fun moveClip(id: String, delta: Int) = mutate { ProjectOps.move(it, id, delta) }
+    fun moveClip(id: String, delta: Int) {
+        val p = project ?: return
+        val at = p.clips.indexOfFirst { it.id == id }
+        val to = at + delta
+        if (at < 0 || to < 0 || to >= p.clips.size) {
+            toast(if (delta < 0) "This clip is already first" else "This clip is already last", ToastKind.INFO)
+            return
+        }
+        mutate { ProjectOps.move(it, id, delta) }
+        toast(if (delta < 0) "Moved one place left" else "Moved one place right", undo = true)
+    }
 
     /** Splits the clip under the playhead into two clips. */
     fun splitAtPlayhead() {
@@ -751,6 +832,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
         mutate { result }
         selectedClipId = secondId
+        toast("Split into two clips at the red line", undo = true)
     }
 
     // ------------------------------------------------------------ text + music
@@ -834,18 +916,28 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(texts = p.texts.map { if (it.id == id) block(it) else it })
     }
 
-    fun deleteText(id: String) = mutate { p -> p.copy(texts = p.texts.filterNot { it.id == id }) }
+    fun deleteText(id: String) {
+        mutate { p -> p.copy(texts = p.texts.filterNot { it.id == id }) }
+        toast("Text deleted", undo = true)
+    }
 
     fun duplicateText(id: String): String {
         val source = project?.texts?.firstOrNull { it.id == id } ?: return ""
         val copy = source.copy(id = newId(), y = (source.y - 0.2f).coerceIn(-1f, 1f))
         mutate { it.copy(texts = it.texts + copy) }
+        toast("Text copied", undo = true)
         return copy.id
     }
 
-    fun deleteAllTexts() = mutate { it.copy(texts = emptyList()) }
+    fun deleteAllTexts() {
+        mutate { it.copy(texts = emptyList()) }
+        toast("All texts deleted", undo = true)
+    }
 
-    fun deleteAllLayers() = mutate { it.copy(layers = emptyList()) }
+    fun deleteAllLayers() {
+        mutate { it.copy(layers = emptyList()) }
+        toast("All layers deleted", undo = true)
+    }
 
     fun deleteAllAudio() = mutate { it.copy(audio = emptyList()) }
 
@@ -885,7 +977,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(music = p.music?.let(block))
     }
 
-    fun removeMusic() = mutate { it.copy(music = null) }
+    fun removeMusic() {
+        mutate { it.copy(music = null) }
+        toast("Music removed", undo = true)
+    }
 
     // ------------------------------------------------------------ image layers
 
@@ -905,7 +1000,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(layers = p.layers.map { if (it.id == id) block(it) else it })
     }
 
-    fun deleteLayer(id: String) = mutate { p -> p.copy(layers = p.layers.filterNot { it.id == id }) }
+    fun deleteLayer(id: String) {
+        mutate { p -> p.copy(layers = p.layers.filterNot { it.id == id }) }
+        toast("Layer deleted", undo = true)
+    }
 
     /** Renders finger-drawn strokes (points in 0..1 of the frame) to a full-frame image layer. */
     fun addDrawing(strokes: List<DrawStroke>) {
@@ -1516,7 +1614,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         p.copy(audio = p.audio.map { if (it.id == id) block(it) else it })
     }
 
-    fun deleteAudioClip(id: String) = mutate { p -> p.copy(audio = p.audio.filterNot { it.id == id }) }
+    fun deleteAudioClip(id: String) {
+        mutate { p -> p.copy(audio = p.audio.filterNot { it.id == id }) }
+        toast("Sound deleted", undo = true)
+    }
 
     /** Starts recording from the microphone at the playhead while the video plays. */
     fun startRecording() {
@@ -2454,6 +2555,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 current.copy(clips = list)
             }
+            toast("Frame frozen for 2 seconds at the red line", undo = true)
             selectedClipId = still.id
         }
     }

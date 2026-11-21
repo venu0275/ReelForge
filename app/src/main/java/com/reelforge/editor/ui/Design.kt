@@ -40,6 +40,9 @@ import androidx.compose.ui.window.DialogProperties
 /**
  * Colours for each group of tools, so similar tools look alike and are easy to find again.
  */
+/** Shows a hint toast; the editor provides it, so tiles can explain why they are switched off. */
+val LocalHint = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
+
 object ToolColors {
     val Create = Color(0xFFFF6B7A)   // media, text, captions, layers, drawing
     val Sound = Color(0xFF4DD0E1)    // voice, sounds, music
@@ -82,11 +85,14 @@ fun ToolTile(
     enabled: Boolean = true,
     active: Boolean = false,
     iconContent: (@Composable () -> Unit)? = null,
+    /** Said in a toast when the tile is tapped while switched off. */
+    whyOff: String? = null,
     onClick: () -> Unit,
 ) {
+    val hint = LocalHint.current
     Surface(
-        onClick = onClick,
-        enabled = enabled,
+        onClick = { if (enabled) onClick() else if (whyOff != null) hint(whyOff) },
+        enabled = enabled || whyOff != null,
         shape = RoundedCornerShape(16.dp),
         color = if (active) color.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurface,
