@@ -221,7 +221,7 @@ class RatioTourUiTest {
         // Skip ends it straight away.
         rule.onNodeWithText("Skip").performClick()
         waitFor(5_000) { !shown("Ratio changes your video's shape") }
-        val stored = com.reelforge.editor.data.SettingsStore(rule.activity).load()
-        org.junit.Assert.assertTrue(stored.ratioTourSeen)
+        // Settings are saved in the background; wait for it to be stored as seen.
+        waitFor(5_000) { com.reelforge.editor.data.SettingsStore(rule.activity).load().ratioTourSeen }
     }
 }

@@ -111,6 +111,9 @@ class DrawStroke(val color: Int, val points: List<Offset>, val width: Float = 0.
 
 private const val SCRUB_INTERVAL_MS = 90L
 
+/** How far past a clip's end the player may run before the editor steps in (see tick()). */
+private const val OVERSTAY_MS = 150L
+
 /** Texts made by Auto captions have ids starting with this, so they can be replaced together. */
 const val CAPTION_PREFIX = "cap_"
 
@@ -2995,6 +2998,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         // from one to the next; pick up the new clip's filter, volume and so on here.
         if (index != shownClipIndex) applyClipParams()
         val local = (source / clip.effectiveSpeed).toLong()
+        // With effects on, the player can stay on a photo past its length without ever saying it
+        // ended (seen in tests: still "playing" a minute after the end). Stop at the end of the
+        // video ourselves, and move on from a photo that has had its time.
+        if (local >= clip.durationMs + OVERSTAY_MS) {
+            if (index >= p.clips.lastIndex) {
+                player.pause()
+                if (playheadMs != p.durationMs) playheadMs = p.durationMs
+                return
+            }
+            if (clip.type == ClipType.IMAGE && player.hasNextMediaItem()) {
+                player.seekToNextMediaItem()
+                return
+            }
+        }
         val now = (p.clipStartMs(index) + local).coerceIn(0, p.durationMs)
         if (now != playheadMs) playheadMs = now
         // Sound follows the picture fade.
