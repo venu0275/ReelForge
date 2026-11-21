@@ -172,7 +172,7 @@ private fun Toggle(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
 
 @Composable
 private fun <T> Choice(options: List<Pair<T, String>>, value: T, onChange: (T) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    HintRow(spacing = 8.dp) {
         options.forEach { (option, label) ->
             FilterChip(selected = option == value, onClick = { onChange(option) }, label = { Text(label) })
         }

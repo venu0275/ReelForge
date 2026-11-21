@@ -149,10 +149,7 @@ private fun Clip.clampFades(): Clip = ProjectOps.clampFades(this)
 
 @Composable
 fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         listOf(0.1f, 0.25f, 0.5f, 0.75f, 1f, 1.5f, 2f, 4f, 8f, 16f).forEach { s ->
             FilterChip(
                 selected = clip.speed == s,
@@ -205,10 +202,7 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
     DuckSlider(vm, project = vm.project)
     Spacer(Modifier.height(8.dp))
     Text("Voice changer", style = MaterialTheme.typography.labelLarge)
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         listOf(1f to "Normal", 0.7f to "Deep", 0.85f to "Low", 1.25f to "High", 1.6f to "Chipmunk")
             .forEach { (pitch, label) ->
                 FilterChip(
@@ -224,10 +218,7 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
 
 @Composable
 fun FilterPanel(vm: EditorViewModel, clip: Clip) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         FilterPreset.entries.forEach { f ->
             FilterChip(
                 selected = clip.filter == f,
@@ -317,10 +308,7 @@ private val Palette = listOf(
 
 @Composable
 private fun Swatches(selected: Int, onPick: (Int) -> Unit) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    HintRow(spacing = 10.dp) {
         Palette.forEach { c ->
             val isSelected = (selected and 0xFFFFFF) == (c and 0xFFFFFF)
             Box(
@@ -419,10 +407,7 @@ fun TextPanel(
             QuietAction("Delete all texts", androidx.compose.material.icons.Icons.Rounded.DeleteSweep) { vm.deleteAllTexts() }
         }
         PanelTitle("Stickers")
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        HintRow(spacing = 4.dp) {
             Stickers.forEach { emoji ->
                 TextButton(onClick = { onEditing(vm.addText(emoji, 0.18f)) }) {
                     Text(emoji, style = MaterialTheme.typography.headlineSmall)
@@ -508,10 +493,7 @@ fun TextPanel(
 
         TextTab.EFFECTS -> {
             // One effect at a time, so each has room for its own controls.
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            HintRow(spacing = 8.dp) {
                 listOf("Outline", "Shadow", "Glow", "Background", "Opacity").forEachIndexed { i, name ->
                     FilterChip(selected = effect == i, onClick = { effect = i }, label = { Text(name) })
                 }
@@ -618,10 +600,7 @@ fun TextPanel(
             }
             CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutText(id, cut) }
             Text("Turn", style = MaterialTheme.typography.labelLarge)
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            HintRow(spacing = 8.dp) {
                 FilterChip(
                     selected = false,
                     onClick = { vm.editPose(ItemKind.TEXT, id) { it.copy(rotation = turned(it.rotation, 90f)) } },
@@ -743,10 +722,7 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
 @Composable
 private fun AnimChips(label: String, value: OverlayAnim, onChange: (OverlayAnim) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelLarge)
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         OverlayAnim.entries.forEach { a ->
             FilterChip(selected = value == a, onClick = { onChange(a) }, label = { Text(a.label) })
         }
@@ -847,10 +823,7 @@ fun LayerPanel(
     AnimChips("Animate in", editing.animIn) { a -> vm.updateLayer(id) { it.copy(animIn = a) } }
     AnimChips("Animate out", editing.animOut) { a -> vm.updateLayer(id) { it.copy(animOut = a) } }
     Text("Keep moving (like a GIF)", style = MaterialTheme.typography.labelLarge)
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         com.reelforge.editor.model.LoopFx.entries.forEach { fx ->
             FilterChip(
                 selected = editing.loop == fx,
@@ -1091,10 +1064,7 @@ private fun FontStore(vm: EditorViewModel, currentPath: String?, textId: String)
     Text("More fonts (free download)", style = MaterialTheme.typography.labelLarge)
     vm.storeFonts.groupBy { it.group }.forEach { (group, fonts) ->
         Text(group, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        HintRow(spacing = 8.dp) {
             fonts.forEach { font ->
                 val installed = font.id in vm.installedFonts
                 val progress = vm.fontProgress[font.id]
@@ -1243,11 +1213,7 @@ private fun FxChips(
 ) {
     Text(title, style = MaterialTheme.typography.labelLarge)
     FX_GROUPS.forEach { (group, styles) ->
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        HintRow(spacing = 8.dp, verticalAlignment = Alignment.CenterVertically) {
             Text(group, Modifier.width(72.dp), style = MaterialTheme.typography.bodySmall)
             styles.forEach { fx ->
                 FilterChip(selected = current == fx, onClick = { onChange(fx) }, label = { Text(fx.label) })
@@ -1318,10 +1284,7 @@ private fun PoseControls(vm: EditorViewModel, kind: ItemKind, id: String) {
                 "A keyframe is saved there and the item glides between keyframes.",
             style = MaterialTheme.typography.bodySmall,
         )
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        HintRow(spacing = 8.dp) {
             keys.forEach { key ->
                 FilterChip(
                     selected = kotlin.math.abs(key.tMs - pose.tMs) <= ProjectOps.KEYFRAME_MERGE_MS,
@@ -1393,10 +1356,7 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
     }
 
     PanelTitle("1. Spoken language")
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         com.reelforge.editor.engine.CaptionLanguage.entries.forEach { lang ->
             FilterChip(selected = language == lang, onClick = { language = lang }, label = { Text(lang.label) })
         }

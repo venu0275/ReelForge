@@ -81,6 +81,7 @@ import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.ProjectOps
 import com.reelforge.editor.util.MediaUtils
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -842,11 +843,12 @@ private fun EditorMenu(
             )
         }
 
-        CompositionLocalProvider(LocalHint provides { text -> vm.toast(text, ToastKind.WARNING) }) {
+        val menuScroll = rememberScrollState()
+        Box(Modifier.fillMaxWidth()) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(menuScroll)
                 .padding(horizontal = 8.dp)
                 .padding(bottom = 8.dp),
         ) {
@@ -967,6 +969,35 @@ private fun EditorMenu(
                 }
             }
         }
+        MoreBelowHint(menuScroll)
+        }
+    }
+}
+
+/** A fade and "More tools" arrow at the bottom while more tools are hidden below; tap to scroll. */
+@Composable
+private fun BoxScope.MoreBelowHint(state: ScrollState) {
+    if (!state.canScrollForward) return
+    val scope = rememberCoroutineScope()
+    val bg = MaterialTheme.colorScheme.surface
+    Box(
+        Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .height(40.dp)
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(bg.copy(alpha = 0f), bg)))
+            .clickable { scope.launch { state.animateScrollTo(state.value + state.viewportSize * 2 / 3) } },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.padding(bottom = 4.dp),
+        ) {
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("More tools", style = MaterialTheme.typography.labelSmall)
+                Icon(Icons.Rounded.KeyboardArrowDown, null, modifier = Modifier.size(16.dp))
+            }
         }
     }
 }
@@ -2351,10 +2382,7 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
 
 @Composable
 private fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         labels.forEachIndexed { i, label ->
             FilterChip(selected = selected == i, onClick = { onSelect(i) }, label = { Text(label) })
         }

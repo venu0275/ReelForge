@@ -236,7 +236,7 @@ fun RecordPanel(vm: EditorViewModel, onStarted: () -> Unit) {
 @Composable
 private fun <T> SettingChips(label: String, options: List<Pair<T, String>>, value: T, enabled: Boolean, onPick: (T) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    HintRow(spacing = 8.dp) {
         options.forEach { (option, text) ->
             FilterChip(selected = option == value, onClick = { onPick(option) }, enabled = enabled, label = { Text(text) })
         }

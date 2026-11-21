@@ -1,6 +1,12 @@
 package com.reelforge.editor.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
@@ -467,5 +473,91 @@ fun QuietAction(label: String, icon: ImageVector, onClick: () -> Unit) {
         Icon(icon, null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(label)
+    }
+}
+
+// ------------------------------------------------------------------ rows that scroll sideways
+
+/** Rows that already showed their "there is more" peek in this run of the app. */
+private val peekedRows = mutableSetOf<Int>()
+
+/**
+ * A row that scrolls sideways and shows that it does: a fade and an arrow at an edge with more
+ * items behind it (tap the arrow to scroll), and once per app run a small slide to the side and
+ * back, so it is clear more can be found by swiping.
+ */
+@Composable
+fun HintRow(
+    modifier: Modifier = Modifier,
+    spacing: androidx.compose.ui.unit.Dp = 8.dp,
+    verticalAlignment: Alignment.Vertical = Alignment.Top,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    val state = rememberScrollState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val key = androidx.compose.runtime.currentCompositeKeyHash
+    androidx.compose.runtime.LaunchedEffect(state.maxValue > 0) {
+        if (state.maxValue > 0 && peekedRows.add(key)) {
+            kotlinx.coroutines.delay(450)
+            state.animateScrollTo(minOf(state.maxValue, 140), androidx.compose.animation.core.tween(420))
+            kotlinx.coroutines.delay(200)
+            state.animateScrollTo(0, androidx.compose.animation.core.tween(380))
+        }
+    }
+    val bg = MaterialTheme.colorScheme.surface
+    Box(modifier) {
+        Row(
+            Modifier.horizontalScroll(state),
+            horizontalArrangement = Arrangement.spacedBy(spacing),
+            verticalAlignment = verticalAlignment,
+            content = content,
+        )
+        if (state.canScrollBackward) {
+            EdgeHint(Alignment.CenterStart, bg, left = true) {
+                scope.launch { state.animateScrollTo((state.value - state.viewportSize * 2 / 3).coerceAtLeast(0)) }
+            }
+        }
+        if (state.canScrollForward) {
+            EdgeHint(Alignment.CenterEnd, bg, left = false) {
+                scope.launch { state.animateScrollTo(state.value + state.viewportSize * 2 / 3) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.EdgeHint(
+    align: Alignment,
+    bg: Color,
+    left: Boolean,
+    onClick: () -> Unit,
+) {
+    val fade = if (left) listOf(bg, bg.copy(alpha = 0f)) else listOf(bg.copy(alpha = 0f), bg)
+    Box(
+        Modifier
+            .align(align)
+            .matchParentSize()
+            .wrapContentWidth(if (left) Alignment.Start else Alignment.End),
+    ) {
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .width(44.dp)
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(fade))
+                .clickable(onClick = onClick),
+            contentAlignment = if (left) Alignment.CenterStart else Alignment.CenterEnd,
+        ) {
+            Box(
+                Modifier.size(24.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    if (left) androidx.compose.material.icons.Icons.AutoMirrored.Rounded.KeyboardArrowLeft
+                    else androidx.compose.material.icons.Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                    contentDescription = if (left) "Scroll back" else "More",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.reelforge.editor.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -48,16 +49,55 @@ import com.reelforge.editor.data.SoundEffect
 @Composable
 fun StorePanel(vm: EditorViewModel) {
     var tab by remember { mutableIntStateOf(0) }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("Stickers", "Buttons and reactions", "Sound effects", "Find music").forEachIndexed { i, name ->
-            FilterChip(selected = tab == i, onClick = { tab = i }, label = { Text(name) })
+    // All four parts are always in view (no hidden tabs), each with an icon.
+    val I = androidx.compose.material.icons.Icons.Rounded
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(
+            Triple("Stickers", I.EmojiEmotions, ToolColors.Style),
+            Triple("Buttons", I.ThumbUp, ToolColors.Create),
+            Triple("Sounds", I.GraphicEq, ToolColors.Sound),
+            Triple("Music", I.MusicNote, ToolColors.Sound),
+        ).forEachIndexed { i, (name, icon, color) ->
+            val on = tab == i
+            androidx.compose.material3.Surface(
+                onClick = { tab = i },
+                shape = RoundedCornerShape(14.dp),
+                color = if (on) color.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant,
+                border = if (on) androidx.compose.foundation.BorderStroke(1.5.dp, color) else null,
+                modifier = Modifier.weight(1f),
+            ) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    androidx.compose.material3.Icon(icon, null, tint = color, modifier = Modifier.size(22.dp))
+                    Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                }
+            }
         }
     }
-    Spacer(Modifier.height(4.dp))
+    Spacer(Modifier.height(8.dp))
     when (tab) {
         0 -> {
+            val missing = vm.storeStickers.size - vm.installedStickers.size
+            val pack = vm.stickerPackProgress
+            if (pack != null) {
+                ActionCard(
+                    "Downloading ${pack.first} of ${pack.second}…", "Tap to stop. Stickers already downloaded stay.",
+                    I.Downloading, ToolColors.Style, main = true,
+                ) { vm.downloadAllStickers() }
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { pack.first / pack.second.coerceAtLeast(1).toFloat() },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                )
+            } else if (missing > 0) {
+                ActionCard(
+                    "Download all stickers", "$missing more stickers, so they all work without internet.",
+                    I.Download, ToolColors.Style,
+                ) { vm.downloadAllStickers() }
+            }
             Text(
-                "Tap a sticker to add it at the red line. Faded ones download first (needs internet).",
+                "Tap a sticker to add it at the red line. Faded ones download when you tap them.",
                 style = MaterialTheme.typography.bodySmall,
             )
             vm.storeStickers.groupBy { it.group }.forEach { (group, stickers) ->
@@ -198,7 +238,7 @@ fun MusicFinder(vm: EditorViewModel) {
             Text(if (vm.musicSearching) "…" else "Search")
         }
     }
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    HintRow(spacing = 8.dp) {
         listOf("laugh", "applause", "crowd cheer", "crickets", "scream", "boo", "funny", "cartoon").forEach { word ->
             FilterChip(
                 selected = false,

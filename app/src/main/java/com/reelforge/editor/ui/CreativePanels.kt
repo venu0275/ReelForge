@@ -52,10 +52,7 @@ import kotlinx.coroutines.delay
 /** Chips in a sideways-scrolling row. */
 @Composable
 private fun <T> ChipChoices(items: List<T>, selected: T?, label: (T) -> String, onPick: (T) -> Unit) {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    HintRow(spacing = 8.dp) {
         items.forEach { item ->
             FilterChip(selected = item == selected, onClick = { onPick(item) }, label = { Text(label(item)) })
         }
@@ -299,10 +296,7 @@ fun ratioName(a: com.reelforge.editor.model.AspectRatio) = when (a) {
 /** Frame shapes as small cards, each drawn in its own shape with its name and where it is used. */
 @Composable
 fun RatioChoices(selected: com.reelforge.editor.model.AspectRatio, onPick: (com.reelforge.editor.model.AspectRatio) -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    androidx.compose.foundation.layout.HintRow(spacing = 8.dp) {
         com.reelforge.editor.model.AspectRatio.entries.forEach { a ->
             val on = a == selected
             androidx.compose.material3.Surface(

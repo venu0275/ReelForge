@@ -77,6 +77,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -1150,6 +1152,50 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             refreshInstalledStickers()
             if (ok) addImageLayer(Uri.fromFile(file))
             else message = "Could not download the sticker. Check the internet connection."
+        }
+    }
+
+    /** "Download all" progress: how many are done of how many (null when idle). */
+    var stickerPackProgress by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
+    private var stickerPackJob: Job? = null
+
+    /** Downloads every sticker not on the phone yet, a few at a time, so they work offline. */
+    fun downloadAllStickers() {
+        if (stickerPackJob?.isActive == true) {
+            stickerPackJob?.cancel()
+            return
+        }
+        val missing = storeStickers.filter { StickerCatalog.file(ctx, it).length() == 0L }
+        if (missing.isEmpty()) {
+            toast("All stickers are already on your phone", ToastKind.INFO)
+            return
+        }
+        stickerPackJob = viewModelScope.launch {
+            var done = 0
+            var failed = 0
+            stickerPackProgress = 0 to missing.size
+            try {
+                missing.chunked(4).forEach { group ->
+                    val results = group.map { asset ->
+                        async(Dispatchers.IO) {
+                            val file = StickerCatalog.file(ctx, asset)
+                            runCatching {
+                                AssetDownloader.download(asset.url, file)
+                                checkNotNull(android.graphics.BitmapFactory.decodeFile(file.absolutePath)) { "not a picture" }
+                            }.onFailure { file.delete() }.isSuccess
+                        }
+                    }.awaitAll()
+                    done += results.size
+                    failed += results.count { !it }
+                    stickerPackProgress = done to missing.size
+                }
+                if (failed == 0) toast("All ${missing.size} stickers downloaded; they now work without internet")
+                else toast("$failed stickers could not download. Check the internet and try again.", ToastKind.ERROR)
+            } finally {
+                stickerPackProgress = null
+                refreshInstalledStickers()
+            }
         }
     }
 

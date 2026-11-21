@@ -49,7 +49,7 @@ private val EffectColours = listOf(
 
 @Composable
 private fun ColourDots(selected: Int, onPick: (Int) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    HintRow(spacing = 10.dp) {
         EffectColours.forEach { c ->
             val isSelected = (selected and 0xFFFFFF) == (c and 0xFFFFFF)
             Box(
@@ -214,7 +214,7 @@ fun TextStyleExtras(vm: EditorViewModel, text: TextItem) {
 fun TextMotionExtras(vm: EditorViewModel, text: TextItem) {
     val id = text.id
     Label("Keep moving")
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    HintRow(spacing = 8.dp) {
         LoopFx.entries.forEach { fx ->
             FilterChip(
                 selected = text.loop == fx,
@@ -224,7 +224,7 @@ fun TextMotionExtras(vm: EditorViewModel, text: TextItem) {
         }
     }
     Label("How the words appear")
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    HintRow(spacing = 8.dp) {
         TextReveal.entries.forEach { reveal ->
             FilterChip(
                 selected = text.reveal == reveal,
