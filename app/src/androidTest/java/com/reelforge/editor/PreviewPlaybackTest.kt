@@ -126,8 +126,12 @@ class PreviewPlaybackTest {
         var ended = false
         var furthest = 0L
         var polls = 0
+        // The editor moves its red line from a timer that runs on the Compose clock. In tests that
+        // clock only moves when the test moves it, so move it along with real time.
+        rule.mainClock.autoAdvance = false
         while (SystemClock.elapsedRealtime() < deadline && errors.isEmpty()) {
             Thread.sleep(250)
+            rule.mainClock.advanceTimeBy(250)
             var position = 0L
             var playing = true
             var state = ""
@@ -147,6 +151,7 @@ class PreviewPlaybackTest {
             }
         }
         val took = SystemClock.elapsedRealtime() - started
+        rule.mainClock.autoAdvance = true
         rule.runOnUiThread {
             if (vm.isPlaying) vm.togglePlay()
             vm.player.removeListener(listener)

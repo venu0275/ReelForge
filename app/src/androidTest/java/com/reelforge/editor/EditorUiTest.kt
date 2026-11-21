@@ -142,7 +142,7 @@ class EditorUiTest {
     }
 
     @Test
-    fun bugReport_needsATitle_thenOpensEmailOrOffersCopy() {
+    fun bugReport_needsATitle_andBuildsTheEmail() {
         waitForDescription("Settings")
         rule.onNodeWithContentDescription("Settings", useUnmergedTree = true).performClick()
         waitForText("Report a bug")
@@ -152,17 +152,23 @@ class EditorUiTest {
         waitForText("Type an issue title to send")
         tap("Type an issue title to send")
         rule.onNodeWithText("No email app on this phone").assertDoesNotExist()
-        // Positive: with a title it opens an email app, or (none installed) offers Copy report.
+        // Positive: with a title the Send button is ready (it is not tapped: that would open a real
+        // email app over the tests). The email it sends is checked directly instead.
         rule.onNode(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.hasText("Issue title"))
             .performTextInput("Test: export closes")
         waitForText("Send report")
-        tap("Send report")
-        rule.waitUntil(10_000) {
-            val offered = runCatching {
-                rule.onAllNodesWithText("No email app on this phone").fetchSemanticsNodes().isNotEmpty()
-            }.getOrDefault(false)
-            offered || !rule.activity.hasWindowFocus()
-        }
+        val report = com.reelforge.editor.ui.BugReportText("Test: export closes", "", "1. Tap Export", "App: CutMitra")
+        val email = com.reelforge.editor.ui.BugReporter.emailFor(report, emptyList(), null)
+        org.junit.Assert.assertEquals(android.content.Intent.ACTION_SENDTO, email.action)
+        org.junit.Assert.assertEquals("mailto", email.data?.scheme)
+        org.junit.Assert.assertEquals(
+            listOf(com.reelforge.editor.ui.BugReporter.address),
+            email.getStringArrayExtra(android.content.Intent.EXTRA_EMAIL)?.toList(),
+        )
+        org.junit.Assert.assertEquals("CutMitra – Test: export closes", email.getStringExtra(android.content.Intent.EXTRA_SUBJECT))
+        org.junit.Assert.assertTrue(email.getStringExtra(android.content.Intent.EXTRA_TEXT)!!.contains("Steps to reproduce the issue:"))
+        // The link itself carries the subject too, for email apps that only read the link.
+        org.junit.Assert.assertTrue(email.data.toString().contains("subject=CutMitra"))
     }
 }
 
