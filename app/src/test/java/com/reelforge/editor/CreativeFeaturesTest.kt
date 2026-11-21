@@ -202,20 +202,24 @@ class ReverseTest {
 }
 
 class BugReportTest {
-    @Test fun `report text has the problem, the steps and the phone details`() {
+    @Test fun `report has the title in the subject, the steps and the phone details`() {
         val r = com.reelforge.editor.ui.BugReportText(
-            problem = "App closed on Export\nwhen the video was long",
+            title = "App closes on Export",
+            problem = "It closed when the video was long",
             steps = "1. Add a video\n2. Export",
             device = "App: CutMitra 1.1.0",
         )
-        assertEquals("CutMitra bug: App closed on Export", r.subject)
-        assertTrue(r.body.contains("What went wrong:\nApp closed on Export"))
-        assertTrue(r.body.contains("How to make it happen:\n1. Add a video"))
+        assertEquals("CutMitra – App closes on Export", r.subject)
+        assertTrue(r.body.startsWith("Issue: App closes on Export"))
+        assertTrue(r.body.contains("What went wrong:\nIt closed"))
+        assertTrue(r.body.contains("Steps to reproduce the issue:\n1. Add a video"))
         assertTrue(r.body.contains("Phone and app:\nApp: CutMitra 1.1.0"))
-        val bare = com.reelforge.editor.ui.BugReportText("Crash", "", null)
-        assertTrue(!bare.body.contains("How to make it happen") && !bare.body.contains("Phone and app"))
-        // Long first lines are cut in the subject.
-        assertEquals("CutMitra bug: ".length + 60, com.reelforge.editor.ui.BugReportText("x".repeat(200), "", null).subject.length)
+        assertTrue(!r.body.contains("log", ignoreCase = true))
+        val bare = com.reelforge.editor.ui.BugReportText("Crash", "", "", null)
+        assertTrue(!bare.body.contains("Steps to reproduce") && !bare.body.contains("Phone and app"))
+        // Long titles are cut in the subject; an empty one still gives a subject.
+        assertEquals("CutMitra – ".length + 60, com.reelforge.editor.ui.BugReportText("x".repeat(200), "", "", null).subject.length)
+        assertEquals("CutMitra – Bug report", com.reelforge.editor.ui.BugReportText(" ", "", "", null).subject)
     }
 }
 

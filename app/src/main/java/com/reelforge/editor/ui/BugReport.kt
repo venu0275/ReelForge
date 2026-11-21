@@ -1,8 +1,10 @@
 package com.reelforge.editor.ui
 
 import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -11,20 +13,32 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.reelforge.editor.BuildConfig
@@ -47,19 +62,26 @@ import java.io.File
 
 /** What a bug report is made of. Plain data, so the text can be tested. */
 data class BugReportText(
+    val title: String,
     val problem: String,
     val steps: String,
     val device: String?,
 ) {
-    val subject: String get() = "CutMitra bug: " + problem.lineSequence().first().take(60)
+    /** "CutMitra – <issue title>" (the title is cut to 60 characters). */
+    val subject: String
+        get() = "CutMitra – " + title.trim().lineSequence().first().take(60).ifBlank { "Bug report" }
 
     val body: String
         get() = buildString {
-            appendLine("What went wrong:")
-            appendLine(problem.trim())
+            appendLine("Issue: ${title.trim()}")
+            if (problem.isNotBlank()) {
+                appendLine()
+                appendLine("What went wrong:")
+                appendLine(problem.trim())
+            }
             if (steps.isNotBlank()) {
                 appendLine()
-                appendLine("How to make it happen:")
+                appendLine("Steps to reproduce the issue:")
                 appendLine(steps.trim())
             }
             if (device != null) {
@@ -71,6 +93,9 @@ data class BugReportText(
 }
 
 object BugReporter {
+    /** Where reports go. */
+    val address: String get() = BuildConfig.SUPPORT_EMAIL.ifBlank { "developervt0909@gmail.com" }
+
     /** The phone and app details that help find a bug. Nothing personal. */
     fun deviceInfo(context: Context, appVersion: String): String {
         val free = runCatching {
@@ -83,78 +108,110 @@ object BugReporter {
             "Phone: ${Build.MANUFACTURER} ${Build.MODEL}",
             "Screen: ${metrics.widthPixels}×${metrics.heightPixels}",
             "Free space: $free MB",
-            "Memory for the app: ${Runtime.getRuntime().maxMemory() / (1024 * 1024)} MB",
         ).joinToString("\n")
     }
-
-    /** The app's own recent log lines (Android only lets an app read its own). */
-    fun appLog(): String = runCatching {
-        val process = Runtime.getRuntime().exec(
-            arrayOf("logcat", "-d", "-t", "400", "--pid=${android.os.Process.myPid()}")
-        )
-        process.inputStream.bufferedReader().use { it.readText() }
-    }.getOrDefault("")
 
     private fun folder(context: Context) = File(context.cacheDir, "reports").apply {
         deleteRecursively()
         mkdirs()
     }
 
-    /**
-     * Builds the message: to the support address if one is set up (else any app can be picked),
-     * with screenshots and the log attached as copies in the app's cache. Slow; call off the
-     * main thread.
-     */
-    fun prepare(context: Context, report: BugReportText, screenshots: List<Uri>, includeLog: Boolean): Intent {
+    /** Copies the chosen screenshots where email apps can read them. Slow; call off the main thread. */
+    fun attachments(context: Context, screenshots: List<Uri>): List<Uri> {
+        if (screenshots.isEmpty()) return emptyList()
         val dir = folder(context)
         val authority = "${context.packageName}.reports"
-        val files = mutableListOf<Uri>()
-        screenshots.forEachIndexed { i, uri ->
+        return screenshots.mapIndexedNotNull { i, uri ->
             runCatching {
                 val out = File(dir, "screenshot_${i + 1}.jpg")
                 context.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
-                if (out.length() > 0) files += FileProvider.getUriForFile(context, authority, out)
-            }
+                if (out.length() > 0) FileProvider.getUriForFile(context, authority, out) else null
+            }.getOrNull()
         }
-        if (includeLog) {
-            val log = appLog()
-            if (log.isNotBlank()) {
-                val out = File(dir, "app_log.txt").apply { writeText(log) }
-                files += FileProvider.getUriForFile(context, authority, out)
-            }
-        }
+    }
 
-        val email = BuildConfig.SUPPORT_EMAIL
-        val send = Intent(if (files.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
-            type = if (files.isEmpty()) "text/plain" else "*/*"
-            if (email.isNotBlank()) putExtra(Intent.EXTRA_EMAIL, arrayOf(email))
-            putExtra(Intent.EXTRA_SUBJECT, report.subject)
-            putExtra(Intent.EXTRA_TEXT, report.body)
-            when {
-                files.size > 1 -> putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
-                files.size == 1 -> putExtra(Intent.EXTRA_STREAM, files[0])
+    /** The email apps on this phone (apps that open "mailto:" links). */
+    fun emailApps(context: Context): List<String> {
+        val pm = context.packageManager
+        val probe = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
+        val found = if (Build.VERSION.SDK_INT >= 33) {
+            pm.queryIntentActivities(probe, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(probe, 0)
+        }
+        return found.map { it.activityInfo.packageName }.distinct()
+    }
+
+    /** "mailto:address?subject=…&body=…" with the text safely encoded. */
+    fun mailto(report: BugReportText): Uri =
+        Uri.parse("mailto:$address?subject=${Uri.encode(report.subject)}&body=${Uri.encode(report.body)}")
+
+    /** A message to [address] for [app] (or for any app when null), with [files] attached. */
+    fun emailFor(report: BugReportText, files: List<Uri>, app: String?): Intent {
+        val send = if (files.isEmpty()) {
+            // Without attachments a mailto: link opens the email app's compose screen directly.
+            // Subject and text go in the link too, for email apps that only read the link.
+            Intent(Intent.ACTION_SENDTO, mailto(report)).apply {
+                putExtra(Intent.EXTRA_EMAIL, arrayOf(address))
             }
-            if (files.isNotEmpty()) {
+        } else {
+            Intent(if (files.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
+                type = "message/rfc822"
+                putExtra(Intent.EXTRA_EMAIL, arrayOf(address))
+                if (files.size > 1) putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
+                else putExtra(Intent.EXTRA_STREAM, files[0])
                 clipData = ClipData.newRawUri("", files[0]).apply { files.drop(1).forEach { addItem(ClipData.Item(it)) } }
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            // With an address set, offer only email apps.
-            if (email.isNotBlank()) selector = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:"))
         }
+        send.putExtra(Intent.EXTRA_SUBJECT, report.subject)
+        send.putExtra(Intent.EXTRA_TEXT, report.body)
+        if (app != null) send.setPackage(app)
         return send
     }
 
-    /** Opens the email app (or share sheet) with a message from [prepare]. Main thread. */
-    fun open(context: Context, send: Intent) {
-        try {
-            context.startActivity(Intent.createChooser(send, "Send bug report").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: Exception) {
-            // No email app: try again with any app that can share text.
-            send.selector = null
-            runCatching {
-                context.startActivity(Intent.createChooser(send, "Send bug report").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    /**
+     * Opens the email app with the report ready to send. With several email apps the user
+     * picks one. Returns false when the phone has no email app (the screen then offers to copy
+     * the report or share it another way).
+     */
+    fun openEmail(context: Context, report: BugReportText, files: List<Uri>): Boolean {
+        val apps = emailApps(context)
+        if (apps.isEmpty()) return false
+        return runCatching {
+            val first = emailFor(report, files, apps[0]).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (apps.size == 1) {
+                context.startActivity(first)
+            } else {
+                val others = apps.drop(1).map { emailFor(report, files, it) }.toTypedArray()
+                val chooser = Intent.createChooser(emailFor(report, files, apps[0]), "Send report with")
+                    .putExtra(Intent.EXTRA_INITIAL_INTENTS, others)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
             }
+            true
+        }.getOrDefault(false)
+    }
+
+    /** Shares the report with any app (WhatsApp, Telegram, …) when there is no email app. */
+    fun shareAnyWay(context: Context, report: BugReportText) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, report.subject)
+            putExtra(Intent.EXTRA_TEXT, "To: $address\n\n${report.body}")
         }
+        runCatching {
+            context.startActivity(Intent.createChooser(send, "Share report").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    /** Copies the address, subject and report, to paste into any email. */
+    fun copy(context: Context, report: BugReportText) {
+        val clip = context.getSystemService(ClipboardManager::class.java)
+        clip?.setPrimaryClip(
+            ClipData.newPlainText("Bug report", "To: $address\nSubject: ${report.subject}\n\n${report.body}")
+        )
     }
 }
 
@@ -164,15 +221,24 @@ fun BugReportScreen(appVersion: String, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf("") }
     var steps by remember { mutableStateOf("") }
     var withDevice by remember { mutableStateOf(true) }
-    var withLog by remember { mutableStateOf(true) }
     var shots by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var sending by remember { mutableStateOf(false) }
+    // Shown when the phone has no email app.
+    var noEmailApp by remember { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(3)) { uris ->
         if (uris.isNotEmpty()) shots = uris
     }
+    fun report() = BugReportText(
+        title = title,
+        problem = problem,
+        steps = steps,
+        device = if (withDevice) BugReporter.deviceInfo(context, appVersion) else null,
+    )
 
     Column(
         Modifier
@@ -180,64 +246,120 @@ fun BugReportScreen(appVersion: String, onBack: () -> Unit) {
             .systemBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back") }
             Text("Report a bug", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = onBack) { Text("Back") }
         }
-        Text("Tell us what went wrong. Your report opens in your email app so you can check it before sending.")
+
+        // Where it goes, so the user knows what will happen.
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(40.dp).background(ToolColors.Time.copy(alpha = 0.18f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.Email, null, tint = ToolColors.Time) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Sent by email to", style = MaterialTheme.typography.bodySmall)
+                    Text(BugReporter.address, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Your email app opens with everything filled in. Check it, then press Send.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        OutlinedTextField(
+            title, { title = it.take(80) },
+            label = { Text("Issue title") },
+            placeholder = { Text("e.g. App closes when I tap Export") },
+            singleLine = true,
+            supportingText = { Text("Used as the email subject: CutMitra – your title") },
+            modifier = Modifier.fillMaxWidth(),
+        )
         OutlinedTextField(
             problem, { problem = it },
-            label = { Text("What went wrong?") },
-            placeholder = { Text("e.g. The app closed when I tapped Export") },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+            label = { Text("What went wrong? (optional)") },
+            placeholder = { Text("What did you expect, and what happened instead?") },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
         )
         OutlinedTextField(
             steps, { steps = it },
-            label = { Text("How can we make it happen? (optional)") },
-            placeholder = { Text("1. Open a project  2. Add a video  3. Tap Export") },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+            label = { Text("Steps to reproduce the issue") },
+            placeholder = { Text("1. Open a project\n2. Add a video\n3. Tap Export") },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp),
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (shots.isEmpty()) "No screenshots added" else "${shots.size} screenshot(s) added",
-                Modifier.weight(1f),
-            )
-            OutlinedButton(onClick = {
-                pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }) { Text(if (shots.isEmpty()) "Add screenshots" else "Change") }
+
+        Surface(
+            onClick = { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.AddPhotoAlternate, null, tint = ToolColors.Create)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(if (shots.isEmpty()) "Add screenshots (optional)" else "${shots.size} screenshot(s) added")
+                    Text("Up to 3 pictures of the problem", style = MaterialTheme.typography.bodySmall)
+                }
+                Text(if (shots.isEmpty()) "Add" else "Change", color = MaterialTheme.colorScheme.primary)
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Include phone model and Android version", Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text("Include phone model and Android version")
+                Text(
+                    "Helps us find problems on your kind of phone. Nothing personal.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Switch(checked = withDevice, onCheckedChange = { withDevice = it })
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Include the app's recent log", Modifier.weight(1f))
-            Switch(checked = withLog, onCheckedChange = { withLog = it })
-        }
-        Text(
-            "The log only has the app's own technical messages, which help find crashes. Nothing is " +
-                "sent until you press Send in your email app.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        Button(
-            onClick = {
-                sending = true
-                scope.launch {
-                    val report = BugReportText(
-                        problem = problem,
-                        steps = steps,
-                        device = if (withDevice) BugReporter.deviceInfo(context, appVersion) else null,
-                    )
-                    // Copying screenshots and reading the log is done off the main thread.
-                    val message = withContext(Dispatchers.IO) { BugReporter.prepare(context, report, shots, withLog) }
-                    BugReporter.open(context, message)
-                    sending = false
+
+        WideButton(onClick = {
+            if (title.isBlank()) return@WideButton
+            sending = true
+            scope.launch {
+                val files = withContext(Dispatchers.IO) { BugReporter.attachments(context, shots) }
+                noEmailApp = !BugReporter.openEmail(context, report(), files)
+                sending = false
+            }
+        }) {
+            Icon(Icons.Rounded.Send, null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                when {
+                    sending -> "Opening your email app…"
+                    title.isBlank() -> "Type an issue title to send"
+                    else -> "Send report"
                 }
-            },
-            enabled = problem.isNotBlank() && !sending,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (sending) "Preparing…" else "Send report") }
+            )
+        }
+
+        if (noEmailApp) {
+            Surface(shape = RoundedCornerShape(16.dp), color = ToolColors.Style.copy(alpha = 0.14f)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("No email app on this phone", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Copy the report and paste it into an email to ${BugReporter.address}, or share it another way.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    WideOutlinedButton(onClick = {
+                        BugReporter.copy(context, report())
+                        copied = true
+                    }) { Text(if (copied) "Copied ✓" else "Copy report") }
+                    TextButton(onClick = { BugReporter.shareAnyWay(context, report()) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Share another way")
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
     }
 }

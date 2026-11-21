@@ -78,7 +78,7 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
             "app sends nothing of yours.",
         "• Bug reports: only if you choose Report a bug. The report opens in your own email app, and " +
             "nothing is sent until you press Send there. It contains what you type and, if you leave them " +
-            "on, your phone model, Android version, the app's own recent log and any screenshots you add.",
+            "on, your phone model and Android version, and any screenshots you add.",
         "• Text to speech: \"Read aloud\" uses the text-to-speech engine installed on your phone. The text " +
             "you type is handled by that engine under its own privacy policy.",
         "• Android backup: if backup is turned on in your phone settings, Android may back up the app's " +
