@@ -1,5 +1,6 @@
 package com.reelforge.editor.ui
 
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background

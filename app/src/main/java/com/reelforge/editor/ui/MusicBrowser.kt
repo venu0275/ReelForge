@@ -1,5 +1,6 @@
 package com.reelforge.editor.ui
 
+import androidx.compose.material.icons.rounded.*
 import android.net.Uri
 import android.util.LruCache
 import androidx.activity.compose.BackHandler

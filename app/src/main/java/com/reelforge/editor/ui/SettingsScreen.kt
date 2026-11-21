@@ -1,5 +1,6 @@
 package com.reelforge.editor.ui
 
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -122,17 +123,19 @@ fun SettingsScreen(vm: EditorViewModel) {
 
 @Composable
 private fun Section(title: String) {
-    val R = androidx.compose.material.icons.Icons.Rounded
-    val (icon, color) = when {
-        title.startsWith("Screen") -> R.ScreenRotation to ToolColors.Frame
-        title.startsWith("Editing") -> R.ContentCut to ToolColors.Cut
-        title.startsWith("Export") -> R.IosShare to ToolColors.Create
-        title.startsWith("Downloads") -> R.Download to ToolColors.Sound
-        title.startsWith("Reset") -> R.RestartAlt to ToolColors.Arrange
-        title.startsWith("Help") -> R.HelpOutline to ToolColors.Time
-        title.startsWith("Privacy") -> R.Lock to ToolColors.Look
-        else -> R.Info to ToolColors.Finish
+    val I = androidx.compose.material.icons.Icons.Rounded
+    val pick: Pair<androidx.compose.ui.graphics.vector.ImageVector, androidx.compose.ui.graphics.Color> = when {
+        title.startsWith("Screen") -> I.ScreenRotation to ToolColors.Frame
+        title.startsWith("Editing") -> I.ContentCut to ToolColors.Cut
+        title.startsWith("Export") -> I.IosShare to ToolColors.Create
+        title.startsWith("Downloads") -> I.Download to ToolColors.Sound
+        title.startsWith("Reset") -> I.RestartAlt to ToolColors.Arrange
+        title.startsWith("Help") -> I.HelpOutline to ToolColors.Time
+        title.startsWith("Privacy") -> I.Lock to ToolColors.Look
+        else -> I.Info to ToolColors.Finish
     }
+    val icon = pick.first
+    val color = pick.second
     Spacer(Modifier.height(12.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.foundation.layout.Box(
