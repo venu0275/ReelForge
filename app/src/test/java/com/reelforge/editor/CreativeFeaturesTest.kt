@@ -383,20 +383,18 @@ class ToastTest {
     private fun kind(t: String) = com.reelforge.editor.ui.Toast.kindOf(t)
 
     @Test fun `messages get the right look`() {
-        val k = com.reelforge.editor.ui.ToastKind
-        assertEquals(k.ERROR, kind("Could not reverse this clip on this phone"))
-        assertEquals(k.ERROR, kind("The preview had a problem on this phone"))
-        assertEquals(k.WARNING, kind("Move the red line onto the selected clip, away from its edges"))
-        assertEquals(k.WARNING, kind("Add your photos or videos first, then pick a template"))
-        assertEquals(k.SUCCESS, kind("Sound added at the red line"))
-        assertEquals(k.SUCCESS, kind("Saved to Music/CutMitra on your phone"))
-        assertEquals(k.INFO, kind("Auto captions stopped"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.ERROR, kind("Could not reverse this clip on this phone"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.ERROR, kind("The preview had a problem on this phone"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.WARNING, kind("Move the red line onto the selected clip, away from its edges"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.WARNING, kind("Add your photos or videos first, then pick a template"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.SUCCESS, kind("Sound added at the red line"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.SUCCESS, kind("Saved to Music/CutMitra on your phone"))
+        assertEquals(com.reelforge.editor.ui.ToastKind.INFO, kind("Auto captions stopped"))
     }
 
     @Test fun `toasts stay long enough to read`() {
-        val k = com.reelforge.editor.ui.ToastKind
-        val short = com.reelforge.editor.ui.Toast("Undone", k.INFO, false, 1)
-        val long = com.reelforge.editor.ui.Toast("x".repeat(200), k.ERROR, false, 2)
+        val short = com.reelforge.editor.ui.Toast("Undone", com.reelforge.editor.ui.ToastKind.INFO, false, 1)
+        val long = com.reelforge.editor.ui.Toast("x".repeat(200), com.reelforge.editor.ui.ToastKind.ERROR, false, 2)
         assertTrue(com.reelforge.editor.ui.toastMillis(short) >= 2_200)
         assertTrue(com.reelforge.editor.ui.toastMillis(long) <= 6_500)
         assertTrue(
