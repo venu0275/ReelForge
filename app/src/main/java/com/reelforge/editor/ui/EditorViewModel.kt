@@ -574,6 +574,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     var tourAspect by mutableStateOf<AspectRatio?>(null)
         private set
     private var tourJob: Job? = null
+    /** The tour was stopped because a popup opened; it plays again (not marked as seen). */
+    private var tourInterrupted = false
 
     /**
      * Plays the tour: the menu scrolls to Ratio, it is tapped, then the preview changes to 9:16,
@@ -595,12 +597,20 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 tourAspect = null
                 tourStep = TourStep.NONE
-                if (!settings.ratioTourSeen) updateSettings { it.copy(ratioTourSeen = true) }
+                if (!tourInterrupted && !settings.ratioTourSeen) updateSettings { it.copy(ratioTourSeen = true) }
+                tourInterrupted = false
             }
         }
     }
 
     fun stopRatioTour() {
+        tourJob?.cancel()
+    }
+
+    /** A popup opened over the tour: stop it for now; it plays from the start once the popup is closed. */
+    fun holdRatioTour() {
+        if (tourJob?.isActive != true) return
+        tourInterrupted = true
         tourJob?.cancel()
     }
 

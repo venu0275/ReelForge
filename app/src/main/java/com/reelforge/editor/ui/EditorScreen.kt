@@ -137,13 +137,6 @@ fun EditorScreen(vm: EditorViewModel) {
 
     // The in-app media screen (folders and thumbnails, like a gallery) is open.
     var browsing by remember { mutableStateOf(false) }
-    // First time in the editor: a short animated tour of Ratio (once; Ratio has "Show me how").
-    LaunchedEffect(browsing, panel, vm.settings.ratioTourSeen) {
-        if (!vm.settings.ratioTourSeen && !browsing && panel == null) {
-            delay(900)
-            vm.startRatioTour()
-        }
-    }
     // The in-app music screen (songs, albums, folders, free music) is open.
     var browsingMusic by remember { mutableStateOf(false) }
     // A new, empty project opens straight onto it.
@@ -189,6 +182,19 @@ fun EditorScreen(vm: EditorViewModel) {
     var composing by remember { mutableStateOf(false) }
     // The text whose words are being changed there; null while writing a new one.
     var composeTarget by remember { mutableStateOf<String?>(null) }
+    // First time in the editor: a short animated tour of Ratio (once; Ratio has "Show me how").
+    // It waits while a popup is open (black bars, frame shape, voice-over, export, typing a text),
+    // so it plays only after the user has read and closed it; a popup that opens during the tour
+    // stops it, and it plays again from the start afterwards.
+    val popupOpen = vm.barsOffer != null || vm.aspectSuggestion != null || askReplaceVoice ||
+        voiceSettings || composing || panel == Panel.EXPORT
+    LaunchedEffect(popupOpen) { if (popupOpen) vm.holdRatioTour() }
+    LaunchedEffect(browsing, panel, popupOpen, vm.settings.ratioTourSeen) {
+        if (!vm.settings.ratioTourSeen && !browsing && panel == null && !popupOpen) {
+            delay(900)
+            vm.startRatioTour()
+        }
+    }
     // The text or picture selected on the preview (shown with a frame and handles).
     var previewPick by remember { mutableStateOf<String?>(null) }
     var editingLayerId by remember { mutableStateOf<String?>(null) }
