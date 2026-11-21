@@ -821,7 +821,10 @@ private fun EditorMenu(
                     style = MaterialTheme.typography.titleSmall,
                 )
                 if (showExport) {
-                    Button(onClick = { openPanel(Panel.EXPORT) }, enabled = hasClips, whyOff = addFirst) { Text("Export") }
+                    Button(onClick = {
+                        if (hasClips) openPanel(Panel.EXPORT)
+                        else vm.toast("Add a video or photo first: tap Media", ToastKind.WARNING)
+                    }) { Text("Export") }
                 }
             }
         }
