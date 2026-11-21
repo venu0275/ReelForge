@@ -2382,24 +2382,38 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
             Column {
                 when (state) {
                     ExportState.Idle -> {
-                        Text("Resolution")
-                        ChipRow(sizes.map { it.second }, sizes.indexOfFirst { it.first == shortSide }) {
-                            shortSide = sizes[it].first
+                        val left: @Composable () -> Unit = {
+                            ExportLabel("Resolution")
+                            ChipRow(sizes.map { it.second }, sizes.indexOfFirst { it.first == shortSide }) {
+                                shortSide = sizes[it].first
+                            }
+                            ExportLabel("Frame rate")
+                            ChipRow(listOf("30 fps", "60 fps"), if (fps == 60) 1 else 0) { fps = if (it == 1) 60 else 30 }
                         }
-                        Text("Frame rate")
-                        ChipRow(listOf("30 fps", "60 fps"), if (fps == 60) 1 else 0) { fps = if (it == 1) 60 else 30 }
-                        Text("Quality")
-                        ChipRow(listOf("Small file", "Balanced", "Best"), quality) { quality = it }
-                        if (canHevc) {
-                            Text("Format")
-                            ChipRow(listOf("H.264 (plays everywhere)", "H.265 (smaller file)"), if (hevc) 1 else 0) {
-                                hevc = it == 1
+                        val right: @Composable () -> Unit = {
+                            ExportLabel("Quality")
+                            ChipRow(listOf("Small file", "Balanced", "Best"), quality) { quality = it }
+                            if (canHevc) {
+                                ExportLabel("Format")
+                                ChipRow(listOf("H.264 (plays everywhere)", "H.265 (smaller file)"), if (hevc) 1 else 0) {
+                                    hevc = it == 1
+                                }
                             }
                         }
+                        // Sideways the options sit in two columns, so they all fit without scrolling.
+                        if (LocalConfiguration.current.screenHeightDp < 500) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Column(Modifier.weight(1f)) { left() }
+                                Column(Modifier.weight(1f)) { right() }
+                            }
+                        } else {
+                            left()
+                            right()
+                        }
+                        Spacer(Modifier.height(6.dp))
                         Text(
-                            "MP4, ${project.aspect.label}, " + MediaUtils.formatTime(project.durationMs) +
-                                ". 60 fps is smoother only for clips filmed at 60 fps; photos and " +
-                                "animations always benefit.",
+                            "MP4 · ${project.aspect.label} · " + MediaUtils.formatTime(project.durationMs) +
+                                ". 60 fps is smoother only for clips filmed at 60 fps.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
@@ -2450,8 +2464,19 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
 }
 
 @Composable
+private fun ExportLabel(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
 private fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    HintRow(spacing = 8.dp) {
+    // Wraps onto a second line instead of scrolling, so every choice is in view.
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         labels.forEachIndexed { i, label ->
             FilterChip(selected = selected == i, onClick = { onSelect(i) }, label = { Text(label) })
         }

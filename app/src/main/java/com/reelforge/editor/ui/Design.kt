@@ -226,16 +226,26 @@ fun CutDialog(
     /** Centre the message; turn off for dialogs holding options. */
     centred: Boolean = true,
 ) {
+    // On short screens (a phone held sideways) the dialog is compact: small icon beside the
+    // title, less space, buttons side by side and a wider box, so its content fits without scrolling.
+    val compact = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 500
     Dialog(
         onDismissRequest = onDismissRequest,
-        properties = DialogProperties(dismissOnClickOutside = dismissOnClickOutside),
+        properties = DialogProperties(
+            dismissOnClickOutside = dismissOnClickOutside,
+            usePlatformDefaultWidth = !compact,
+        ),
     ) {
         Surface(
-            shape = RoundedCornerShape(28.dp),
+            shape = RoundedCornerShape(if (compact) 22.dp else 28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
-            modifier = modifier.widthIn(max = 420.dp),
+            modifier = modifier.widthIn(max = if (compact) 600.dp else 420.dp).padding(horizontal = if (compact) 24.dp else 0.dp),
         ) {
+            if (compact) {
+                CompactDialogBody(icon, color, title, text, confirmButton, dismissButton, centred)
+                return@Surface
+            }
             // Only the message scrolls, so the buttons always stay in view. Content passed in must
             // not scroll by itself (a scroll inside a scroll crashes).
             Column(
@@ -281,6 +291,60 @@ fun CutDialog(
                     dismissButton?.invoke()
                 }
             }
+        }
+    }
+}
+
+/** The compact layout: icon and title in one line, message, then the buttons side by side. */
+@Composable
+private fun CompactDialogBody(
+    icon: ImageVector?,
+    color: Color,
+    title: (@Composable () -> Unit)?,
+    text: (@Composable () -> Unit)?,
+    confirmButton: @Composable () -> Unit,
+    dismissButton: (@Composable () -> Unit)?,
+    centred: Boolean,
+) {
+    Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (icon != null) {
+                Box(
+                    Modifier.size(32.dp).background(color.copy(alpha = 0.18f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp)) }
+                Spacer(Modifier.width(10.dp))
+            }
+            if (title != null) {
+                CompositionLocalProvider(
+                    androidx.compose.material3.LocalTextStyle provides MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                ) { title() }
+            }
+        }
+        if (text != null) {
+            Spacer(Modifier.height(8.dp))
+            CompositionLocalProvider(
+                androidx.compose.material3.LocalTextStyle provides MaterialTheme.typography.bodyMedium.copy(
+                    textAlign = if (centred) TextAlign.Center else TextAlign.Start,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                ) { text() }
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (dismissButton != null) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { dismissButton() }
+            }
+            Box(Modifier.weight(1f)) { confirmButton() }
         }
     }
 }
