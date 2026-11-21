@@ -132,6 +132,7 @@ object ExportManager {
         val loop: com.reelforge.editor.model.LoopFx = com.reelforge.editor.model.LoopFx.NONE,
         val reveal: List<Bitmap> = emptyList(),
         val revealMs: Long = 0,
+        val frames: AnimatedButtons.Frames? = null,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -145,6 +146,19 @@ object ExportManager {
 
         // Image layers sit below text and stickers.
         val specs = project.layers.mapNotNull { layer ->
+            // Animated buttons are drawn frame by frame at the size they appear.
+            AnimatedButton.of(layer.button)?.let { kind ->
+                val frames = AnimatedButtons.Frames(
+                    kind, layer.endMs - layer.startMs, (layer.scale * height).toInt().coerceAtLeast(8),
+                )
+                return@mapNotNull OverlaySpec(
+                    frames.first,
+                    layer.startMs, layer.endMs, layer.x, layer.y, layer.opacity, layer.animIn, layer.animOut,
+                    if (layer.moving) layer.x2 else layer.x, if (layer.moving) layer.y2 else layer.y,
+                    layer.rotation, layer.keyframes, layer.loop,
+                    frames = frames,
+                )
+            }
             val source = MediaUtils.decodeImage(context, Uri.parse(layer.uri), 1440) ?: return@mapNotNull null
             val targetHeight = (layer.scale * height).toInt().coerceAtLeast(2)
             val targetWidth = (source.width.toLong() * targetHeight / source.height).toInt().coerceAtLeast(2)
@@ -202,6 +216,7 @@ object ExportManager {
                     loop = s.loop,
                     reveal = s.reveal,
                     revealUs = s.revealMs * 1000,
+                    frameAt = s.frames?.let { f -> { ms: Long -> f.at(ms) } },
                     )
                 }
             buildClipItem(
@@ -283,6 +298,7 @@ object ExportManager {
                     loop = s.loop,
                     reveal = s.reveal,
                     revealUs = s.revealMs * 1000,
+                    frameAt = s.frames?.let { f -> { ms: Long -> f.at(ms) } },
                 )
             }
             if (onTop.isNotEmpty()) {

@@ -180,6 +180,8 @@ class TimedBitmapOverlay(
     /** Pictures of a text being revealed, in order, shown during the first [revealUs]. */
     private val reveal: List<Bitmap> = emptyList(),
     private val revealUs: Long = 0,
+    /** For animated buttons: the picture a given number of ms after it appears. */
+    private val frameAt: ((Long) -> Bitmap)? = null,
 ) : BitmapOverlay() {
     private val hidden: OverlaySettings = OverlaySettings.Builder().setAlphaScale(0f).build()
     private var baseUs = C.TIME_UNSET
@@ -191,6 +193,7 @@ class TimedBitmapOverlay(
 
     override fun getBitmap(presentationTimeUs: Long): Bitmap {
         val since = relative(presentationTimeUs) - startUs
+        if (frameAt != null) return frameAt.invoke((since / 1000).coerceIn(0, (endUs - startUs) / 1000))
         if (reveal.isNotEmpty() && revealUs > 0 && since >= 0 && since < revealUs) {
             return reveal[(since * reveal.size / revealUs).toInt().coerceIn(0, reveal.lastIndex)]
         }

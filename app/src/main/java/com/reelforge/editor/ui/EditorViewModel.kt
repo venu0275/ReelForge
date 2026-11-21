@@ -1281,6 +1281,33 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Adds an animated channel button (Subscribe + bell, Like, Follow, Share, Comment) at the red
+     * line. It is a normal layer (move, resize, time it), drawn frame by frame.
+     */
+    fun addAnimatedButton(kind: com.reelforge.editor.engine.AnimatedButton) {
+        val p = project ?: return
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                File(StickerCatalog.dir(ctx), "animated_${kind.name.lowercase()}.png").also { f ->
+                    if (f.length() == 0L) f.outputStream().use {
+                        com.reelforge.editor.engine.AnimatedButtons.still(kind)
+                            .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                }
+            }
+            val start = playheadMs
+            val end = (start + kind.defaultMs).coerceAtMost(maxOf(p.durationMs, start + 500))
+            val layer = ImageLayer(
+                uri = Uri.fromFile(file).toString(), startMs = start, endMs = end,
+                scale = if (kind == com.reelforge.editor.engine.AnimatedButton.SUBSCRIBE) 0.2f else 0.16f,
+                y = -0.6f, button = kind.name,
+            )
+            mutate { it.copy(layers = it.layers + layer) }
+            toast("${kind.title} added at the red line. Play to see it move.", undo = true)
+        }
+    }
+
     /** Adds one of the built-in sound effects at the playhead. */
     fun addSoundEffect(effect: SoundEffect) {
         if (project == null) return

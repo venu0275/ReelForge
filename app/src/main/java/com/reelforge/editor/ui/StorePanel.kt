@@ -5,6 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -138,6 +142,21 @@ fun StorePanel(vm: EditorViewModel) {
             }
         }
         1 -> {
+            PanelTitle("Animated")
+            Text(
+                "They move on your video: tap one to add it at the red line.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                com.reelforge.editor.engine.AnimatedButton.entries.forEach { kind ->
+                    AnimatedButtonCard(kind) { vm.addAnimatedButton(kind) }
+                }
+            }
+            PanelTitle("Still")
             Text("Tap a button to add it at the red line. No download needed.", style = MaterialTheme.typography.bodySmall)
             FlowRow(
                 Modifier.padding(top = 6.dp),
@@ -277,4 +296,45 @@ fun MusicFinder(vm: EditorViewModel) {
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier.padding(top = 6.dp),
     )
+}
+
+
+/** A Store card playing an animated button on a loop, with its name under it. */
+@Composable
+private fun AnimatedButtonCard(kind: com.reelforge.editor.engine.AnimatedButton, onClick: () -> Unit) {
+    // Plays the animation, rests a moment on the last frame, and starts again.
+    val cycle = (kind.defaultMs + 700).toInt()
+    val time by androidx.compose.animation.core.rememberInfiniteTransition(label = kind.name).animateFloat(
+        0f, cycle.toFloat(),
+        androidx.compose.animation.core.infiniteRepeatable(
+            androidx.compose.animation.core.tween(cycle, easing = androidx.compose.animation.core.LinearEasing),
+        ),
+        label = kind.name,
+    )
+    androidx.compose.material3.Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        androidx.compose.foundation.layout.Column(
+            Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            androidx.compose.foundation.Canvas(
+                Modifier
+                    .height(52.dp)
+                    .aspectRatio(com.reelforge.editor.engine.AnimatedButtons.aspect(kind))
+                    .background(Color(0xFF1B1D22), RoundedCornerShape(8.dp)),
+            ) {
+                drawIntoCanvas { c ->
+                    com.reelforge.editor.engine.AnimatedButtons.draw(
+                        c.nativeCanvas, kind, time.toLong().coerceAtMost(kind.defaultMs), kind.defaultMs,
+                        size.width, size.height,
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(kind.title, style = MaterialTheme.typography.labelMedium)
+        }
+    }
 }

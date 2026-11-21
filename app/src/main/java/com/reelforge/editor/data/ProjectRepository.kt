@@ -74,6 +74,7 @@ object ProjectJson {
                     put("animIn", l.animIn.name)
                     put("animOut", l.animOut.name)
                     put("loop", l.loop.name)
+                    l.button?.let { put("button", it) }
                     put("moving", l.moving)
                     put("x2", l.x2.toDouble())
                     put("y2", l.y2.toDouble())
@@ -367,6 +368,8 @@ object ProjectJson {
                 x2 = l.optDouble("x2", 0.0).toFloat(),
                 y2 = l.optDouble("y2", 0.0).toFloat(),
                 keyframes = keysFromJson(l.optJSONArray("keyframes")),
+                // Only names the app knows; anything else shows the layer's still picture.
+                button = l.optString("button").takeIf { com.reelforge.editor.engine.AnimatedButton.of(it) != null },
             )
         }
         val videoJson = o.optJSONArray("videoLayers") ?: JSONArray()

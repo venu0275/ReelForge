@@ -172,3 +172,23 @@ class EdgeCasesTest {
         assertEquals(120, CreativeOps.bpm(listOf(0L, 500L, 1_000L, 1_500L, 2_000L)))
     }
 }
+
+class AnimatedButtonSaveTest {
+    @Test fun `an animated button layer is saved and opened again`() {
+        val layer = com.reelforge.editor.model.ImageLayer(uri = "file:///s.png", button = "SUBSCRIBE")
+        val back = ProjectJson.decode(ProjectJson.encode(Project(name = "p", layers = listOf(layer)))).layers.single()
+        assertEquals("SUBSCRIBE", back.button)
+        assertEquals(com.reelforge.editor.engine.AnimatedButton.SUBSCRIBE, com.reelforge.editor.engine.AnimatedButton.of(back.button))
+    }
+
+    @Test fun `unknown or missing button names fall back to a plain picture`() {
+        val layer = com.reelforge.editor.model.ImageLayer(uri = "file:///s.png", button = "SUBSCRIBE")
+        val json = JSONObject(ProjectJson.encode(Project(name = "p", layers = listOf(layer))))
+        json.getJSONArray("layers").getJSONObject(0).put("button", "DANCE_PARTY")
+        assertNull(ProjectJson.decode(json.toString()).layers.single().button)
+        json.getJSONArray("layers").getJSONObject(0).remove("button")
+        assertNull(ProjectJson.decode(json.toString()).layers.single().button)
+        assertNull(com.reelforge.editor.engine.AnimatedButton.of(null))
+        assertTrue(com.reelforge.editor.engine.AnimatedButton.entries.all { it.defaultMs in 2_000..6_000 })
+    }
+}

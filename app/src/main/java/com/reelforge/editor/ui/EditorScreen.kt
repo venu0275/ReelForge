@@ -39,6 +39,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -2144,10 +2146,11 @@ private fun PreviewArea(
                             val shownScale = anim.scale * (pose?.scale ?: 1f)
                             val shownAngle = -((pose?.rotation ?: layer.rotation) + anim.rotation)
                             val canMove = layer.keyframes.isEmpty()
-                            Image(
-                                bitmap = still,
-                                contentDescription = null,
-                                contentScale = ContentScale.Fit,
+                            LayerPicture(
+                                still,
+                                com.reelforge.editor.engine.AnimatedButton.of(layer.button),
+                                now - layer.startMs,
+                                layer.endMs - layer.startMs,
                                 modifier = Modifier
                                     .align(place)
                                     .height(frameHeight * layer.scale)
@@ -2539,6 +2542,32 @@ private fun RatioTourCard(vm: EditorViewModel, shape: com.reelforge.editor.model
                     )
                 }
             }
+        }
+    }
+}
+
+
+/**
+ * An image layer in the preview: its picture, or for an animated button the frame for [sinceMs],
+ * drawn by the same code as the exported video.
+ */
+@Composable
+private fun LayerPicture(
+    still: androidx.compose.ui.graphics.ImageBitmap,
+    button: com.reelforge.editor.engine.AnimatedButton?,
+    sinceMs: Long,
+    durationMs: Long,
+    modifier: Modifier,
+) {
+    if (button == null) {
+        Image(bitmap = still, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier)
+        return
+    }
+    Canvas(modifier.aspectRatio(com.reelforge.editor.engine.AnimatedButtons.aspect(button), matchHeightConstraintsFirst = true)) {
+        drawIntoCanvas { c ->
+            com.reelforge.editor.engine.AnimatedButtons.draw(
+                c.nativeCanvas, button, sinceMs, durationMs, size.width, size.height,
+            )
         }
     }
 }

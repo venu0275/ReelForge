@@ -550,6 +550,34 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun animatedButtons_drawMovingFramesAndExport() {
+        for (kind in com.reelforge.editor.engine.AnimatedButton.entries) {
+            // Positive: the picture changes over time (it really moves).
+            val early = com.reelforge.editor.engine.AnimatedButtons.render(kind, 200, kind.defaultMs, 120)
+            val later = com.reelforge.editor.engine.AnimatedButtons.render(kind, 1_400, kind.defaultMs, 120)
+            assertTrue("${kind.name} does not move", !early.sameAs(later))
+            // Negative: odd times and sizes still draw.
+            com.reelforge.editor.engine.AnimatedButtons.render(kind, -500, 0, 2)
+            com.reelforge.editor.engine.AnimatedButtons.render(kind, 999_999, kind.defaultMs, 600)
+        }
+        val source = videoClip(baseVideo(3_000))
+        val still = File(context.cacheDir, "animated_still.png").apply {
+            outputStream().use {
+                com.reelforge.editor.engine.AnimatedButtons.still(com.reelforge.editor.engine.AnimatedButton.SUBSCRIBE)
+                    .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }
+        val layers = com.reelforge.editor.engine.AnimatedButton.entries.mapIndexed { i, kind ->
+            com.reelforge.editor.model.ImageLayer(
+                uri = Uri.fromFile(still).toString(), startMs = i * 300L, endMs = i * 300L + 2_500,
+                scale = 0.16f, y = -0.6f + i * 0.3f, button = kind.name,
+            )
+        }
+        val info = inspect(exportOk(Project(name = "animated", clips = listOf(source), layers = layers)).file!!)
+        assertNear("duration", source.durationMs, info.durationMs, 500)
+    }
+
+    @Test
     fun extractSound_writesTheClipsSoundAndExportsWithIt() {
         val source = videoClip(baseVideo(2_000))
         val out = File(context.cacheDir, "extract_${System.nanoTime()}.m4a")
