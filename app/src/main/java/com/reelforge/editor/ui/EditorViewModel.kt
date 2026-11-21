@@ -497,8 +497,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         val now = project?.aspect
                         if (best != null && now != null && best != now) {
                             toast(
-                                "Tip: your video is ${best.label}. Tap \u201cRatio ${now.label}\u201d below and choose " +
-                                    "${ratioName(best)} to fill the screen.",
+                                "Tip: your video is ${best.label}. Tap \u201cRatio ${now.label}\u201d below: choose " +
+                                    "${ratioName(best)}, or keep ${now.label} with \u201cMake it ${now.label}\u201d " +
+                                    "(blur, fill or follow the person).",
                                 ToastKind.INFO,
                             )
                         }
@@ -633,6 +634,125 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (tourJob?.isActive != true) return
         tourInterrupted = true
         tourJob?.cancel()
+    }
+
+    // ------------------------------------------------------------ make it 9:16 (reframe)
+
+    /** Progress of "Follow the person" while it looks at the clips (null when idle). */
+    var reframeWork by mutableStateOf<String?>(null)
+        private set
+    private var reframeJob: Job? = null
+
+    fun cancelReframe() {
+        reframeJob?.cancel()
+    }
+
+    /**
+     * Changes the video to [target] (e.g. 9:16) and fits every clip in one step (one Undo):
+     * BLUR keeps whole pictures over a blurred copy, FILL crops from the centre, FOLLOW crops
+     * around the person found in each clip.
+     */
+    fun reframeProject(target: AspectRatio, style: com.reelforge.editor.model.ReframeStyle) {
+        val p = project ?: return
+        if (p.clips.isEmpty()) {
+            toast("Add a video or photo first: tap Media", ToastKind.WARNING)
+            return
+        }
+        when (style) {
+            com.reelforge.editor.model.ReframeStyle.BLUR -> {
+                mutate { pr ->
+                    pr.copy(
+                        aspect = target,
+                        background = com.reelforge.editor.model.Background.BLUR,
+                        clips = pr.clips.map { it.copy(fill = false, zoom = 1f, panX = 0f, panY = 0f) },
+                    )
+                }
+                toast("Now ${target.label} with a blurred background. Whole pictures are kept.", undo = true)
+            }
+            com.reelforge.editor.model.ReframeStyle.FILL -> {
+                mutate { pr ->
+                    pr.copy(aspect = target, clips = pr.clips.map { it.copy(fill = true, zoom = 1f, panX = 0f, panY = 0f) })
+                }
+                toast("Now ${target.label}, filling the screen. Drag a clip on the video to move it.", undo = true)
+            }
+            com.reelforge.editor.model.ReframeStyle.FOLLOW -> followPeople(target)
+        }
+    }
+
+    /** FOLLOW: finds the person in a few frames of each clip and centres the crop on them. */
+    private fun followPeople(target: AspectRatio) {
+        if (reframeJob?.isActive == true) return
+        val start = project ?: return
+        pause()
+        reframeJob = viewModelScope.launch {
+            try {
+                if (!com.reelforge.editor.engine.CutOut.hasModel(ctx)) {
+                    reframeWork = "Downloading the person finder (${com.reelforge.editor.engine.CutOut.MODEL_MB} MB)…"
+                    withContext(Dispatchers.IO) {
+                        com.reelforge.editor.engine.CutOut.downloadModel(ctx) { pct ->
+                            postStatus(cutoutHandler, "Downloading the person finder… $pct%") { reframeWork = it }
+                        }
+                    }
+                }
+                var found = 0
+                val pans = HashMap<String, Pair<Float, Float>>()
+                withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.PersonSegmenter(com.reelforge.editor.engine.CutOut.modelFile(ctx)).use { finder ->
+                        start.clips.forEachIndexed { i, clip ->
+                            withContext(Dispatchers.Main) { reframeWork = "Finding people… clip ${i + 1} of ${start.clips.size}" }
+                            val uri = Uri.parse(clip.uri)
+                            val shape = MediaUtils.mediaAspect(ctx, uri, clip.type) ?: return@forEachIndexed
+                            val pictures = if (clip.type == ClipType.VIDEO) {
+                                listOf(0.2, 0.4, 0.6, 0.8).mapNotNull { f ->
+                                    val at = clip.trimStartMs + ((clip.trimEndMs - clip.trimStartMs) * f).toLong()
+                                    MediaUtils.videoFrame(ctx, uri, at, 320)
+                                }
+                            } else {
+                                listOfNotNull(MediaUtils.decodeImage(ctx, uri, 640))
+                            }
+                            val centres = pictures.mapNotNull { pic ->
+                                val c = com.reelforge.editor.model.Reframe.personCentre(finder.personMask(pic), 256)
+                                pic.recycle()
+                                c
+                            }
+                            if (centres.isNotEmpty()) {
+                                found++
+                                val cx = centres.map { it.first }.average().toFloat()
+                                val cy = centres.map { it.second }.average().toFloat()
+                                pans[clip.id] = com.reelforge.editor.model.Reframe.followPan(shape, target.ratio, cx, cy)
+                            }
+                        }
+                    }
+                }
+                mutate { pr ->
+                    pr.copy(
+                        aspect = target,
+                        clips = pr.clips.map { c ->
+                            val (px, py) = pans[c.id] ?: (0f to 0f)
+                            c.copy(fill = true, zoom = 1f, panX = px, panY = py)
+                        },
+                    )
+                }
+                toast(
+                    when (found) {
+                        0 -> "Now ${target.label}. No person was found, so clips are centred; drag one to move it."
+                        start.clips.size -> "Now ${target.label}, following the person in every clip."
+                        else -> "Now ${target.label}. Followed the person in $found of ${start.clips.size} clips; the rest are centred."
+                    },
+                    if (found == 0) ToastKind.INFO else ToastKind.SUCCESS,
+                    undo = true,
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: java.io.IOException) {
+                message = "Could not download the person finder. Check the internet and try again."
+            } catch (e: Throwable) {
+                android.util.Log.e("CutMitra", "reframe", e)
+                message = "Could not look for people on this phone. Try Fill the screen instead."
+            } finally {
+                reframeWork = null
+            }
+        }
     }
 
     /** Sets the frame to the shape of the clip under the red line (or the first clip). */

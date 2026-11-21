@@ -1,5 +1,6 @@
 package com.reelforge.editor.ui
 
+import androidx.compose.material.icons.rounded.*
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -271,6 +272,8 @@ fun CoverPanel(vm: EditorViewModel, project: Project) {
 /** Ratio: the shape of the video. */
 @Composable
 fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project) {
+    if (project.clips.isNotEmpty()) MakeItSection(vm, project)
+    PanelTitle("Just change the shape")
     Text(
         "The shape of your video. Clips that are a different shape get bars (or the Backdrop) around " +
             "them; select a clip and tap Fill to fill the frame instead.",
@@ -282,6 +285,54 @@ fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project)
         OutlinedButton(onClick = { vm.matchAspect() }) { Text("Match video") }
         Text("Sets the shape to the clip under the red line.", style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/**
+ * "Make it 9:16": change the shape and fit every clip in one step, three ways (blur, fill,
+ * follow the person). 9:16 is offered first; 1:1 and 4:5 too.
+ */
+@Composable
+private fun MakeItSection(vm: EditorViewModel, project: com.reelforge.editor.model.Project) {
+    val A = com.reelforge.editor.model.AspectRatio
+    val targets = listOf(A.PORTRAIT, A.SQUARE, A.FOUR_FIVE)
+    var target by remember { mutableStateOf(A.PORTRAIT) }
+    PanelTitle("Make it ${target.label}")
+    Text(
+        "Turn a wide video into ${ratioName(target)} in one tap. Every clip is fitted; drag any clip on " +
+            "the video afterwards to adjust it.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Spacer(Modifier.height(6.dp))
+    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        targets.forEach { t ->
+            FilterChip(selected = target == t, onClick = { target = t }, label = { Text(ratioName(t)) })
+        }
+    }
+    val working = vm.reframeWork
+    if (working != null) {
+        Spacer(Modifier.height(6.dp))
+        androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(working, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { vm.cancelReframe() }) { Text("Cancel") }
+        }
+        return
+    }
+    val I = androidx.compose.material.icons.Icons.Rounded
+    com.reelforge.editor.model.ReframeStyle.entries.forEach { style ->
+        ActionCard(
+            style.title,
+            style.help,
+            when (style) {
+                com.reelforge.editor.model.ReframeStyle.BLUR -> I.BlurOn
+                com.reelforge.editor.model.ReframeStyle.FILL -> I.Fullscreen
+                com.reelforge.editor.model.ReframeStyle.FOLLOW -> I.PersonSearch
+            },
+            ToolColors.Style,
+            main = style == com.reelforge.editor.model.ReframeStyle.FOLLOW,
+        ) { vm.reframeProject(target, style) }
+    }
+    TipBox("Talking or vlog videos: Follow the person. Scenery or slides: Blur background.")
 }
 
 /** "9:16 Reels / Shorts" and so on. */

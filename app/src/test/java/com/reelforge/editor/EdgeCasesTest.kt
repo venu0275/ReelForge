@@ -216,3 +216,42 @@ class TimelineLanesTest {
         assertEquals(listOf(0, 1), lanes(-100L to 100L, 0L to 50L))
     }
 }
+
+class ReframeTest {
+    private val wide = 16f / 9f
+    private val tall = 9f / 16f
+
+    @Test fun `a person in the middle needs no shift`() {
+        val (x, y) = com.reelforge.editor.model.Reframe.followPan(wide, tall, 0.5f, 0.5f)
+        assertEquals(0f, x, 0.0001f)
+        assertEquals(0f, y, 0.0001f)
+    }
+
+    @Test fun `a person on the left moves the picture right, never past its edge`() {
+        val (x, _) = com.reelforge.editor.model.Reframe.followPan(wide, tall, 0.3f, 0.5f)
+        assertTrue(x > 0f)
+        // 16:9 filling 9:16 is about 3.16 frames wide, so it can move at most about 1.08 frames.
+        val (far, _) = com.reelforge.editor.model.Reframe.followPan(wide, tall, 0f, 0.5f)
+        val videoW = wide / tall
+        assertEquals((videoW - 1f) / 2f, far, 0.001f)
+        val (other, _) = com.reelforge.editor.model.Reframe.followPan(wide, tall, 1f, 0.5f)
+        assertEquals(-(videoW - 1f) / 2f, other, 0.001f)
+    }
+
+    @Test fun `same shape or bad input means no shift`() {
+        assertEquals(0f to 0f, com.reelforge.editor.model.Reframe.followPan(tall, tall, 0.1f, 0.9f))
+        assertEquals(0f to 0f, com.reelforge.editor.model.Reframe.followPan(0f, tall, 0.1f, 0.5f))
+        assertEquals(0f to 0f, com.reelforge.editor.model.Reframe.followPan(Float.NaN, tall, 0.1f, 0.5f))
+    }
+
+    @Test fun `the person's centre is found in a mask, and none when there is hardly anyone`() {
+        val side = 100
+        val mask = FloatArray(side * side)
+        for (y in 40 until 80) for (x in 10 until 30) mask[y * side + x] = 0.9f
+        val (cx, cy) = com.reelforge.editor.model.Reframe.personCentre(mask, side)!!
+        assertEquals(0.2f, cx, 0.01f)
+        assertEquals(0.6f, cy, 0.01f)
+        assertNull(com.reelforge.editor.model.Reframe.personCentre(FloatArray(side * side), side))
+        assertNull(com.reelforge.editor.model.Reframe.personCentre(FloatArray(3), side))
+    }
+}
