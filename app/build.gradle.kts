@@ -60,6 +60,8 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+    // Icons for the tool tiles (Apache 2.0); unused ones are removed from release builds by R8.
+    implementation("androidx.compose.material:material-icons-extended")
 
     implementation("androidx.annotation:annotation-experimental:1.4.1")
     implementation("androidx.core:core-ktx:1.13.1")

@@ -235,15 +235,16 @@ fun HomeScreen(vm: EditorViewModel) {
 
     val deleteTarget = vm.projects.firstOrNull { it.id == deleting }
     if (deleteTarget != null) {
-        AlertDialog(
+        CutDialog(
+            icon = androidx.compose.material.icons.Icons.Rounded.DeleteOutline,
             onDismissRequest = { deleting = null },
             title = { Text("Delete project?") },
             text = { Text("“${deleteTarget.name}” will be removed. Your videos and photos stay on the phone.") },
             confirmButton = {
-                TextButton(onClick = {
+                WideButton(onClick = {
                     vm.deleteProject(deleteTarget.id)
                     deleting = null
-                }) { Text("Delete") }
+                }) { Text("Delete project") }
             },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
@@ -251,14 +252,16 @@ fun HomeScreen(vm: EditorViewModel) {
 
     val renameTarget = vm.projects.firstOrNull { it.id == renaming }
     if (renameTarget != null) {
-        AlertDialog(
+        CutDialog(
+            icon = androidx.compose.material.icons.Icons.Rounded.DriveFileRenameOutline,
+            color = ToolColors.Time,
             onDismissRequest = { renaming = null },
             title = { Text("Rename project") },
             text = {
                 OutlinedTextField(value = newName, onValueChange = { newName = it }, singleLine = true)
             },
             confirmButton = {
-                TextButton(onClick = {
+                WideButton(onClick = {
                     vm.renameProject(renameTarget, newName)
                     renaming = null
                 }) { Text("Save") }
@@ -270,38 +273,35 @@ fun HomeScreen(vm: EditorViewModel) {
     if (showNew) {
         var name by remember { mutableStateOf("") }
         var aspect by remember { mutableStateOf(AspectRatio.LANDSCAPE) }
-        AlertDialog(
+        CutDialog(
+            icon = androidx.compose.material.icons.Icons.Rounded.MovieCreation,
+            centred = false,
             onDismissRequest = { showNew = false },
             title = { Text("New project") },
             text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
+                Column {
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Name") },
+                        label = { Text("Name (optional)") },
                         singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Text("Aspect ratio", style = MaterialTheme.typography.labelLarge)
-                    Row(
-                        Modifier.horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        AspectRatio.entries.forEach { a ->
-                            FilterChip(
-                                selected = aspect == a,
-                                onClick = { aspect = a },
-                                label = { Text(a.label) },
-                            )
-                        }
-                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text("Shape of the video", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        "Pick where it will be posted. You can change it later with Ratio.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    RatioChoices(aspect) { aspect = it }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                WideButton(onClick = {
                     showNew = false
                     vm.createProject(name, aspect)
-                }) { Text("Create") }
+                }) { Text("Create project") }
             },
             dismissButton = { TextButton(onClick = { showNew = false }) { Text("Cancel") } },
         )

@@ -159,7 +159,10 @@ private fun Modifier.combinedClickableStop(onClick: () -> Unit): Modifier = comb
 /** Long-press on the microphone: countdown, silent video while recording, and lowering under voice-overs. */
 @Composable
 fun VoiceSettingsDialog(vm: EditorViewModel, project: Project, onClose: () -> Unit) {
-    AlertDialog(
+    CutDialog(
+        icon = androidx.compose.material.icons.Icons.Rounded.Mic,
+        color = ToolColors.Sound,
+        centred = false,
         onDismissRequest = onClose,
         title = { Text("Voice-over settings") },
         text = {
@@ -184,7 +187,7 @@ fun VoiceSettingsDialog(vm: EditorViewModel, project: Project, onClose: () -> Un
                 DuckSlider(vm, project)
             }
         },
-        confirmButton = { TextButton(onClick = onClose) { Text("Done") } },
+        confirmButton = { WideButton(onClick = onClose) { Text("Done") } },
     )
 }
 

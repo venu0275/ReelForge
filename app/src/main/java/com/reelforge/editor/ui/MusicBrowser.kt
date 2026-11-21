@@ -291,12 +291,19 @@ fun MusicBrowser(
     }
 
     choosing?.let { song ->
-        AlertDialog(
+        CutDialog(
+            icon = androidx.compose.material.icons.Icons.Rounded.MusicNote,
+            color = ToolColors.Sound,
             onDismissRequest = { choosing = null },
             title = { Text(song.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-            text = { Text("How should this be used?") },
+            text = {
+                Text(
+                    "Background music plays under the whole video. Add at red line puts it in one place, " +
+                        "like a sound effect."
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
+                WideButton(onClick = {
                     vm.setMusic(Uri.parse(song.uri))
                     vm.message = "Background music: ${song.title}"
                     choosing = null
@@ -304,15 +311,13 @@ fun MusicBrowser(
                 }) { Text("Background music") }
             },
             dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        vm.addAudioClip(Uri.parse(song.uri))
-                        vm.message = "Added at the red line: ${song.title}"
-                        choosing = null
-                        onClose()
-                    }) { Text("Add at red line") }
-                    TextButton(onClick = { choosing = null }) { Text("Cancel") }
-                }
+                WideOutlinedButton(onClick = {
+                    vm.addAudioClip(Uri.parse(song.uri))
+                    vm.message = "Added at the red line: ${song.title}"
+                    choosing = null
+                    onClose()
+                }) { Text("Add at red line") }
+                TextButton(onClick = { choosing = null }) { Text("Cancel") }
             },
         )
     }

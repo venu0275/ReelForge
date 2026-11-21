@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -272,18 +273,7 @@ fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project)
             "them; select a clip and tap Fill to fill the frame instead.",
         style = MaterialTheme.typography.bodySmall,
     )
-    androidx.compose.foundation.layout.Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        com.reelforge.editor.model.AspectRatio.entries.forEach { a ->
-            FilterChip(
-                selected = project.aspect == a,
-                onClick = { vm.setAspect(a) },
-                label = { Text(ratioName(a)) },
-            )
-        }
-    }
+    RatioChoices(project.aspect) { vm.setAspect(it) }
     if (project.clips.isNotEmpty()) {
         OutlinedButton(onClick = { vm.matchAspect() }) { Text("Match video") }
         Text("Sets the shape to the clip under the red line.", style = MaterialTheme.typography.bodySmall)
@@ -297,4 +287,60 @@ fun ratioName(a: com.reelforge.editor.model.AspectRatio) = when (a) {
     com.reelforge.editor.model.AspectRatio.SQUARE -> "1:1 Square"
     com.reelforge.editor.model.AspectRatio.FOUR_FIVE -> "4:5 Post"
     else -> a.label
+}
+
+
+/** Frame shapes as small cards, each drawn in its own shape with its name and where it is used. */
+@Composable
+fun RatioChoices(selected: com.reelforge.editor.model.AspectRatio, onPick: (com.reelforge.editor.model.AspectRatio) -> Unit) {
+    androidx.compose.foundation.layout.Row(
+        Modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        com.reelforge.editor.model.AspectRatio.entries.forEach { a ->
+            val on = a == selected
+            androidx.compose.material3.Surface(
+                onClick = { onPick(a) },
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                color = if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else MaterialTheme.colorScheme.surfaceVariant,
+                border = if (on) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            ) {
+                androidx.compose.foundation.layout.Column(
+                    Modifier.width(74.dp).padding(vertical = 10.dp),
+                    horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+                ) {
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.size(40.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.Center,
+                    ) {
+                        val r = a.ratio
+                        val w = if (r >= 1f) 38f else 38f * r
+                        val h = if (r >= 1f) 38f / r else 38f
+                        androidx.compose.foundation.layout.Box(
+                            Modifier
+                                .size(w.dp, h.dp)
+                                .border(
+                                    2.dp,
+                                    if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                                ),
+                        )
+                    }
+                    Text(a.label, style = MaterialTheme.typography.labelLarge)
+                    Text(ratioUse(a), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/** Where each frame shape is mostly used. */
+fun ratioUse(a: com.reelforge.editor.model.AspectRatio) = when (a) {
+    com.reelforge.editor.model.AspectRatio.PORTRAIT -> "Reels, Shorts"
+    com.reelforge.editor.model.AspectRatio.LANDSCAPE -> "YouTube"
+    com.reelforge.editor.model.AspectRatio.SQUARE -> "Square"
+    com.reelforge.editor.model.AspectRatio.FOUR_FIVE -> "Insta post"
+    com.reelforge.editor.model.AspectRatio.THREE_FOUR -> "Portrait"
+    com.reelforge.editor.model.AspectRatio.FOUR_THREE -> "Classic"
+    com.reelforge.editor.model.AspectRatio.CINEMA -> "Cinema"
 }

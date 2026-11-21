@@ -1,5 +1,10 @@
 package com.reelforge.editor.ui
 
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -117,8 +122,26 @@ fun SettingsScreen(vm: EditorViewModel) {
 
 @Composable
 private fun Section(title: String) {
-    HorizontalDivider(Modifier.padding(top = 8.dp))
-    Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+    val R = androidx.compose.material.icons.Icons.Rounded
+    val (icon, color) = when {
+        title.startsWith("Screen") -> R.ScreenRotation to ToolColors.Frame
+        title.startsWith("Editing") -> R.ContentCut to ToolColors.Cut
+        title.startsWith("Export") -> R.IosShare to ToolColors.Create
+        title.startsWith("Downloads") -> R.Download to ToolColors.Sound
+        title.startsWith("Reset") -> R.RestartAlt to ToolColors.Arrange
+        title.startsWith("Help") -> R.HelpOutline to ToolColors.Time
+        title.startsWith("Privacy") -> R.Lock to ToolColors.Look
+        else -> R.Info to ToolColors.Finish
+    }
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.foundation.layout.Box(
+            Modifier.size(32.dp).background(color.copy(alpha = 0.18f), androidx.compose.foundation.shape.CircleShape),
+            contentAlignment = Alignment.Center,
+        ) { androidx.compose.material3.Icon(icon, null, tint = color, modifier = Modifier.size(18.dp)) }
+        Spacer(Modifier.width(10.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium)
+    }
 }
 
 @Composable

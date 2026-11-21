@@ -301,7 +301,7 @@ class ScreenshotTest {
             runCatching { tap("Done") } // leave the text editor if a step above left it open
             rule.onNodeWithContentDescription("Close tool").performClick()
             waitForText("Add to your video")
-            tap("Layer", scroll = true)
+            tap("Layers", scroll = true)
             waitForText("Add video")
             tap("Edit")
             waitForText("Edit video layer")

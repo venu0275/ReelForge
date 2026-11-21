@@ -96,8 +96,8 @@ class EditorUiTest {
         // Home → new project dialog → editor.
         waitForText("CutMitra")
         tap("New project")
-        waitForText("Create")
-        tap("Create")
+        waitForText("Create project")
+        tap("Create project")
         // A new, empty project opens the media picker first; close it to see the editor.
         waitForDescription("Close media")
         rule.onNodeWithContentDescription("Close media", useUnmergedTree = true).performClick()

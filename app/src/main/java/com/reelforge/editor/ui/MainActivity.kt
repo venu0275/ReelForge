@@ -13,6 +13,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
@@ -55,12 +56,24 @@ private val Colors = darkColorScheme(
     secondary = Color(0xFF4DD0E1),
     background = Color(0xFF101114),
     surface = Color(0xFF181A1F),
-    surfaceVariant = Color(0xFF24272E),
+    surfaceVariant = Color(0xFF262A33),
+    onSurfaceVariant = Color(0xFFB4B9C4),
+    outline = Color(0xFF4A4F5A),
 )
 
 @Composable
 fun ReelForgeTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = Colors) {
+    MaterialTheme(
+        colorScheme = Colors,
+        // Softer, rounder corners everywhere (chips, cards, sheets).
+        shapes = androidx.compose.material3.Shapes(
+            extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+            small = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+            medium = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            large = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+            extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+        ),
+    ) {
         Surface(color = MaterialTheme.colorScheme.background, content = content)
     }
 }

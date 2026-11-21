@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -85,27 +86,33 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-enum class Panel(val title: String) {
-    TRIM("Trim"),
-    SPEED("Speed"),
-    VOLUME("Volume"),
-    FILTER("Filter"),
-    ADJUST("Adjust"),
-    FADE("Fade"),
-    TEXT("Text"),
-    CAPTIONS("Auto captions"),
-    PHOTO_ZOOM("Photo zoom"),
-    TEMPLATES("Templates"),
-    COVER("Cover"),
-    RATIO("Ratio"),
-    LAYER("Layers"),
-    AUDIO("Voice and sounds"),
-    MUSIC("Music"),
-    BACKGROUND("Backdrop"),
-    STORE("Store"),
-    RECORD("Record screen"),
-    DRAW("Draw"),
-    EXPORT("Export"),
+/** Each tool's name, icon, colour and one line telling the user what it does. */
+enum class Panel(
+    val title: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val color: Color,
+    val help: String,
+) {
+    TRIM("Fine trim", Icons.Rounded.ContentCut, ToolColors.Cut, "Set exactly where the clip starts and ends."),
+    SPEED("Speed", Icons.Rounded.Speed, ToolColors.Time, "Slow motion, fast forward or a speed ramp."),
+    VOLUME("Volume", Icons.Rounded.VolumeUp, ToolColors.Time, "How loud this clip's own sound is, and voice styles."),
+    FILTER("Filter", Icons.Rounded.AutoAwesome, ToolColors.Look, "Give the clip a colour look."),
+    ADJUST("Adjust", Icons.Rounded.Tune, ToolColors.Look, "Brightness, contrast, colour and sharpness."),
+    FADE("Fade", Icons.Rounded.Gradient, ToolColors.Look, "Fade the picture and sound in or out."),
+    TEXT("Text", Icons.Rounded.TextFields, ToolColors.Create, "Add titles and words on your video."),
+    CAPTIONS("Captions", Icons.Rounded.ClosedCaption, ToolColors.Create, "Turn speech into subtitles automatically."),
+    PHOTO_ZOOM("Photo zoom", Icons.Rounded.ZoomIn, ToolColors.Look, "Slow zoom and pan over a photo."),
+    TEMPLATES("Templates", Icons.Rounded.AutoAwesomeMosaic, ToolColors.Style, "Ready-made styles in one tap."),
+    COVER("Cover", Icons.Rounded.Image, ToolColors.Finish, "Make a thumbnail picture for your video."),
+    RATIO("Ratio", Icons.Rounded.AspectRatio, ToolColors.Style, "The shape of your video: Reels, YouTube, square…"),
+    LAYER("Layers", Icons.Rounded.Layers, ToolColors.Create, "Put photos, videos or stickers on top."),
+    AUDIO("Voice & sounds", Icons.Rounded.GraphicEq, ToolColors.Sound, "Record voice-overs and add sound clips."),
+    MUSIC("Music", Icons.Rounded.MusicNote, ToolColors.Sound, "Background music, volume and beat sync."),
+    BACKGROUND("Backdrop", Icons.Rounded.Wallpaper, ToolColors.Style, "What shows around clips that do not fill the frame."),
+    STORE("Stickers & sounds", Icons.Rounded.Storefront, ToolColors.Style, "Free stickers, reactions, sound effects and music."),
+    RECORD("Record screen", Icons.Rounded.Videocam, ToolColors.Finish, "Record your phone screen into the video."),
+    DRAW("Draw", Icons.Rounded.Brush, ToolColors.Create, "Draw on your video by hand."),
+    EXPORT("Export", Icons.Rounded.IosShare, ToolColors.Cut, "Save the finished video to your phone."),
 }
 
 /**
@@ -484,11 +491,10 @@ fun EditorScreen(vm: EditorViewModel) {
                         .background(MaterialTheme.colorScheme.surface)
                 ) {
                     if (open != null && sidePanel) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        ToolHeader(open.title, open.help, open.icon, open.color) {
                             IconButton(onClick = { panel = null }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close tool")
                             }
-                            Text(open.title, style = MaterialTheme.typography.titleMedium)
                         }
                         Column(
                             Modifier
@@ -568,11 +574,10 @@ fun EditorScreen(vm: EditorViewModel) {
                             .heightIn(max = 300.dp)
                             .background(MaterialTheme.colorScheme.surface)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        ToolHeader(open.title, open.help, open.icon, open.color) {
                             IconButton(onClick = { panel = null }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close tool")
                             }
-                            Text(open.title, style = MaterialTheme.typography.titleMedium)
                         }
                         Column(
                             Modifier
@@ -593,7 +598,9 @@ fun EditorScreen(vm: EditorViewModel) {
 
     vm.barsOffer?.let { offer ->
         val same = offer.pictureShape == project.aspect
-        AlertDialog(
+        CutDialog(
+            icon = Icons.Rounded.Crop,
+            color = ToolColors.Frame,
             onDismissRequest = { vm.barsOffer = null },
             title = { Text("This video has black bars") },
             text = {
@@ -605,25 +612,25 @@ fun EditorScreen(vm: EditorViewModel) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { vm.applyBarsFix(offer, changeRatio = !same) }) {
+                WideButton(onClick = { vm.applyBarsFix(offer, changeRatio = !same) }) {
                     Text(if (same) "Remove bars" else "Use ${ratioName(offer.pictureShape)}")
                 }
             },
             dismissButton = {
-                Row {
-                    TextButton(onClick = { vm.barsOffer = null }) { Text("Not now") }
-                    if (!same) {
-                        TextButton(onClick = { vm.applyBarsFix(offer, changeRatio = false) }) {
-                            Text("Zoom, keep ${project.aspect.label}")
-                        }
+                if (!same) {
+                    WideOutlinedButton(onClick = { vm.applyBarsFix(offer, changeRatio = false) }) {
+                        Text("Zoom in, keep ${project.aspect.label}")
                     }
                 }
+                TextButton(onClick = { vm.barsOffer = null }) { Text("Not now") }
             },
         )
     }
 
     vm.aspectSuggestion?.let { better ->
-        AlertDialog(
+        CutDialog(
+            icon = Icons.Rounded.AspectRatio,
+            color = ToolColors.Style,
             onDismissRequest = { vm.aspectSuggestion = null },
             title = { Text("Change the frame to ${better.label}?") },
             text = {
@@ -633,7 +640,7 @@ fun EditorScreen(vm: EditorViewModel) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = { vm.setAspect(better) }) { Text("Use ${ratioName(better)}") }
+                WideButton(onClick = { vm.setAspect(better) }) { Text("Use ${ratioName(better)}") }
             },
             dismissButton = {
                 TextButton(onClick = { vm.aspectSuggestion = null }) { Text("Keep ${project.aspect.label}") }
@@ -642,18 +649,20 @@ fun EditorScreen(vm: EditorViewModel) {
     }
 
     if (askReplaceVoice) {
-        AlertDialog(
+        CutDialog(
+            icon = Icons.Rounded.Mic,
+            color = ToolColors.Sound,
             onDismissRequest = { askReplaceVoice = false },
             title = { Text("A voice-over is already here") },
             text = { Text("Replace it where the new one goes, or keep both playing together?") },
             confirmButton = {
-                TextButton(onClick = {
+                WideButton(onClick = {
                     askReplaceVoice = false
                     vm.startVoiceOver(replace = true)
                 }) { Text("Replace") }
             },
             dismissButton = {
-                TextButton(onClick = {
+                WideOutlinedButton(onClick = {
                     askReplaceVoice = false
                     vm.startVoiceOver(replace = false)
                 }) { Text("Keep both") }
@@ -847,109 +856,145 @@ private fun EditorMenu(
             )
         }
 
-        FlowRow(
+        Column(
             Modifier
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 8.dp)
                 .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            val I = Icons.Rounded
             if (clip == null) {
-                MenuTile("Media", accent = true) { addMedia() }
-                MenuTile("Text", enabled = hasClips) { openPanel(Panel.TEXT) }
-                MenuTile(
-                    if (vm.captionWork != null) "CC ${(vm.captionProgress * 100).toInt()}%" else "CC Captions",
-                    enabled = hasClips,
-                    accent = vm.captionWork != null,
-                ) { openPanel(Panel.CAPTIONS) }
-                MenuTile("Templates", enabled = hasClips) { openPanel(Panel.TEMPLATES) }
-                MenuTile("Layer", enabled = hasClips) { openPanel(Panel.LAYER) }
-                MenuTile("Draw", enabled = hasClips) { openPanel(Panel.DRAW) }
-                MenuTile("Audio", enabled = hasClips) { openPanel(Panel.AUDIO) }
-                // Opens the music screen; with music already added, its settings are one tap away there.
-                MenuTile("Music") { if (project.music == null) openMusic() else openPanel(Panel.MUSIC) }
-                MenuTile("Ratio ${project.aspect.label}") { openPanel(Panel.RATIO) }
-                MenuTile("Backdrop", enabled = hasClips) { openPanel(Panel.BACKGROUND) }
-                MenuTile("Store", enabled = hasClips) { openPanel(Panel.STORE) }
-                MenuTile("Cover", enabled = hasClips) { openPanel(Panel.COVER) }
-                // The two recorders sit side by side; each shows its own time while recording.
-                val screenRec = com.reelforge.editor.record.ScreenRecording
-                MenuTile(
-                    when (screenRec.status) {
-                        com.reelforge.editor.record.ScreenRecording.Status.IDLE -> "⏺ Record screen"
-                        com.reelforge.editor.record.ScreenRecording.Status.COUNTDOWN -> "Screen in ${screenRec.countdown}…"
-                        com.reelforge.editor.record.ScreenRecording.Status.SAVING -> "Saving screen…"
-                        else -> "■ Screen " + MediaUtils.formatTime(screenSeconds * 1000).substringBefore('.')
-                    },
-                    accent = screenRec.busy,
-                ) { openPanel(Panel.RECORD) }
-                MenuTile(
-                    when {
-                        vm.voiceCountdown > 0 -> "Voice in ${vm.voiceCountdown}…  ✕"
-                        vm.isRecording -> "■ Stop voice " +
-                            MediaUtils.formatTime(voiceSeconds * 1000).substringBefore('.')
-                        else -> "🎙 Record voice"
-                    },
-                    enabled = hasClips,
-                    accent = vm.isRecording || vm.voiceCountdown > 0,
-                ) { recordVoice() }
-                MenuTile("Settings") { vm.showSettings = true }
+                ToolGroup("Create", ToolColors.Create) {
+                    ToolTile("Media", I.AddPhotoAlternate, ToolColors.Create, active = !hasClips) { addMedia() }
+                    ToolTile("Text", I.TextFields, ToolColors.Create, enabled = hasClips) { openPanel(Panel.TEXT) }
+                    val captions = vm.captionWork != null
+                    ToolTile(
+                        if (captions) "Captions ${(vm.captionProgress * 100).toInt()}%" else "Captions",
+                        I.ClosedCaption, ToolColors.Create, enabled = hasClips, active = captions,
+                    ) { openPanel(Panel.CAPTIONS) }
+                    ToolTile("Layers", I.Layers, ToolColors.Create, enabled = hasClips) { openPanel(Panel.LAYER) }
+                    ToolTile("Draw", I.Brush, ToolColors.Create, enabled = hasClips) { openPanel(Panel.DRAW) }
+                }
+                ToolGroup("Sound", ToolColors.Sound) {
+                    ToolTile(
+                        when {
+                            vm.voiceCountdown > 0 -> "In ${vm.voiceCountdown}… tap to stop"
+                            vm.isRecording -> "Stop " + MediaUtils.formatTime(voiceSeconds * 1000).substringBefore('.')
+                            else -> "Record voice"
+                        },
+                        if (vm.isRecording) I.Stop else I.Mic,
+                        ToolColors.Sound,
+                        enabled = hasClips,
+                        active = vm.isRecording || vm.voiceCountdown > 0,
+                    ) { recordVoice() }
+                    ToolTile("Voice & sounds", I.GraphicEq, ToolColors.Sound, enabled = hasClips) { openPanel(Panel.AUDIO) }
+                    // Opens the music screen; with music already added, its settings are one tap away there.
+                    ToolTile("Music", I.MusicNote, ToolColors.Sound) {
+                        if (project.music == null) openMusic() else openPanel(Panel.MUSIC)
+                    }
+                }
+                ToolGroup("Style", ToolColors.Style) {
+                    ToolTile("Templates", I.AutoAwesomeMosaic, ToolColors.Style, enabled = hasClips) { openPanel(Panel.TEMPLATES) }
+                    ToolTile("Ratio ${project.aspect.label}", I.AspectRatio, ToolColors.Style) { openPanel(Panel.RATIO) }
+                    ToolTile("Backdrop", I.Wallpaper, ToolColors.Style, enabled = hasClips) { openPanel(Panel.BACKGROUND) }
+                    ToolTile("Stickers & sounds", I.Storefront, ToolColors.Style, enabled = hasClips) { openPanel(Panel.STORE) }
+                }
+                ToolGroup("Finish", ToolColors.Finish) {
+                    ToolTile("Cover", I.Image, ToolColors.Finish, enabled = hasClips) { openPanel(Panel.COVER) }
+                    // Shows its own time while recording.
+                    val screenRec = com.reelforge.editor.record.ScreenRecording
+                    ToolTile(
+                        when (screenRec.status) {
+                            com.reelforge.editor.record.ScreenRecording.Status.IDLE -> "Record screen"
+                            com.reelforge.editor.record.ScreenRecording.Status.COUNTDOWN -> "Starts in ${screenRec.countdown}…"
+                            com.reelforge.editor.record.ScreenRecording.Status.SAVING -> "Saving…"
+                            else -> "Stop " + MediaUtils.formatTime(screenSeconds * 1000).substringBefore('.')
+                        },
+                        if (screenRec.busy) I.Stop else I.Videocam,
+                        ToolColors.Finish,
+                        active = screenRec.busy,
+                    ) { openPanel(Panel.RECORD) }
+                    ToolTile("Settings", I.Settings, ToolColors.Finish) { vm.showSettings = true }
+                }
             } else {
                 val id = clip.id
                 val isVideo = clip.type == ClipType.VIDEO
                 // Cuts at the red line. They light up when the line is on this clip.
                 val canCut = vm.canCutSelectedClip
-                MenuTile("Trim left", enabled = canCut, accent = true, icon = CutKind.LEFT) {
-                    vm.trimLeftOfPlayhead()
+                ToolGroup("Cut at the red line", ToolColors.Cut) {
+                    CutTile("Trim left", CutKind.LEFT, canCut) { vm.trimLeftOfPlayhead() }
+                    CutTile("Split", CutKind.SPLIT, canCut) { vm.splitAtPlayhead() }
+                    CutTile("Trim right", CutKind.RIGHT, canCut) { vm.trimRightOfPlayhead() }
+                    if (isVideo) CutTile("Split + freeze", CutKind.FREEZE, canCut) { vm.freezeFrame() }
+                    ToolTile("Fine trim", I.ContentCut, ToolColors.Cut) { openPanel(Panel.TRIM) }
                 }
-                MenuTile("Split", enabled = canCut, accent = true, icon = CutKind.SPLIT) {
-                    vm.splitAtPlayhead()
-                }
-                MenuTile("Trim right", enabled = canCut, accent = true, icon = CutKind.RIGHT) {
-                    vm.trimRightOfPlayhead()
-                }
-                if (isVideo) {
-                    MenuTile("Split + freeze", enabled = canCut, accent = true, icon = CutKind.FREEZE) {
-                        vm.freezeFrame()
+                ToolGroup("Time & sound", ToolColors.Time) {
+                    if (isVideo) ToolTile("Speed", I.Speed, ToolColors.Time) { openPanel(Panel.SPEED) }
+                    if (isVideo) {
+                        // Shows its progress on the tile; tap again to stop.
+                        val reversing = vm.reverseWork
+                        ToolTile(reversing ?: "Reverse", I.FastRewind, ToolColors.Time, active = reversing != null) {
+                            if (reversing != null) vm.cancelReverse() else vm.reverseClip(id)
+                        }
                     }
-                }
-                MenuTile("Fine trim") { openPanel(Panel.TRIM) }
-                MenuTile("Replace") { replace(id) }
-                if (com.reelforge.editor.engine.EffectFactory.isFramed(clip)) {
-                    MenuTile("Reset position") { vm.resetFraming(id) }
-                }
-                if (isVideo) MenuTile("Remove black bars") { vm.removeBlackBars(id) }
-                if (isVideo) MenuTile("Speed") { openPanel(Panel.SPEED) }
-                if (isVideo) {
-                    // Shows its progress on the tile; tap again to stop.
-                    val reversing = vm.reverseWork
-                    MenuTile(reversing ?: "⏪ Reverse", accent = reversing != null) {
-                        if (reversing != null) vm.cancelReverse() else vm.reverseClip(id)
+                    if (isVideo) ToolTile("Volume", I.VolumeUp, ToolColors.Time) { openPanel(Panel.VOLUME) }
+                    if (isVideo && vm.canExtractSound(clip) && (!clip.muted || vm.soundWork != null)) {
+                        val working = vm.soundWork
+                        ToolTile(working ?: "Extract sound", I.LibraryMusic, ToolColors.Time, active = working != null) {
+                            if (working != null) vm.cancelSoundWork() else vm.extractSound(id)
+                        }
                     }
+                    ToolTile("Replace", I.SwapHoriz, ToolColors.Time) { replace(id) }
                 }
-                if (!isVideo) MenuTile("Photo zoom") { openPanel(Panel.PHOTO_ZOOM) }
-                if (isVideo) MenuTile("Volume") { openPanel(Panel.VOLUME) }
-                if (isVideo && vm.canExtractSound(clip) && (!clip.muted || vm.soundWork != null)) {
-                    // Shows its progress on the tile; tap again to stop.
-                    val working = vm.soundWork
-                    MenuTile(working ?: "🎵 Extract sound", accent = working != null) {
-                        if (working != null) vm.cancelSoundWork() else vm.extractSound(id)
+                ToolGroup("Look", ToolColors.Look) {
+                    ToolTile("Filter", I.AutoAwesome, ToolColors.Look) { openPanel(Panel.FILTER) }
+                    ToolTile("Adjust", I.Tune, ToolColors.Look) { openPanel(Panel.ADJUST) }
+                    ToolTile("Fade", I.Gradient, ToolColors.Look) { openPanel(Panel.FADE) }
+                    if (!isVideo) ToolTile("Photo zoom", I.ZoomIn, ToolColors.Look) { openPanel(Panel.PHOTO_ZOOM) }
+                }
+                ToolGroup("Frame", ToolColors.Frame) {
+                    ToolTile(if (clip.fill) "Fit" else "Fill", if (clip.fill) I.FitScreen else I.Fullscreen, ToolColors.Frame) {
+                        vm.updateClip(id) { it.copy(fill = !it.fill) }
                     }
+                    if (isVideo) ToolTile("Remove black bars", I.Crop, ToolColors.Frame) { vm.removeBlackBars(id) }
+                    if (com.reelforge.editor.engine.EffectFactory.isFramed(clip)) {
+                        ToolTile("Reset position", I.CenterFocusStrong, ToolColors.Frame) { vm.resetFraming(id) }
+                    }
+                    ToolTile("Rotate", I.RotateRight, ToolColors.Frame) {
+                        vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) }
+                    }
+                    ToolTile("Mirror", I.Flip, ToolColors.Frame) { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
                 }
-                MenuTile("Filter") { openPanel(Panel.FILTER) }
-                MenuTile("Adjust") { openPanel(Panel.ADJUST) }
-                MenuTile("Fade") { openPanel(Panel.FADE) }
-                MenuTile("Rotate") { vm.updateClip(id) { it.copy(rotation = (it.rotation + 90) % 360) } }
-                MenuTile("Mirror") { vm.updateClip(id) { it.copy(flipH = !it.flipH) } }
-                MenuTile(if (clip.fill) "Fit" else "Fill") { vm.updateClip(id) { it.copy(fill = !it.fill) } }
-                MenuTile("Copy") { vm.duplicateClip(id) }
-                MenuTile("Move left") { vm.moveClip(id, -1) }
-                MenuTile("Move right") { vm.moveClip(id, 1) }
+                ToolGroup("Arrange", ToolColors.Arrange) {
+                    ToolTile("Copy", I.ContentCopy, ToolColors.Arrange) { vm.duplicateClip(id) }
+                    ToolTile("Move left", I.KeyboardArrowLeft, ToolColors.Arrange) { vm.moveClip(id, -1) }
+                    ToolTile("Move right", I.KeyboardArrowRight, ToolColors.Arrange) { vm.moveClip(id, 1) }
+                }
             }
         }
     }
+}
+
+/** A titled group of tool tiles that wrap onto new rows. */
+@Composable
+private fun ToolGroup(title: String, color: Color, tiles: @Composable () -> Unit) {
+    ToolSection(title, color)
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) { tiles() }
+}
+
+/** A trim or split tile, drawn with its own cut picture. */
+@Composable
+private fun CutTile(label: String, kind: CutKind, enabled: Boolean, onClick: () -> Unit) {
+    ToolTile(
+        label, Icons.Rounded.ContentCut, ToolColors.Cut, enabled = enabled,
+        iconContent = { CutIcon(kind) },
+        onClick = onClick,
+    )
 }
 
 /** The kinds of thing, other than clips, that can be selected on the timeline. */
@@ -1060,52 +1105,14 @@ private fun ItemMenu(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            MenuTile("Trim left", enabled = canCut, accent = true, icon = CutKind.LEFT) { cut(Cut.LEFT) }
-            if (item.kind != ItemKind.MUSIC) {
-                MenuTile("Split", enabled = canCut, accent = true, icon = CutKind.SPLIT) { cut(Cut.SPLIT) }
-            }
-            MenuTile("Trim right", enabled = canCut, accent = true, icon = CutKind.RIGHT) { cut(Cut.RIGHT) }
-            MenuTile("Edit") { onEdit() }
-            if (item.kind == ItemKind.TEXT) MenuTile("Copy") { vm.duplicateText(id) }
-            MenuTile("Delete") {
+            CutTile("Trim left", CutKind.LEFT, canCut) { cut(Cut.LEFT) }
+            if (item.kind != ItemKind.MUSIC) CutTile("Split", CutKind.SPLIT, canCut) { cut(Cut.SPLIT) }
+            CutTile("Trim right", CutKind.RIGHT, canCut) { cut(Cut.RIGHT) }
+            ToolTile("Edit", Icons.Rounded.Edit, ToolColors.Time) { onEdit() }
+            if (item.kind == ItemKind.TEXT) ToolTile("Copy", Icons.Rounded.ContentCopy, ToolColors.Arrange) { vm.duplicateText(id) }
+            ToolTile("Delete", Icons.Rounded.Delete, ToolColors.Cut) {
                 delete()
                 onBack()
-            }
-        }
-    }
-}
-
-@Composable
-private fun MenuTile(
-    label: String,
-    enabled: Boolean = true,
-    accent: Boolean = false,
-    icon: CutKind? = null,
-    onClick: () -> Unit,
-) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(12.dp),
-        color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-        contentColor = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.alpha(if (enabled) 1f else 0.4f),
-    ) {
-        if (icon == null) {
-            Text(
-                label,
-                modifier = Modifier.widthIn(min = 84.dp).padding(horizontal = 12.dp, vertical = 14.dp),
-                style = MaterialTheme.typography.labelLarge,
-                textAlign = TextAlign.Center,
-            )
-        } else {
-            Column(
-                Modifier.widthIn(min = 84.dp).padding(horizontal = 10.dp, vertical = 7.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                CutIcon(icon)
-                Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
             }
         }
     }
@@ -2269,7 +2276,10 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
     }
     if (sizes.none { it.first == shortSide }) shortSide = sizes.last().first
 
-    AlertDialog(
+    CutDialog(
+        icon = Icons.Rounded.IosShare,
+        centred = false,
+        dismissOnClickOutside = state !is ExportState.Running,
         onDismissRequest = {
             if (state !is ExportState.Running) {
                 vm.dismissExport()
@@ -2317,11 +2327,11 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         },
         confirmButton = {
             when (state) {
-                ExportState.Idle -> TextButton(onClick = { vm.startExport(shortSide, quality, fps, hevc) }) {
+                ExportState.Idle -> WideButton(onClick = { vm.startExport(shortSide, quality, fps, hevc) }) {
                     Text("Export")
                 }
-                is ExportState.Running -> TextButton(onClick = { vm.cancelExport() }) { Text("Cancel") }
-                is ExportState.Done -> TextButton(onClick = {
+                is ExportState.Running -> WideOutlinedButton(onClick = { vm.cancelExport() }) { Text("Cancel") }
+                is ExportState.Done -> WideButton(onClick = {
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND)
                         .setType("video/mp4")
                         .putExtra(android.content.Intent.EXTRA_STREAM, state.uri)
