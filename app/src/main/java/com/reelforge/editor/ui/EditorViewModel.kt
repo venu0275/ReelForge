@@ -562,6 +562,48 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         message = "Black bars removed. Tap Reset position on the clip to undo just this."
     }
 
+    // ------------------------------------------------------------ ratio tour
+
+    /** Steps of the short animated tour that shows what Ratio does. */
+    enum class TourStep { NONE, FIND, TAP, SHAPES }
+
+    var tourStep by mutableStateOf(TourStep.NONE)
+        private set
+
+    /** The shape shown in the preview during the tour (the project itself is not changed). */
+    var tourAspect by mutableStateOf<AspectRatio?>(null)
+        private set
+    private var tourJob: Job? = null
+
+    /**
+     * Plays the tour: the menu scrolls to Ratio, it is tapped, then the preview changes to 9:16,
+     * 16:9 and 1:1 and back. Only shows the shapes; nothing in the project changes.
+     */
+    fun startRatioTour() {
+        if (tourJob?.isActive == true) return
+        tourJob = viewModelScope.launch {
+            try {
+                tourStep = TourStep.FIND
+                delay(1_200)
+                tourStep = TourStep.TAP
+                delay(800)
+                tourStep = TourStep.SHAPES
+                for (shape in listOf(AspectRatio.PORTRAIT, AspectRatio.LANDSCAPE, AspectRatio.SQUARE)) {
+                    tourAspect = shape
+                    delay(1_600)
+                }
+            } finally {
+                tourAspect = null
+                tourStep = TourStep.NONE
+                if (!settings.ratioTourSeen) updateSettings { it.copy(ratioTourSeen = true) }
+            }
+        }
+    }
+
+    fun stopRatioTour() {
+        tourJob?.cancel()
+    }
+
     /** Sets the frame to the shape of the clip under the red line (or the first clip). */
     fun matchAspect() {
         val p = project ?: return

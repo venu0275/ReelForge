@@ -30,6 +30,8 @@ data class AppSettings(
     val voiceCountdown: Int = 3,
     /** Record voice-overs with the phone's noise and echo removal, then clean them up further. */
     val cleanVoice: Boolean = true,
+    /** The short animated tour of Ratio has been shown (it plays once). */
+    val ratioTourSeen: Boolean = false,
     /** Voice style given to each new voice-over (it can still be changed afterwards). */
     val recordFx: com.reelforge.editor.model.AudioFx = com.reelforge.editor.model.AudioFx.NONE,
     /** Pitch shift in semitones given to each new voice-over (-12..12). */
@@ -72,6 +74,7 @@ class SettingsStore(context: Context) {
             silentWhileRecording = prefs.getBoolean("silentWhileRecording", d.silentWhileRecording),
             voiceCountdown = prefs.getInt("voiceCountdown", d.voiceCountdown),
             cleanVoice = prefs.getBoolean("cleanVoice", d.cleanVoice),
+            ratioTourSeen = prefs.getBoolean("ratioTourSeen", d.ratioTourSeen),
             recordFx = runCatching {
                 com.reelforge.editor.model.AudioFx.valueOf(prefs.getString("recordFx", d.recordFx.name)!!)
             }.getOrDefault(d.recordFx),
@@ -93,6 +96,7 @@ class SettingsStore(context: Context) {
             .putBoolean("silentWhileRecording", s.silentWhileRecording)
             .putInt("voiceCountdown", s.voiceCountdown)
             .putBoolean("cleanVoice", s.cleanVoice)
+            .putBoolean("ratioTourSeen", s.ratioTourSeen)
             .putString("recordFx", s.recordFx.name)
             .putInt("recordSemitones", s.recordSemitones)
             .apply()

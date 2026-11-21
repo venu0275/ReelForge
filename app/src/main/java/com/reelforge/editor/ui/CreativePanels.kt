@@ -277,6 +277,7 @@ fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project)
         style = MaterialTheme.typography.bodySmall,
     )
     RatioChoices(project.aspect) { vm.setAspect(it) }
+    TextButton(onClick = { vm.startRatioTour() }) { Text("▶ Show me how") }
     if (project.clips.isNotEmpty()) {
         OutlinedButton(onClick = { vm.matchAspect() }) { Text("Match video") }
         Text("Sets the shape to the clip under the red line.", style = MaterialTheme.typography.bodySmall)

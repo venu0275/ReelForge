@@ -38,6 +38,9 @@ import androidx.compose.ui.draw.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shadow
@@ -134,6 +137,13 @@ fun EditorScreen(vm: EditorViewModel) {
 
     // The in-app media screen (folders and thumbnails, like a gallery) is open.
     var browsing by remember { mutableStateOf(false) }
+    // First time in the editor: a short animated tour of Ratio (once; Ratio has "Show me how").
+    LaunchedEffect(browsing, panel, vm.settings.ratioTourSeen) {
+        if (!vm.settings.ratioTourSeen && !browsing && panel == null) {
+            delay(900)
+            vm.startRatioTour()
+        }
+    }
     // The in-app music screen (songs, albums, folders, free music) is open.
     var browsingMusic by remember { mutableStateOf(false) }
     // A new, empty project opens straight onto it.
@@ -844,7 +854,15 @@ private fun EditorMenu(
         }
 
         val menuScroll = rememberScrollState()
-        Box(Modifier.fillMaxWidth()) {
+        var menuTop by remember { mutableFloatStateOf(0f) }
+        var ratioTileY by remember { mutableFloatStateOf(-1f) }
+        LaunchedEffect(vm.tourStep) {
+            if (vm.tourStep == EditorViewModel.TourStep.FIND && ratioTileY >= 0f) {
+                val target = menuScroll.value + (ratioTileY - menuTop - 30f).toInt()
+                menuScroll.animateScrollTo(target.coerceIn(0, menuScroll.maxValue), tween(700))
+            }
+        }
+        Box(Modifier.fillMaxWidth().onGloballyPositioned { menuTop = it.positionInRoot().y }) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -887,7 +905,16 @@ private fun EditorMenu(
                 }
                 ToolGroup("Style", ToolColors.Style) {
                     ToolTile("Templates", I.AutoAwesomeMosaic, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.TEMPLATES) }
-                    ToolTile("Ratio ${project.aspect.label}", I.AspectRatio, ToolColors.Style) { openPanel(Panel.RATIO) }
+                    val touring = vm.tourStep != EditorViewModel.TourStep.NONE
+                    ToolTile(
+                        "Ratio ${(vm.tourAspect ?: project.aspect).label}", I.AspectRatio, ToolColors.Style,
+                        highlight = touring,
+                        tapping = vm.tourStep == EditorViewModel.TourStep.TAP,
+                        modifier = Modifier.onGloballyPositioned { ratioTileY = it.positionInRoot().y },
+                    ) {
+                        vm.stopRatioTour()
+                        openPanel(Panel.RATIO)
+                    }
                     ToolTile("Backdrop", I.Wallpaper, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.BACKGROUND) }
                     ToolTile("Stickers & sounds", I.Storefront, ToolColors.Style, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.STORE) }
                 }
@@ -1828,14 +1855,22 @@ private fun PreviewArea(
     val current = location?.let { project.clips[it.first] }
     val local = location?.second ?: 0L
 
+    // During the Ratio tour the preview shows other shapes (the project is not changed); the
+    // change is animated so it is easy to follow.
+    val shownShape = vm.tourAspect ?: project.aspect
+    val shownRatio by animateFloatAsState(shownShape.ratio, tween(650), label = "ratio")
+
     // Dark grey around the frame, so the frame's own edges (and black bars) can be seen.
     Box(
         modifier.fillMaxWidth().background(Color(0xFF26272B)),
         contentAlignment = Alignment.Center,
     ) {
+        if (vm.tourStep != EditorViewModel.TourStep.NONE) {
+            RatioTourCard(vm, shownShape, Modifier.align(Alignment.TopCenter).zIndex(5f))
+        }
         BoxWithConstraints(
             Modifier
-                .aspectRatio(project.aspect.w.toFloat() / project.aspect.h)
+                .aspectRatio(shownRatio)
                 .background(Color.Black)
                 .clipToBounds()
                 // Tapping the picture itself, away from any item, lets go of the selection.
@@ -1854,6 +1889,7 @@ private fun PreviewArea(
                 }
         ) {
             val frameHeight = maxHeight
+            if (project.clips.isEmpty()) EmptyFrame(shownShape)
 
             // The backdrop around a video set to Fit is drawn here, behind the player, so it shows
             // in the preview on every phone. (The exported video draws its own.)
@@ -2404,6 +2440,94 @@ private fun ChipRow(labels: List<String>, selected: Int, onSelect: (Int) -> Unit
     HintRow(spacing = 8.dp) {
         labels.forEachIndexed { i, label ->
             FilterChip(selected = selected == i, onClick = { onSelect(i) }, label = { Text(label) })
+        }
+    }
+}
+
+
+/** The empty frame of a new project: the CutMitra icon and name, and the frame's shape. */
+@Composable
+private fun EmptyFrame(shape: com.reelforge.editor.model.AspectRatio) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF1E2027), Color(0xFF121317)))
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(
+                        androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFFF4D5E), Color(0xFFFF9F43)))
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    androidx.compose.ui.res.painterResource(com.reelforge.editor.R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    modifier = Modifier.size(84.dp),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("CutMitra", color = Color.White, fontWeight = FontWeight.SemiBold)
+            Text(
+                "${shape.label} · ${ratioUse(shape)}",
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+/** The card shown during the Ratio tour: which shapes there are, the one in view lit up. */
+@Composable
+private fun RatioTourCard(vm: EditorViewModel, shape: com.reelforge.editor.model.AspectRatio, modifier: Modifier) {
+    Surface(
+        modifier = modifier.padding(6.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xEE23262D),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ToolColors.Style.copy(alpha = 0.6f)),
+    ) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.AspectRatio, null, tint = ToolColors.Style, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    "Ratio changes your video's shape",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Skip",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable { vm.stopRatioTour() }.padding(4.dp),
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
+                listOf(
+                    com.reelforge.editor.model.AspectRatio.PORTRAIT,
+                    com.reelforge.editor.model.AspectRatio.LANDSCAPE,
+                    com.reelforge.editor.model.AspectRatio.SQUARE,
+                ).forEach { a ->
+                    val on = vm.tourAspect == a
+                    Text(
+                        "${a.label} ${ratioUse(a)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (on) Color.Black else Color.White,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(if (on) ToolColors.Style else Color.White.copy(alpha = 0.12f))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+            }
         }
     }
 }

@@ -35,6 +35,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -93,16 +95,38 @@ fun ToolTile(
     iconContent: (@Composable () -> Unit)? = null,
     /** Said in a toast when the tile is tapped while switched off. */
     whyOff: String? = null,
+    /** Pulses to point the user at this tile (used by the guided tours). */
+    highlight: Boolean = false,
+    /** Shows a finger tapping the tile (used by the guided tours). */
+    tapping: Boolean = false,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val hint = LocalHint.current
+    val pulse = if (highlight) {
+        val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "pulse")
+        t.animateFloat(
+            0.35f, 1f,
+            androidx.compose.animation.core.infiniteRepeatable(
+                androidx.compose.animation.core.tween(600),
+                androidx.compose.animation.core.RepeatMode.Reverse,
+            ),
+            label = "pulse",
+        ).value
+    } else 0f
+    val press by androidx.compose.animation.core.animateFloatAsState(if (tapping) 0.9f else 1f, label = "press")
+    Box(modifier) {
     Surface(
         onClick = { if (enabled) onClick() else if (whyOff != null) hint(whyOff) },
         enabled = enabled || whyOff != null,
         shape = RoundedCornerShape(16.dp),
-        color = if (active) color.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surfaceVariant,
+        color = if (active || highlight) color.copy(alpha = 0.28f) else MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.width(80.dp).alpha(if (enabled) 1f else 0.38f),
+        border = if (highlight) androidx.compose.foundation.BorderStroke(2.dp, color.copy(alpha = pulse)) else null,
+        modifier = Modifier
+            .width(80.dp)
+            .graphicsLayer { scaleX = press; scaleY = press }
+            .alpha(if (enabled) 1f else 0.38f),
     ) {
         Column(
             Modifier.padding(horizontal = 4.dp, vertical = 9.dp),
@@ -135,6 +159,20 @@ fun ToolTile(
                 modifier = Modifier.height(32.dp),
             )
         }
+    }
+    if (highlight) {
+        // A finger pointing at the tile, pressing it on "tapping".
+        Icon(
+            androidx.compose.material.icons.Icons.Rounded.TouchApp, contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 2.dp, bottom = 2.dp)
+                .size(if (tapping) 24.dp else 28.dp)
+                .background(color, CircleShape)
+                .padding(3.dp),
+        )
+    }
     }
 }
 
