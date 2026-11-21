@@ -315,11 +315,14 @@ fun ActionCard(
     color: Color,
     enabled: Boolean = true,
     main: Boolean = false,
+    /** Said in a toast when the card is tapped while switched off. */
+    whyOff: String? = null,
     onClick: () -> Unit,
 ) {
+    val hint = LocalHint.current
     Surface(
-        onClick = onClick,
-        enabled = enabled,
+        onClick = { if (enabled) onClick() else if (whyOff != null) hint(whyOff) },
+        enabled = enabled || whyOff != null,
         shape = RoundedCornerShape(16.dp),
         color = if (main) color.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
         border = if (main) androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.55f)) else null,

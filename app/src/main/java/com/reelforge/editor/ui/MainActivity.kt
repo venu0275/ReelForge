@@ -35,10 +35,15 @@ class MainActivity : ComponentActivity() {
                     if (settings.keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
-                when {
-                    vm.showSettings -> SettingsScreen(vm)
-                    vm.project == null -> HomeScreen(vm)
-                    else -> EditorScreen(vm)
+                // Anything switched off can explain itself with a hint toast, on every screen.
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalHint provides { text -> vm.toast(text, ToastKind.WARNING) },
+                ) {
+                    when {
+                        vm.showSettings -> SettingsScreen(vm)
+                        vm.project == null -> HomeScreen(vm)
+                        else -> EditorScreen(vm)
+                    }
                 }
                 // Toasts show on every screen (home, editor, settings).
                 ToastHost(vm)

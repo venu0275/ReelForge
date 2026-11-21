@@ -188,7 +188,14 @@ fun MusicFinder(vm: EditorViewModel) {
             singleLine = true,
             modifier = Modifier.weight(1f),
         )
-        Button(onClick = { vm.searchMusic(query, effects) }, enabled = query.isNotBlank() && !vm.musicSearching) {
+        val hint = LocalHint.current
+        Button(onClick = {
+            when {
+                vm.musicSearching -> hint("Still searching, one moment")
+                query.isBlank() -> hint("Type what to search for first, e.g. happy or rain")
+                else -> vm.searchMusic(query, effects)
+            }
+        }) {
             Text(if (vm.musicSearching) "…" else "Search")
         }
     }

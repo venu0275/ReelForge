@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.reelforge.editor.model.AudioFx
@@ -359,10 +360,27 @@ fun ColorPicker(selected: Int, onPick: (Int) -> Unit) {
 }
 
 @Composable
-internal fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+internal fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    /** When set, the switch cannot be used now; tapping it says why in a toast. */
+    whyOff: String? = null,
+    note: String? = null,
+    onChange: (Boolean) -> Unit,
+) {
+    val hint = LocalHint.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Column(Modifier.weight(1f)) {
+            Text(label, color = if (whyOff != null) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified)
+            if (note != null) {
+                Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Switch(
+            checked = checked && whyOff == null,
+            onCheckedChange = { on -> if (whyOff != null) hint(whyOff) else onChange(on) },
+            modifier = Modifier.alpha(if (whyOff != null) 0.5f else 1f),
+        )
     }
 }
 
@@ -961,9 +979,16 @@ fun AudioPanel(
         modifier = Modifier.fillMaxWidth(),
         maxLines = 3,
     )
+    val hint = LocalHint.current
     Button(
-        onClick = { vm.speakText(speech) },
-        enabled = speech.isNotBlank() && !vm.isSpeaking,
+        onClick = {
+            when {
+                vm.isSpeaking -> hint("Still creating the last voice, one moment")
+                speech.isBlank() -> hint("Type the words to be spoken first")
+                else -> vm.speakText(speech)
+            }
+        },
+        modifier = Modifier.alpha(if (speech.isNotBlank() && !vm.isSpeaking) 1f else 0.5f),
     ) { Text(if (vm.isSpeaking) "Creating voice…" else "Add as spoken voice") }
     project.audio.forEach { clip ->
         Spacer(Modifier.height(8.dp))
@@ -975,7 +1000,9 @@ fun AudioPanel(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            TextButton(onClick = { vm.saveSoundToPhone(clip.id) }, enabled = vm.soundWork == null) {
+            TextButton(onClick = {
+                if (vm.soundWork == null) vm.saveSoundToPhone(clip.id) else hint("Wait for the current sound job to finish")
+            }) {
                 Text("Save to phone")
             }
             TextButton(onClick = { vm.deleteAudioClip(clip.id) }) { Text("Delete") }
@@ -1381,8 +1408,18 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
     )
 
     PanelTitle("2. Listen to")
-    SwitchRow("The video's own sound", fromVideo && hasVideoSound) { fromVideo = it }
-    SwitchRow("Voice-overs", fromVoice && hasVoice) { fromVoice = it }
+    SwitchRow(
+        "The video's own sound", fromVideo,
+        whyOff = if (hasVideoSound) null
+        else "Your clips have no sound to listen to (they are photos, silent or muted)",
+        note = if (hasVideoSound) null else "No clip with sound yet",
+    ) { fromVideo = it }
+    SwitchRow(
+        "Voice-overs", fromVoice,
+        whyOff = if (hasVoice) null
+        else "No voice-over yet. Record one first: Voice & sounds, then Record voice-over",
+        note = if (hasVoice) null else "No voice-over recorded yet",
+    ) { fromVoice = it }
 
     val useVideo = fromVideo && hasVideoSound
     val useVoice = fromVoice && hasVoice
@@ -1392,6 +1429,7 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
         if (ready) "Runs on your phone; takes about as long as the video." else "Downloads the speech model first.",
         androidx.compose.material.icons.Icons.Rounded.ClosedCaption, ToolColors.Create,
         enabled = useVideo || useVoice, main = true,
+        whyOff = "Turn on at least one sound to listen to (step 2)",
     ) { vm.makeCaptions(language, useVideo, useVoice) }
     TipBox(
         "Captions appear as texts on the timeline: tap one to fix a word, or use the Text tool to " +

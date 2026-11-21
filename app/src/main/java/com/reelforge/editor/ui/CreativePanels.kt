@@ -154,6 +154,7 @@ fun BeatSyncSection(vm: EditorViewModel, project: Project) {
 /** Ready-made looks applied to the clips already added. */
 @Composable
 fun TemplatesPanel(vm: EditorViewModel, project: Project, onDone: () -> Unit) {
+    val hint = LocalHint.current
     var picked by remember { mutableStateOf<String?>(null) }
     val template = picked?.let { Templates.byId(it) }
     if (template == null) {
@@ -169,7 +170,10 @@ fun TemplatesPanel(vm: EditorViewModel, project: Project, onDone: () -> Unit) {
                     .padding(vertical = 4.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                    .clickable(enabled = project.clips.isNotEmpty()) { picked = t.id }
+                    .clickable {
+                        if (project.clips.isNotEmpty()) picked = t.id
+                        else hint("Add your photos or videos first, then pick a template")
+                    }
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -250,9 +254,15 @@ fun CoverPanel(vm: EditorViewModel, project: Project) {
     OutlinedTextField(title, { title = it }, label = { Text("Title on the cover") }, modifier = Modifier.fillMaxWidth())
     ChipChoices(CoverStyle.entries, style, { it.label }) { style = it }
     SwitchRow("Also show it at the start of the video (0.5 s)", addToStart) { addToStart = it }
+    val hint = LocalHint.current
     Button(
-        onClick = { vm.saveCover(title, style, picture, addToStart) },
-        enabled = !vm.coverBusy && project.clips.isNotEmpty(),
+        onClick = {
+            when {
+                vm.coverBusy -> hint("Still saving the cover, one moment")
+                project.clips.isEmpty() -> hint("Add a video or photo first: the cover is made from it")
+                else -> vm.saveCover(title, style, picture, addToStart)
+            }
+        },
     ) { Text(if (vm.coverBusy) "Saving…" else "Save cover") }
     Text(
         "Saved to Pictures/CutMitra. When you post, choose it as the cover in Instagram or YouTube.",
