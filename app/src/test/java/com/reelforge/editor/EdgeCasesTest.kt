@@ -192,3 +192,27 @@ class AnimatedButtonSaveTest {
         assertTrue(com.reelforge.editor.engine.AnimatedButton.entries.all { it.defaultMs in 2_000..6_000 })
     }
 }
+
+class TimelineLanesTest {
+    private fun lanes(vararg r: Pair<Long, Long>) = com.reelforge.editor.model.ProjectOps.lanes(r.toList())
+
+    @Test fun `two texts at the same time go on separate lines`() {
+        assertEquals(listOf(0, 1), lanes(0L to 3_000L, 0L to 3_000L))
+    }
+
+    @Test fun `items one after another share a line, overlapping ones do not`() {
+        assertEquals(listOf(0, 0, 0), lanes(0L to 1_000L, 1_000L to 2_000L, 2_000L to 3_000L))
+        assertEquals(listOf(0, 1, 0), lanes(0L to 2_000L, 1_000L to 3_000L, 2_500L to 4_000L))
+    }
+
+    @Test fun `a free line is reused before a new one is opened`() {
+        // Given out of time order, each still takes the first line where it fits.
+        assertEquals(listOf(1, 0, 2, 0), lanes(500L to 1_500L, 0L to 1_000L, 600L to 900L, 1_000L to 2_000L))
+    }
+
+    @Test fun `no items, one item, and odd ranges`() {
+        assertEquals(emptyList<Int>(), lanes())
+        assertEquals(listOf(0), lanes(5L to 5L))
+        assertEquals(listOf(0, 1), lanes(-100L to 100L, 0L to 50L))
+    }
+}

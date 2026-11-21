@@ -544,4 +544,27 @@ class History<T>(private val limit: Int = 60, private val coalesceMs: Long = 700
         redoStack.clear()
         lastRecordAt = 0
     }
+
+    /**
+     * Puts items that overlap in time on separate lines (like KineMaster), each on the first line
+     * where it fits. Returns the line of each item, in the order given. Items that only touch
+     * (one ends where the next starts) share a line.
+     */
+    fun lanes(ranges: List<Pair<Long, Long>>): List<Int> {
+        val order = ranges.indices.sortedWith(compareBy({ ranges[it].first }, { ranges[it].second }))
+        val laneEnds = mutableListOf<Long>()
+        val result = IntArray(ranges.size)
+        for (i in order) {
+            val (start, end) = ranges[i]
+            var lane = laneEnds.indexOfFirst { it <= start }
+            if (lane < 0) {
+                laneEnds += end
+                lane = laneEnds.lastIndex
+            } else {
+                laneEnds[lane] = end
+            }
+            result[i] = lane
+        }
+        return result.toList()
+    }
 }

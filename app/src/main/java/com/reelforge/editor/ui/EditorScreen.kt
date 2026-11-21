@@ -1189,15 +1189,40 @@ private fun ItemMenu(
 
 private val RULER_HEIGHT = 22.dp
 private val TRACK_HEIGHT = 56.dp
-private val ROW_HEIGHT = 24.dp
-/** Text bars are taller (like KineMaster), so the words and the T mark are easy to see and grab. */
-private val TEXT_ROW_HEIGHT = 40.dp
-/** KineMaster-style gold for text bars, and the bright yellow frame of a selected bar. */
-private val TEXT_GOLD = Color(0xFFA8860F)
+/** Height of one line of bars (texts, stickers, sounds…) under the video track. */
+private val ROW_HEIGHT = 36.dp
+/** The bright yellow frame of a selected bar (and its handles), like KineMaster. */
 private val SELECTED_YELLOW = Color(0xFFFFC107)
+
+/** The colour and icon of each kind of bar, so they are easy to tell apart. */
+private object BarKind {
+    val TEXT = Color(0xFFFFC107)
+    val STICKER = Color(0xFFFF8A65)
+    val PHOTO = Color(0xFF26A69A)
+    val VIDEO = Color(0xFF42A5F5)
+    val VOICE = Color(0xFFEF5350)
+    val SOUND = Color(0xFF66BB6A)
+    val EXTRACTED = Color(0xFF26C6DA)
+    val MUSIC = Color(0xFFAB47BC)
+}
 private val TILE_WIDTH = 64.dp
 
-private class Bar(val id: String, val label: String, val startMs: Long, val endMs: Long)
+private class Bar(
+    val id: String,
+    val label: String,
+    val startMs: Long,
+    val endMs: Long,
+    /** The kind's colour (stripe, icon) and icon; null = the row's colour and no icon. */
+    val color: Color? = null,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+)
+
+/** The bars split into lines so overlapping ones never cover each other. */
+private fun laned(bars: List<Bar>): List<List<Bar>> {
+    if (bars.isEmpty()) return emptyList()
+    val lane = ProjectOps.lanes(bars.map { it.startMs to it.endMs })
+    return (0..lane.max()).map { l -> bars.filterIndexed { i, _ -> lane[i] == l } }
+}
 
 /**
  * The timeline. Content scrolls under a playhead fixed at the centre: dragging scrubs the video,
@@ -1269,20 +1294,42 @@ private fun Timeline(
         }
     }
 
-    val textBars = project.texts.map { Bar(it.id, it.text.replace("\n", " "), it.startMs, it.endMs) }
-    val layerBars = project.layers.mapIndexed { i, l -> Bar(l.id, "Layer ${i + 1}", l.startMs, l.endMs) }
-    val audioBars = project.audio.map { Bar(it.id, it.title, it.startMs, it.startMs + it.durationMs) } +
+    val I = Icons.Rounded
+    val textBars = project.texts.map {
+        Bar(it.id, it.text.replace("\n", " ").ifBlank { "Text" }, it.startMs, it.endMs, BarKind.TEXT, I.TextFields)
+    }
+    val layerBars = project.layers.mapIndexed { i, l ->
+        val animated = com.reelforge.editor.engine.AnimatedButton.of(l.button)
+        val (name, color, icon) = when {
+            animated != null -> Triple(animated.title, BarKind.STICKER, I.AutoAwesome)
+            "/stickers/" in l.uri || "social_" in l.uri -> Triple("Sticker", BarKind.STICKER, I.EmojiEmotions)
+            "/drawings/" in l.uri -> Triple("Drawing", BarKind.PHOTO, I.Brush)
+            else -> Triple("Photo ${i + 1}", BarKind.PHOTO, I.Image)
+        }
+        Bar(l.id, name, l.startMs, l.endMs, color, icon)
+    }
+    val audioBars = project.audio.map {
+        val (color, icon) = when {
+            it.voice -> BarKind.VOICE to I.Mic
+            it.duck || it.title.startsWith("Sound:") -> BarKind.EXTRACTED to I.LibraryMusic
+            else -> BarKind.SOUND to I.GraphicEq
+        }
+        Bar(it.id, it.title, it.startMs, it.startMs + it.durationMs, color, icon)
+    } +
         // The voice-over being recorded grows on the timeline as you speak.
         (if (vm.isRecording) listOf(
-            Bar("recording", "● REC", vm.recordingFromMs, maxOf(vm.playheadMs, vm.recordingFromMs + 100))
+            Bar("recording", "● REC", vm.recordingFromMs, maxOf(vm.playheadMs, vm.recordingFromMs + 100), BarKind.VOICE, I.Mic)
         ) else emptyList())
     val videoBars = project.videoLayers.mapIndexed { i, v ->
-        Bar(v.id, "Video ${i + 1}", v.startMs, v.startMs + v.durationMs)
+        Bar(v.id, "Video ${i + 1}", v.startMs, v.startMs + v.durationMs, BarKind.VIDEO, I.VideoLibrary)
     }
-    val rows = listOf(textBars, layerBars, audioBars, videoBars).count { it.isNotEmpty() } +
+    val textLanes = laned(textBars)
+    val layerLanes = laned(layerBars)
+    val audioLanes = laned(audioBars)
+    val videoLanes = laned(videoBars)
+    val rows = textLanes.size + layerLanes.size + audioLanes.size + videoLanes.size +
         (if (project.music != null) 1 else 0)
-    val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp +
-        (if (textBars.isNotEmpty()) TEXT_ROW_HEIGHT - ROW_HEIGHT else 0.dp)
+    val height = RULER_HEIGHT + TRACK_HEIGHT + ROW_HEIGHT * rows + 10.dp
     val configuration = LocalConfiguration.current
     val sideways = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     val cap = configuration.screenHeightDp.dp * (if (sideways) 0.42f else 0.34f)
@@ -1360,12 +1407,10 @@ private fun Timeline(
                         val points = ProjectOps.snapPoints(project, excludeId = id) + vm.playheadMs
                         ProjectOps.snapStart(startMs + deltaMs, lengthMs, points, snapMs)
                     }
-                if (textBars.isNotEmpty()) {
+                textLanes.forEach { lane ->
                     BarRow(
-                        textBars, pxPerMs, TEXT_GOLD, selectedId, { onSelect(ItemKind.TEXT, it) },
+                        lane, pxPerMs, BarKind.TEXT, selectedId, { onSelect(ItemKind.TEXT, it) },
                         limitMs = total,
-                        rowHeight = TEXT_ROW_HEIGHT,
-                        mark = "T",
                         onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.TEXT, id, atStart, deltaMs, snapMs) },
                     ) { id, deltaMs ->
                         vm.updateText(id) {
@@ -1374,9 +1419,9 @@ private fun Timeline(
                         }
                     }
                 }
-                if (videoBars.isNotEmpty()) {
+                videoLanes.forEach { lane ->
                     BarRow(
-                        videoBars, pxPerMs, Color(0xFF1E88E5), selectedId, { onSelect(ItemKind.VIDEO, it) },
+                        lane, pxPerMs, BarKind.VIDEO, selectedId, { onSelect(ItemKind.VIDEO, it) },
                         limitMs = total,
                         onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.VIDEO, id, atStart, deltaMs, snapMs) },
                     ) { id, deltaMs ->
@@ -1385,9 +1430,9 @@ private fun Timeline(
                         }
                     }
                 }
-                if (layerBars.isNotEmpty()) {
+                layerLanes.forEach { lane ->
                     BarRow(
-                        layerBars, pxPerMs, Color(0xFF009688), selectedId, { onSelect(ItemKind.LAYER, it) },
+                        lane, pxPerMs, BarKind.PHOTO, selectedId, { onSelect(ItemKind.LAYER, it) },
                         limitMs = total,
                         onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.LAYER, id, atStart, deltaMs, snapMs) },
                     ) { id, deltaMs ->
@@ -1397,9 +1442,9 @@ private fun Timeline(
                         }
                     }
                 }
-                if (audioBars.isNotEmpty()) {
+                audioLanes.forEach { lane ->
                     BarRow(
-                        audioBars, pxPerMs, Color(0xFF43A047), selectedId, { onSelect(ItemKind.SOUND, it) },
+                        lane, pxPerMs, BarKind.SOUND, selectedId, { onSelect(ItemKind.SOUND, it) },
                         limitMs = total,
                         onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.SOUND, id, atStart, deltaMs, snapMs) },
                     ) { id, deltaMs ->
@@ -1411,14 +1456,14 @@ private fun Timeline(
                     // longer than the video, the rest of it is shown faded past the end of the video.
                     val heardEnd = music.windowEnd(total)
                     val length = if (music.durationMs > 0) "  ${MediaUtils.formatTime(music.durationMs)}" else ""
-                    val bar = Bar(MUSIC_ID, "♪ ${music.title}$length", music.startMs, heardEnd)
+                    val bar = Bar(MUSIC_ID, "${music.title}$length", music.startMs, heardEnd, BarKind.MUSIC, Icons.Rounded.MusicNote)
                     val rest = Modifier.ghostBar(
                         startPx = heardEnd * pxPerMs,
                         widthPx = (music.fileEnd() - heardEnd).coerceAtLeast(0) * pxPerMs,
-                        color = Color(0xFFEF6C00).copy(alpha = 0.3f),
+                        color = BarKind.MUSIC.copy(alpha = 0.25f),
                     )
                     BarRow(
-                        listOf(bar), pxPerMs, Color(0xFFEF6C00), selectedId, { onSelect(ItemKind.MUSIC, it) },
+                        listOf(bar), pxPerMs, BarKind.MUSIC, selectedId, { onSelect(ItemKind.MUSIC, it) },
                         rowModifier = rest,
                         onResize = { id, atStart, deltaMs -> vm.resizeBar(ItemKind.MUSIC, id, atStart, deltaMs, snapMs) },
                     ) { _, deltaMs ->
@@ -1442,6 +1487,24 @@ private fun Timeline(
                 }
             }
             Spacer(Modifier.width(half))
+        }
+
+        // A scrollbar on the right while there are more lines of bars than fit.
+        if (rowsScroll.maxValue > 0) {
+            val viewport = rowsScroll.viewportSize.toFloat().coerceAtLeast(1f)
+            val content = viewport + rowsScroll.maxValue
+            val thumbPx = (viewport * viewport / content).coerceAtLeast(with(density) { 24.dp.toPx() })
+            val thumbY = (viewport - thumbPx) * rowsScroll.value / rowsScroll.maxValue
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(end = 2.dp)
+                    .offset { IntOffset(0, thumbY.roundToInt()) }
+                    .width(4.dp)
+                    .height(with(density) { thumbPx.toDp() })
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+            )
         }
 
         // Fixed playhead with the current time; total length at the right.
@@ -1723,8 +1786,6 @@ private fun BarRow(
     limitMs: Long? = null,
     onResize: ((id: String, atStart: Boolean, deltaMs: Long) -> Unit)? = null,
     rowHeight: androidx.compose.ui.unit.Dp = ROW_HEIGHT,
-    /** A letter shown in a little box at the start of each bar (e.g. "T" for texts). */
-    mark: String? = null,
     onMove: (id: String, deltaMs: Long) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -1760,8 +1821,17 @@ private fun BarRow(
                         .width(with(density) { widthPx.toDp() })
                         .fillMaxHeight()
                         .padding(vertical = 2.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(color.copy(alpha = if (drag != 0f) 0.6f else 0.9f))
+                        .clip(RoundedCornerShape(6.dp))
+                        // Dark bar with the kind's colour mixed in and a stripe on the left, so white
+                        // words read clearly (colours follow the app's theme).
+                        .background(
+                            androidx.compose.ui.graphics.lerp(
+                                MaterialTheme.colorScheme.surfaceVariant, accentOf(bar, color), if (drag != 0f) 0.45f else 0.22f,
+                            )
+                        )
+                        .drawBehind {
+                            drawRect(accentOf(bar, color), size = androidx.compose.ui.geometry.Size(4.dp.toPx(), size.height))
+                        }
                         .drawWithContent {
                             drawContent()
                             if (fadeFromPx != null && fadeFromPx < size.width) {
@@ -1773,10 +1843,7 @@ private fun BarRow(
                                 )
                             }
                         }
-                        .then(
-                            if (selected) Modifier.border(2.dp, if (mark != null) SELECTED_YELLOW else Color.White, RoundedCornerShape(4.dp))
-                            else Modifier
-                        )
+                        .then(if (selected) Modifier.border(2.dp, SELECTED_YELLOW, RoundedCornerShape(6.dp)) else Modifier)
                         .clickable { onTap(bar.id) }
                         .pointerInput(bar.id) {
                             detectDragGesturesAfterLongPress(
@@ -1793,22 +1860,41 @@ private fun BarRow(
                         .padding(horizontal = if (selected && onResize != null) handleWidth else 6.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
-                    if (mark != null && !resizing) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                    val wide = widthPx > with(density) { 110.dp.toPx() }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        val icon = bar.icon
+                        if (icon != null && !resizing) {
                             Box(
                                 Modifier
+                                    .padding(start = 2.dp)
                                     .size(22.dp)
                                     .clip(RoundedCornerShape(5.dp))
-                                    .background(Color.Black.copy(alpha = 0.28f)),
+                                    .background(accentOf(bar, color).copy(alpha = 0.25f)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                Text(mark, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White.copy(alpha = 0.9f))
+                                Icon(icon, contentDescription = null, tint = accentOf(bar, color), modifier = Modifier.size(15.dp))
                             }
                             Spacer(Modifier.width(6.dp))
-                            Text(label, fontSize = 12.sp, maxLines = 1, color = Color.White, overflow = TextOverflow.Ellipsis)
                         }
-                    } else {
-                        Text(label, fontSize = 11.sp, maxLines = 1, color = Color.White)
+                        Text(
+                            label,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                        // How long it is on the video, when there is room.
+                        if (wide && !resizing) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                shortLength(bar.endMs - bar.startMs),
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
                 if (selected && onResize != null && drag == 0f) {
@@ -1838,6 +1924,15 @@ private fun BarRow(
             }
         }
     }
+}
+
+private fun accentOf(bar: Bar, rowColor: Color) = bar.color ?: rowColor
+
+/** "3.0s", "12.5s", "1:05" for a bar's length. */
+private fun shortLength(ms: Long): String {
+    val tenths = (ms.coerceAtLeast(0) + 50) / 100
+    return if (tenths < 600) "${tenths / 10}.${tenths % 10}s"
+    else "${tenths / 600}:${((tenths / 10) % 60).toString().padStart(2, '0')}"
 }
 
 /** A grab handle on one end of a selected bar. */
