@@ -55,7 +55,10 @@ import java.util.concurrent.TimeUnit
 @RunWith(AndroidJUnit4::class)
 class ScreenshotTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
+    val skipTours = SkipToursRule()
+
+    @get:Rule(order = 1)
     val rule = createAndroidComposeRule<MainActivity>()
 
     /** Media and notification access is granted up front, so no system dialog covers the app. */

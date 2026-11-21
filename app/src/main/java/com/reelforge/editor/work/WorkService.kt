@@ -34,6 +34,8 @@ class WorkService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             onStopRequested?.invoke()
+            // A Stop tap can arrive after the service was ended; make sure it is not left half-started.
+            if (!started) stopSelf()
             return START_NOT_STICKY
         }
         val note = build(this, current.title, current.progress)
@@ -41,8 +43,18 @@ class WorkService : Service() {
             Build.VERSION.SDK_INT >= 35 -> ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
             else -> ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         }
-        runCatching { ServiceCompat.startForeground(this, NOTE_ID, note, type) }
-            .onFailure { stopSelf() }
+        // Android requires startForeground soon after startForegroundService, even if the job
+        // already ended; so start first, then stop at once if nothing is running any more.
+        val ok = runCatching { ServiceCompat.startForeground(this, NOTE_ID, note, type) }.isSuccess
+        synchronized(lock) {
+            started = ok
+            if (!ok || !wanted) {
+                if (ok) ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                started = false
+                running = false
+                stopSelf()
+            }
+        }
         return START_NOT_STICKY
     }
 
@@ -62,7 +74,13 @@ class WorkService : Service() {
         private const val ACTION_STOP = "com.reelforge.editor.work.STOP"
 
         @Volatile private var current = Job("Working…", null)
-        @Volatile private var running = false
+        private val lock = Any()
+        /** The service was asked to start (it may not be in the foreground yet). */
+        private var running = false
+        /** The service is in the foreground. */
+        private var started = false
+        /** A job is running and wants the service. */
+        private var wanted = false
 
         /** Called when the user taps Stop in the notification. */
         @Volatile var onStopRequested: (() -> Unit)? = null
@@ -114,11 +132,17 @@ class WorkService : Service() {
         fun show(context: Context, title: String, progress: Int?) {
             val app = context.applicationContext
             current = Job(title, progress)
-            if (!running) {
-                running = true
+            val startNow = synchronized(lock) {
+                wanted = true
+                if (running) false else {
+                    running = true
+                    true
+                }
+            }
+            if (startNow) {
                 runCatching {
                     ContextCompat.startForegroundService(app, Intent(app, WorkService::class.java))
-                }.onFailure { running = false }
+                }.onFailure { synchronized(lock) { running = false } }
             } else {
                 // Updates go straight to the notification (no new service start from the background).
                 runCatching {
@@ -129,10 +153,19 @@ class WorkService : Service() {
 
         /** No long job is running any more. */
         fun hide(context: Context) {
-            if (!running) return
-            running = false
-            val app = context.applicationContext
-            runCatching { app.stopService(Intent(app, WorkService::class.java)) }
+            val stopNow = synchronized(lock) {
+                wanted = false
+                // Still starting: the service stops itself right after it is in the foreground.
+                if (!started) false else {
+                    started = false
+                    running = false
+                    true
+                }
+            }
+            if (stopNow) {
+                val app = context.applicationContext
+                runCatching { app.stopService(Intent(app, WorkService::class.java)) }
+            }
         }
 
         /**

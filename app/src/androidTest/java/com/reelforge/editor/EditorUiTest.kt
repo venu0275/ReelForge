@@ -4,6 +4,8 @@ import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -21,7 +23,10 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class EditorUiTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
+    val skipTours = SkipToursRule()
+
+    @get:Rule(order = 1)
     val rule = createAndroidComposeRule<MainActivity>()
 
     /** Media and notification access is granted up front, so no system dialog covers the app. */
@@ -70,8 +75,8 @@ class EditorUiTest {
 
     @Test
     fun settings_screenDirectionIsAppliedAndRemembered() {
-        waitForText("Settings")
-        tap("Settings")
+        waitForDescription("Settings")
+        rule.onNodeWithContentDescription("Settings", useUnmergedTree = true).performClick()
         waitForText("Screen direction")
         tap("Landscape")
         rule.waitUntil(10_000) {
@@ -103,8 +108,15 @@ class EditorUiTest {
         rule.onNodeWithContentDescription("Close media", useUnmergedTree = true).performClick()
         waitForText("Start by adding media")
 
-        // Negative: with no clips there is nothing to export, undo, play or decorate.
-        rule.onNodeWithText("Export").assertIsNotEnabled()
+        // The empty frame shows the app's name and the frame's shape.
+        waitForText("16:9 · YouTube")
+
+        // Negative: with no clips there is nothing to export, undo, play or decorate. Export and
+        // the faded tools say why in a toast instead of doing nothing.
+        tap("Export")
+        waitForText("Add a video or photo first: tap Media")
+        tap("Text", scroll = true)
+        waitForText("Add a video or photo first: tap Media")
         rule.onNodeWithContentDescription("Undo").assertIsNotEnabled()
         rule.onNodeWithContentDescription("Redo").assertIsNotEnabled()
         rule.onNodeWithContentDescription("Play").assertIsNotEnabled()
@@ -115,7 +127,6 @@ class EditorUiTest {
         rotate(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
         waitForText("Start by adding media")
         rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
-        rule.onNodeWithText("Export").assertIsNotEnabled()
 
         // Music with no music yet opens the music screen; closing it returns to the editor.
         tap("Music", scroll = true)
@@ -129,5 +140,83 @@ class EditorUiTest {
         rule.onNodeWithText("Media", useUnmergedTree = true).assertIsDisplayed()
         tap("Music", scroll = true)
         waitForDescription("Close music")
+    }
+
+    @Test
+    fun bugReport_needsATitle_thenOpensEmailOrOffersCopy() {
+        waitForDescription("Settings")
+        rule.onNodeWithContentDescription("Settings", useUnmergedTree = true).performClick()
+        waitForText("Report a bug")
+        tap("Report a bug", scroll = true)
+        waitForText("Sent by email to")
+        // Negative: no title, nothing is sent and the button says what is missing.
+        waitForText("Type an issue title to send")
+        tap("Type an issue title to send")
+        rule.onNodeWithText("No email app on this phone").assertDoesNotExist()
+        // Positive: with a title it opens an email app, or (none installed) offers Copy report.
+        rule.onNode(androidx.compose.ui.test.hasSetTextAction() and androidx.compose.ui.test.hasText("Issue title"))
+            .performTextInput("Test: export closes")
+        waitForText("Send report")
+        tap("Send report")
+        rule.waitUntil(10_000) {
+            val offered = runCatching {
+                rule.onAllNodesWithText("No email app on this phone").fetchSemanticsNodes().isNotEmpty()
+            }.getOrDefault(false)
+            offered || !rule.activity.hasWindowFocus()
+        }
+    }
+}
+
+/** The one-time Ratio tour (this class does not skip tours). */
+@RunWith(AndroidJUnit4::class)
+class RatioTourUiTest {
+    @get:Rule
+    val rule = createAndroidComposeRule<MainActivity>()
+
+    @org.junit.Before
+    fun setUp() {
+        InstrumentationRegistry.getInstrumentation().targetContext
+            .getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("ratioTourSeen", false).commit()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val pkg = InstrumentationRegistry.getInstrumentation().targetContext.packageName
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+                "android.permission.POST_NOTIFICATIONS")
+                .forEach { runCatching { automation.grantRuntimePermission(pkg, it) } }
+        }
+    }
+
+    private fun waitFor(timeout: Long = 15_000, check: () -> Boolean) = rule.waitUntil(timeout) {
+        runCatching(check).getOrDefault(false)
+    }
+
+    private fun shown(text: String) =
+        rule.onAllNodesWithText(text, substring = true, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun ratioTour_plays_canBeSkipped_andIsRemembered() {
+        // The activity may have read the settings before setUp; start the tour from Ratio's own
+        // button if it does not start by itself.
+        waitFor { shown("CutMitra") }
+        rule.onNodeWithText("New project").performClick()
+        waitFor { shown("Create project") }
+        rule.onNodeWithText("Create project").performClick()
+        waitFor { rule.onAllNodesWithContentDescription("Close media").fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithContentDescription("Close media").performClick()
+        val started = runCatching { waitFor(8_000) { shown("Ratio changes your video's shape") } }.isSuccess
+        if (!started) {
+            rule.onNodeWithText("Ratio 16:9", useUnmergedTree = true).performScrollTo().performClick()
+            waitFor { shown("Show me how") }
+            rule.onNodeWithText("Show me how", substring = true).performClick()
+            waitFor { shown("Ratio changes your video's shape") }
+        }
+        // Positive: the preview goes through the shapes; the card names them.
+        waitFor { shown("16:9 YouTube") }
+        // Skip ends it straight away.
+        rule.onNodeWithText("Skip").performClick()
+        waitFor(5_000) { !shown("Ratio changes your video's shape") }
+        val stored = com.reelforge.editor.data.SettingsStore(rule.activity).load()
+        org.junit.Assert.assertTrue(stored.ratioTourSeen)
     }
 }
