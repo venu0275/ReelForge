@@ -2,9 +2,9 @@ package com.reelforge.editor.model
 
 /** How "Make it 9:16" (or another shape) fits wide clips into the new frame. */
 enum class ReframeStyle(val title: String, val help: String) {
-    BLUR("Blur background", "Whole picture kept; a blurred copy fills the rest."),
-    FILL("Fill the screen", "Zooms in to fill the frame; the sides are cut off."),
-    FOLLOW("Follow the person", "Fills the frame and keeps the person in view (finds them automatically)."),
+    BLUR("Blur background", "Looks the same: the whole picture is kept and a blurred copy fills the rest."),
+    FILL("Fill the screen", "Zooms in to fill the frame; the edges are cut off."),
+    FOLLOW("Smart follow", "Fills the frame and keeps the person, or the main action, in view."),
 }
 
 object Reframe {
@@ -24,6 +24,42 @@ object Reframe {
         val px = (-(centreX.coerceIn(0f, 1f) - 0.5f) * videoW).coerceIn(-maxX, maxX)
         val py = (-(centreY.coerceIn(0f, 1f) - 0.5f) * videoH).coerceIn(-maxY, maxY)
         return px to py
+    }
+
+    /**
+     * Where the main action is when there is no person: the middle of the busiest, most detailed
+     * part of a picture ([pixels] ARGB, [w] x [h]), pulled a third of the way back to the middle
+     * so a busy corner does not take the frame too far. Flat areas (sky, walls, bars) do not count.
+     * Null when the picture is (almost) flat.
+     */
+    fun busyCentre(pixels: IntArray, w: Int, h: Int): Pair<Float, Float>? {
+        if (w < 3 || h < 3 || pixels.size < w * h) return null
+        fun lum(c: Int) = ((c shr 16 and 0xff) * 3 + (c shr 8 and 0xff) * 6 + (c and 0xff)) / 10
+        var sum = 0.0
+        var sx = 0.0
+        var sy = 0.0
+        for (y in 1 until h - 1) for (x in 1 until w - 1) {
+            val i = y * w + x
+            val g = kotlin.math.abs(lum(pixels[i + 1]) - lum(pixels[i - 1])) +
+                kotlin.math.abs(lum(pixels[i + w]) - lum(pixels[i - w]))
+            if (g < 24) continue
+            val weight = g.toDouble() * g
+            sum += weight
+            sx += weight * x
+            sy += weight * y
+        }
+        if (sum <= 0.0) return null
+        val fx = (sx / sum / w).toFloat()
+        val fy = (sy / sum / h).toFloat()
+        return (0.5f + (fx - 0.5f) * 0.67f) to (0.5f + (fy - 0.5f) * 0.67f)
+    }
+
+    /** The shapes to offer for "Make it …": the opposite of [current] first, then the others. */
+    fun targetsFor(current: AspectRatio): List<AspectRatio> {
+        val opposite = if (current.ratio < 1f) AspectRatio.LANDSCAPE else AspectRatio.PORTRAIT
+        return (listOf(opposite) + listOf(AspectRatio.PORTRAIT, AspectRatio.LANDSCAPE, AspectRatio.SQUARE, AspectRatio.FOUR_FIVE))
+            .distinct()
+            .filter { it != current }
     }
 
     /**

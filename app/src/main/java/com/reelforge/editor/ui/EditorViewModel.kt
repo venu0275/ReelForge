@@ -710,13 +710,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                             } else {
                                 listOfNotNull(MediaUtils.decodeImage(ctx, uri, 640))
                             }
+                            var person = false
                             val centres = pictures.mapNotNull { pic ->
+                                // The person if there is one; otherwise the main action.
                                 val c = com.reelforge.editor.model.Reframe.personCentre(finder.personMask(pic), 256)
+                                    ?.also { person = true }
+                                    ?: run {
+                                        val px = IntArray(pic.width * pic.height)
+                                        pic.getPixels(px, 0, pic.width, 0, 0, pic.width, pic.height)
+                                        com.reelforge.editor.model.Reframe.busyCentre(px, pic.width, pic.height)
+                                    }
                                 pic.recycle()
                                 c
                             }
+                            if (person) found++
                             if (centres.isNotEmpty()) {
-                                found++
                                 val cx = centres.map { it.first }.average().toFloat()
                                 val cy = centres.map { it.second }.average().toFloat()
                                 pans[clip.id] = com.reelforge.editor.model.Reframe.followPan(shape, target.ratio, cx, cy)
@@ -735,11 +743,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 toast(
                     when (found) {
-                        0 -> "Now ${target.label}. No person was found, so clips are centred; drag one to move it."
+                        0 -> "Now ${target.label}. No person found, so each clip is framed on its main action; drag one to adjust."
                         start.clips.size -> "Now ${target.label}, following the person in every clip."
-                        else -> "Now ${target.label}. Followed the person in $found of ${start.clips.size} clips; the rest are centred."
+                        else -> "Now ${target.label}. Followed the person in $found of ${start.clips.size} clips, the main action in the rest."
                     },
-                    if (found == 0) ToastKind.INFO else ToastKind.SUCCESS,
+                    ToastKind.SUCCESS,
                     undo = true,
                 )
             } catch (e: kotlinx.coroutines.CancellationException) {

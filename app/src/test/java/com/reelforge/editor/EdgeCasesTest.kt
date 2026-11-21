@@ -255,3 +255,38 @@ class ReframeTest {
         assertNull(com.reelforge.editor.model.Reframe.personCentre(FloatArray(3), side))
     }
 }
+
+class MakeItShapeTest {
+    private val R = com.reelforge.editor.model.Reframe
+
+    @Test fun `both ways - a wide project is offered 9 by 16 first and a tall one 16 by 9`() {
+        assertEquals(AspectRatio.PORTRAIT, R.targetsFor(AspectRatio.LANDSCAPE).first())
+        assertEquals(AspectRatio.LANDSCAPE, R.targetsFor(AspectRatio.PORTRAIT).first())
+        assertTrue(AspectRatio.LANDSCAPE !in R.targetsFor(AspectRatio.LANDSCAPE))
+        assertTrue(R.targetsFor(AspectRatio.SQUARE).containsAll(listOf(AspectRatio.PORTRAIT, AspectRatio.LANDSCAPE)))
+    }
+
+    @Test fun `a tall video in a wide frame moves up and down, never past its edges`() {
+        // 9:16 video filling a 16:9 frame: only up and down can change.
+        val (px, py) = R.followPan(9f / 16f, 16f / 9f, 0.5f, 0.2f)
+        assertEquals(0f, px, 0.0001f)
+        assertTrue(py > 0f) // the person is high up, so the picture moves down
+        val limit = ((16f / 9f) / (9f / 16f) - 1f) / 2f
+        assertTrue(R.followPan(9f / 16f, 16f / 9f, 0.5f, 0f).second <= limit + 0.0001f)
+    }
+
+    @Test fun `the main action is found when there is no person, and flat pictures give no answer`() {
+        val w = 60
+        val h = 40
+        // Flat grey with a busy checkered patch on the right.
+        val px = IntArray(w * h) { i ->
+            val x = i % w
+            val y = i / w
+            if (x in 44..56 && y in 10..30 && (x + y) % 2 == 0) -1 else 0xFF808080.toInt()
+        }
+        val c = R.busyCentre(px, w, h)!!
+        assertTrue(c.first > 0.6f)
+        assertEquals(null, R.busyCentre(IntArray(w * h) { 0xFF808080.toInt() }, w, h))
+        assertEquals(null, R.busyCentre(IntArray(2), 1, 2))
+    }
+}

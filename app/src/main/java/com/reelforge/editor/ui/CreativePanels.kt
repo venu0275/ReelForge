@@ -293,17 +293,17 @@ fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project)
  */
 @Composable
 private fun MakeItSection(vm: EditorViewModel, project: com.reelforge.editor.model.Project) {
-    val A = com.reelforge.editor.model.AspectRatio
-    val targets = listOf(A.PORTRAIT, A.SQUARE, A.FOUR_FIVE)
-    var target by remember { mutableStateOf(A.PORTRAIT) }
+    // Both ways: a wide project is offered 9:16 first, a tall one 16:9 first.
+    val targets = com.reelforge.editor.model.Reframe.targetsFor(project.aspect)
+    var target by remember(project.aspect) { mutableStateOf(targets.first()) }
     PanelTitle("Make it ${target.label}")
     Text(
-        "Turn a wide video into ${ratioName(target)} in one tap. Every clip is fitted; drag any clip on " +
-            "the video afterwards to adjust it.",
+        "Turn your ${if (project.aspect.ratio < 1f) "tall" else "wide"} video into ${ratioName(target)} in one " +
+            "tap. Every clip is fitted; drag any clip on the video afterwards to adjust it.",
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(6.dp))
-    androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    HintRow(spacing = 8.dp) {
         targets.forEach { t ->
             FilterChip(selected = target == t, onClick = { target = t }, label = { Text(ratioName(t)) })
         }
@@ -332,7 +332,7 @@ private fun MakeItSection(vm: EditorViewModel, project: com.reelforge.editor.mod
             main = style == com.reelforge.editor.model.ReframeStyle.FOLLOW,
         ) { vm.reframeProject(target, style) }
     }
-    TipBox("Talking or vlog videos: Follow the person. Scenery or slides: Blur background.")
+    TipBox("Talking or vlog videos: Smart follow. Want it to look exactly the same? Blur background.")
 }
 
 /** "9:16 Reels / Shorts" and so on. */
