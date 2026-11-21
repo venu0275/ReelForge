@@ -474,16 +474,27 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 mutate { it.copy(clips = it.clips + clips) }
                 // The first clip in a project: offer to remove black bars baked into it, or to
                 // match the frame to its shape if the shapes differ.
+                // No popup here (it came up while still picking media): a short tip says what can be
+                // done, and Remove black bars / Ratio ask when the user chooses them.
                 if (first) {
                     val bars = barsOfferFor(clips[0])
                     if (bars != null) {
-                        barsOffer = bars
+                        toast(
+                            "Tip: this video has black bars. To remove them, select it and tap Remove black bars.",
+                            ToastKind.INFO,
+                        )
                     } else {
                         val shape = withContext(Dispatchers.IO) {
                             MediaUtils.mediaAspect(ctx, Uri.parse(clips[0].uri), clips[0].type)
                         }
                         val best = shape?.let { AspectRatio.closest(it) }
-                        if (best != null && best != project?.aspect) aspectSuggestion = best
+                        val now = project?.aspect
+                        if (best != null && now != null && best != now) {
+                            toast(
+                                "Tip: this video is ${best.label} and the frame is ${now.label}. Change it any time with Ratio.",
+                                ToastKind.INFO,
+                            )
+                        }
                     }
                 }
             }
