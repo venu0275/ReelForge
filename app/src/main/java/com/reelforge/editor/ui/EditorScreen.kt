@@ -1151,17 +1151,20 @@ private fun Timeline(
     var userScrolling by remember { mutableStateOf(false) }
     var zoomAnchorMs by remember { mutableStateOf<Long?>(null) }
 
-    // Dragging the timeline pauses playback and scrubs.
-    LaunchedEffect(dragged) {
-        if (dragged) {
-            userScrolling = true
-            vm.pause()
-        }
-    }
-    LaunchedEffect(scroll.isScrollInProgress) {
-        if (!scroll.isScrollInProgress && userScrolling) {
-            userScrolling = false
-            scroll.scrollTo((vm.playheadMs * latestPxPerMs).roundToInt())
+    // Dragging the timeline pauses playback and scrubs. Finger and fling are watched together, so
+    // a quick tap or flick can never leave "the user is scrolling" switched on (which stopped the
+    // timeline following playback).
+    LaunchedEffect(Unit) {
+        snapshotFlow { dragged to scroll.isScrollInProgress }.collect { (finger, moving) ->
+            if (finger) {
+                if (!userScrolling) {
+                    userScrolling = true
+                    vm.pause()
+                }
+            } else if (!moving && userScrolling) {
+                userScrolling = false
+                scroll.scrollTo((vm.playheadMs * latestPxPerMs).roundToInt())
+            }
         }
     }
     LaunchedEffect(userScrolling) {
@@ -1181,6 +1184,8 @@ private fun Timeline(
             return@LaunchedEffect
         }
         snapshotFlow { vm.playheadMs }.collect { ms ->
+            // Safety net: while the video plays and nobody touches the timeline, it always follows.
+            if (userScrolling && vm.isPlaying && !dragged && !scroll.isScrollInProgress) userScrolling = false
             if (!userScrolling) scroll.scrollTo((ms * pxPerMs).roundToInt())
         }
     }
