@@ -23,7 +23,8 @@ object Reframe {
         val maxY = ((videoH - 1f) / 2f).coerceAtLeast(0f)
         val px = (-(centreX.coerceIn(0f, 1f) - 0.5f) * videoW).coerceIn(-maxX, maxX)
         val py = (-(centreY.coerceIn(0f, 1f) - 0.5f) * videoH).coerceIn(-maxY, maxY)
-        return px to py
+        // "+ 0f" turns -0 into 0, so "no shift" is exactly zero.
+        return (px + 0f) to (py + 0f)
     }
 
     /**
