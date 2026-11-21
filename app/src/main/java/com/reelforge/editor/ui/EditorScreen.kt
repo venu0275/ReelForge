@@ -2289,6 +2289,19 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
     var fps by remember { mutableIntStateOf(vm.settings.exportFps) }
     var hevc by remember { mutableStateOf(vm.settings.exportHevc) }
     val context = LocalContext.current
+    // Android 13+: ask once to show notifications, so the export's progress shows while the user
+    // is in other apps. The export starts whatever the answer.
+    val askNotify = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { vm.startExport(shortSide, quality, fps, hevc) }
+    fun export() {
+        val needs = android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (needs) askNotify.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        else vm.startExport(shortSide, quality, fps, hevc)
+    }
 
     // Only offer what this phone's encoder can actually produce.
     val sizes = remember(project.aspect, fps, hevc) {
@@ -2347,6 +2360,12 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                             progress = { state.progress / 100f },
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "You can use other apps or turn the screen off: the export keeps going and " +
+                                "a notification shows its progress.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                     is ExportState.Done -> Text("Saved to Movies/CutMitra in your gallery.")
                     is ExportState.Failed -> Text("Export failed: ${state.message}")
@@ -2355,7 +2374,7 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         },
         confirmButton = {
             when (state) {
-                ExportState.Idle -> WideButton(onClick = { vm.startExport(shortSide, quality, fps, hevc) }) {
+                ExportState.Idle -> WideButton(onClick = { export() }) {
                     Text("Export")
                 }
                 is ExportState.Running -> WideOutlinedButton(onClick = { vm.cancelExport() }) { Text("Cancel") }

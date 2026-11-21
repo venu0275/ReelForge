@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Export, captions and other long jobs keep running when the app is in the background. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- Lets the app find the phone's text-to-speech voice (needed on Android 11+). -->
@@ -60,6 +63,10 @@
             android:name=".record.ScreenRecorderService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone" />
+        <service
+            android:name=".work.WorkService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing|dataSync" />
     </application>
 
 </manifest>

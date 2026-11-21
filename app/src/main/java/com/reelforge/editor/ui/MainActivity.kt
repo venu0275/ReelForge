@@ -17,6 +17,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
+    override fun onStart() {
+        super.onStart()
+        com.reelforge.editor.work.AppVisibility.visible = true
+    }
+
+    override fun onStop() {
+        com.reelforge.editor.work.AppVisibility.visible = false
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

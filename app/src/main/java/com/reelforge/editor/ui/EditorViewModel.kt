@@ -77,6 +77,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import androidx.compose.runtime.mutableIntStateOf
@@ -2005,6 +2006,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 mutate { it.copy(texts = it.texts.filterNot { t -> t.id.startsWith(CAPTION_PREFIX) } + items) }
                 message = "Added ${items.size} captions. Tap one to fix a word or change the style."
+                com.reelforge.editor.work.WorkService.finished(ctx, "Captions are ready", "${items.size} captions added. Open CutMitra to check them.")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: java.io.IOException) {
@@ -2255,6 +2257,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     ).let(ProjectOps::clampFades)
                 }
                 message = "Clip reversed (it plays without sound). Undo brings the original back."
+                com.reelforge.editor.work.WorkService.finished(ctx, "Clip reversed", "Open CutMitra to keep editing.")
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -3110,8 +3113,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         val uri = withContext(Dispatchers.IO) {
                             MediaUtils.saveToGallery(ctx, output, name)
                         }
+                        com.reelforge.editor.work.WorkService.finished(
+                            ctx, "Your video is saved", "Tap to watch it. It is also in your gallery.", uri, video = true,
+                        )
                         ExportState.Done(uri)
                     } catch (e: Exception) {
+                        com.reelforge.editor.work.WorkService.finished(
+                            ctx, "Export did not finish", "Open CutMitra to try again.",
+                        )
                         ExportState.Failed(e.message ?: "Could not save the video")
                     }
                     finishExport()
@@ -3170,6 +3179,47 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------------ working in the background
+
+    /** The long job running now, as a title and a percent (null when none). */
+    private fun backgroundJob(): Pair<String, Int?>? {
+        val e = export
+        val pack = stickerPackProgress
+        return when {
+            e is ExportState.Running -> "Exporting your video" to e.progress
+            captionWork != null -> "Making captions" to (captionProgress * 100).toInt()
+            reverseWork != null -> "Reversing a clip" to reverseWork?.substringAfterLast(' ')?.removeSuffix("%")?.toIntOrNull()
+            soundWork != null -> (soundWork?.substringBefore('…') ?: "Working") to
+                soundWork?.substringAfterLast(' ')?.removeSuffix("%")?.toIntOrNull()
+            pack != null -> "Downloading stickers" to (pack.first * 100 / pack.second.coerceAtLeast(1))
+            else -> null
+        }
+    }
+
+    /** Stop in the notification: stops whatever long job is running. */
+    private fun stopAllWork() {
+        if (export is ExportState.Running) cancelExport()
+        if (captionWork != null) stopCaptions()
+        if (reverseWork != null) cancelReverse()
+        if (soundWork != null) cancelSoundWork()
+        if (stickerPackProgress != null) downloadAllStickers() // second call stops it
+    }
+
+    init {
+        // While a long job runs, a notification keeps the app going in the background and shows
+        // its progress; it goes away when the job ends.
+        viewModelScope.launch {
+            androidx.compose.runtime.snapshotFlow { backgroundJob() }
+                .distinctUntilChanged()
+                .collect { job ->
+                    if (job == null) com.reelforge.editor.work.WorkService.hide(ctx)
+                    else com.reelforge.editor.work.WorkService.show(ctx, job.first, job.second)
+                }
+        }
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        com.reelforge.editor.work.WorkService.onStopRequested = { main.post { stopAllWork() } }
+    }
+
     fun cancelExport() {
         transformer?.cancel()
         export = ExportState.Idle
@@ -3189,6 +3239,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        com.reelforge.editor.work.WorkService.onStopRequested = null
+        com.reelforge.editor.work.WorkService.hide(ctx)
         runCatching { booster?.release() }
         transformer?.cancel()
         runCatching { recorder?.release() }
