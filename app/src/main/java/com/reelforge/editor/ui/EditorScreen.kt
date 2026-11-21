@@ -2288,7 +2288,8 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         },
         title = { Text("Export video") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            // No scroll here: the dialog scrolls its message itself (a scroll inside a scroll crashes).
+            Column {
                 when (state) {
                     ExportState.Idle -> {
                         Text("Resolution")

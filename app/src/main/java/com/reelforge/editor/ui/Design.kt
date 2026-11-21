@@ -1,6 +1,8 @@
 package com.reelforge.editor.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -183,8 +185,10 @@ fun CutDialog(
             tonalElevation = 6.dp,
             modifier = modifier.widthIn(max = 420.dp),
         ) {
+            // Only the message scrolls, so the buttons always stay in view. Content passed in must
+            // not scroll by itself (a scroll inside a scroll crashes).
             Column(
-                Modifier.padding(horizontal = 22.dp, vertical = 20.dp).verticalScroll(rememberScrollState()),
+                Modifier.padding(horizontal = 22.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 if (icon != null) {
@@ -210,7 +214,15 @@ fun CutDialog(
                             textAlign = if (centred) TextAlign.Center else TextAlign.Start,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
-                    ) { Box(Modifier.fillMaxWidth(), contentAlignment = if (centred) Alignment.Center else Alignment.TopStart) { text() } }
+                    ) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(1f, fill = false)
+                                .verticalScroll(rememberScrollState()),
+                            contentAlignment = if (centred) Alignment.TopCenter else Alignment.TopStart,
+                        ) { text() }
+                    }
                     Spacer(Modifier.height(18.dp))
                 }
                 DialogButtons {
@@ -281,4 +293,170 @@ fun WideOutlinedButton(onClick: () -> Unit, content: @Composable androidx.compos
         shape = RoundedCornerShape(14.dp),
         content = content,
     )
+}
+
+// ------------------------------------------------------------------ inside the tools
+
+/**
+ * A big, clear action inside a tool ("Add text", "Record voice"): coloured icon, a name and a
+ * line saying what happens, across the full width.
+ */
+@Composable
+fun ActionCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    color: Color,
+    enabled: Boolean = true,
+    main: Boolean = false,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(16.dp),
+        color = if (main) color.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceVariant,
+        border = if (main) androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.55f)) else null,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).alpha(if (enabled) 1f else 0.4f),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(38.dp).background(if (main) color else color.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, null, tint = if (main) Color.Black else color, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (subtitle.isNotEmpty()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Icon(
+                androidx.compose.material.icons.Icons.AutoMirrored.Rounded.KeyboardArrowRight, null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** Several small actions side by side, each a tile with an icon (e.g. Add video / Add photo / Draw). */
+@Composable
+fun ActionRow(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
+}
+
+/** One of the small actions in an [ActionRow]. */
+@Composable
+fun androidx.compose.foundation.layout.RowScope.SmallAction(
+    label: String,
+    icon: ImageVector,
+    color: Color,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.weight(1f).alpha(if (enabled) 1f else 0.4f),
+    ) {
+        Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier.size(34.dp).background(color.copy(alpha = 0.18f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, tint = color, modifier = Modifier.size(19.dp)) }
+            Spacer(Modifier.height(5.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 2)
+        }
+    }
+}
+
+/**
+ * Something already in the video (a text, a layer, a sound), with Edit and Delete as icons.
+ * Tapping the card edits it too.
+ */
+@Composable
+fun ItemCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    color: Color,
+    onEdit: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
+) {
+    Surface(
+        onClick = { onEdit?.invoke() },
+        enabled = onEdit != null,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+    ) {
+        Row(Modifier.padding(start = 10.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(32.dp).background(color.copy(alpha = 0.18f), RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(icon, null, tint = color, modifier = Modifier.size(18.dp)) }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (onEdit != null) {
+                androidx.compose.material3.IconButton(onClick = onEdit) {
+                    Icon(androidx.compose.material.icons.Icons.Rounded.Edit, "Edit", modifier = Modifier.size(20.dp))
+                }
+            }
+            if (onDelete != null) {
+                androidx.compose.material3.IconButton(onClick = onDelete) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.Rounded.DeleteOutline, "Delete",
+                        tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A tip or explanation in a soft box with a light-bulb, so help text is easy to tell from settings. */
+@Composable
+fun TipBox(text: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            androidx.compose.material.icons.Icons.Rounded.Lightbulb, null,
+            tint = ToolColors.Style, modifier = Modifier.size(16.dp).padding(top = 1.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** A small "Delete all" style link, quiet but clear, at the end of a list. */
+@Composable
+fun QuietAction(label: String, icon: ImageVector, onClick: () -> Unit) {
+    androidx.compose.material3.TextButton(onClick = onClick) {
+        Icon(icon, null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label)
+    }
 }

@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -276,8 +277,8 @@ class ScreenshotTest {
 
         // 8. Text editor in landscape.
         tap("Text", scroll = true)
-        waitForText("Add text at playhead")
-        tap("Edit")
+        waitForText("Add text")
+        rule.onAllNodesWithContentDescription("Edit", useUnmergedTree = true)[0].performClick()
         waitForText("Colour")
         save("08_text_editor_landscape")
 
@@ -302,8 +303,8 @@ class ScreenshotTest {
             rule.onNodeWithContentDescription("Close tool").performClick()
             waitForText("Add to your video")
             tap("Layers", scroll = true)
-            waitForText("Add video")
-            tap("Edit")
+            waitForText("Photo / logo")
+            rule.onAllNodesWithContentDescription("Edit", useUnmergedTree = true)[0].performClick()
             waitForText("Edit video layer")
             save("12_video_layer_landscape")
             rule.onNodeWithContentDescription("Close tool").performClick()

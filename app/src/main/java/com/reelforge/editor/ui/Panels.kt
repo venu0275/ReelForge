@@ -55,7 +55,8 @@ import kotlin.math.roundToInt
 
 @Composable
 internal fun PanelTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
+    // The tool's name is in its header; inside, titles mark sections.
+    ToolSection(text, MaterialTheme.colorScheme.primary)
 }
 
 /** A slider that keeps its own value while dragging and reports it once on release. */
@@ -101,7 +102,6 @@ fun TrimPanel(vm: EditorViewModel, clip: Clip) {
         return
     }
 
-    PanelTitle("Trim")
     var range by remember(clip.id, clip.trimStartMs, clip.trimEndMs) {
         mutableStateOf(clip.trimStartMs.toFloat()..clip.trimEndMs.toFloat())
     }
@@ -147,7 +147,6 @@ private fun Clip.clampFades(): Clip = ProjectOps.clampFades(this)
 
 @Composable
 fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
-    PanelTitle("Speed")
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -175,7 +174,6 @@ fun SpeedPanel(vm: EditorViewModel, clip: Clip) {
 
 @Composable
 fun VolumePanel(vm: EditorViewModel, clip: Clip) {
-    PanelTitle("Volume")
     if (!clip.hasAudio) {
         Text("This clip has no audio track.")
         return
@@ -224,7 +222,6 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
 
 @Composable
 fun FilterPanel(vm: EditorViewModel, clip: Clip) {
-    PanelTitle("Filter")
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -247,7 +244,6 @@ fun FilterPanel(vm: EditorViewModel, clip: Clip) {
 
 @Composable
 fun AdjustPanel(vm: EditorViewModel, clip: Clip) {
-    PanelTitle("Adjust")
     CommitSlider("Brightness", clip.brightness, -0.5f..0.5f, { "%+.2f".format(it) }) { v ->
         vm.updateClip(clip.id) { it.copy(brightness = v) }
     }
@@ -382,34 +378,28 @@ fun TextPanel(
     val editing = project.texts.firstOrNull { it.id == editingId }
 
     if (editing == null) {
-        PanelTitle("Text and stickers")
         // The Add button stays at the top, however many texts there are.
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Button(onClick = newText) { Text("+ Add text at playhead") }
-            if (project.texts.isNotEmpty()) {
-                TextButton(onClick = { vm.deleteAllTexts() }) { Text("Delete all") }
-            }
-        }
+        ActionCard(
+            "Add text", "Type a title or words; it starts at the red line.",
+            androidx.compose.material.icons.Icons.Rounded.Add, ToolColors.Create, main = true, onClick = newText,
+        )
         if (project.texts.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
-            Text("Your texts (${project.texts.size})", style = MaterialTheme.typography.labelLarge)
+            PanelTitle("Your texts (${project.texts.size})")
         }
         // Listed in the order they appear in the video.
         project.texts.sortedBy { it.startMs }.forEach { t ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(t.text.replace("\n", " "), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(
-                        "${MediaUtils.formatTime(t.startMs)} – ${MediaUtils.formatTime(t.endMs)}",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                TextButton(onClick = { onEditing(t.id) }) { Text("Edit") }
-                TextButton(onClick = { vm.deleteText(t.id) }) { Text("Delete") }
-            }
+            ItemCard(
+                t.text.replace("\n", " "),
+                "${MediaUtils.formatTime(t.startMs)} – ${MediaUtils.formatTime(t.endMs)}",
+                androidx.compose.material.icons.Icons.Rounded.TextFields, ToolColors.Create,
+                onEdit = { onEditing(t.id) },
+                onDelete = { vm.deleteText(t.id) },
+            )
         }
-        Spacer(Modifier.height(12.dp))
-        Text("Stickers", style = MaterialTheme.typography.labelLarge)
+        if (project.texts.size > 1) {
+            QuietAction("Delete all texts", androidx.compose.material.icons.Icons.Rounded.DeleteSweep) { vm.deleteAllTexts() }
+        }
+        PanelTitle("Stickers")
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -420,10 +410,7 @@ fun TextPanel(
                 }
             }
         }
-        Text(
-            "Tip: tap any text or sticker on the video to edit it.",
-            style = MaterialTheme.typography.bodySmall,
-        )
+        TipBox("Tap any text or sticker on the video to edit it, or drag it to move it.")
         return
     }
 
@@ -689,14 +676,15 @@ private fun LabeledSlider(
 
 @Composable
 fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
-    PanelTitle("Background music")
     val music = project.music
     if (music == null) {
-        Text("Add a song or any audio file from your phone.")
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = pickAudio) { Text("Choose audio") }
+        ActionCard(
+            "Choose music", "Free songs, or any audio file on your phone.",
+            androidx.compose.material.icons.Icons.Rounded.MusicNote, ToolColors.Sound, main = true, onClick = pickAudio,
+        )
         return
     }
+    PanelTitle("Playing")
     Text(music.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
     val musicEnd = music.windowEnd(project.durationMs)
     Text(
@@ -781,50 +769,43 @@ fun LayerPanel(
     val editing = project.layers.firstOrNull { it.id == editingId }
 
     if (editing == null) {
-        PanelTitle("Layers")
-        if (project.layers.isEmpty() && project.videoLayers.isEmpty()) {
-            Text("Put a video, photo, logo or watermark on top of your video.")
+        val I = androidx.compose.material.icons.Icons.Rounded
+        Text(
+            "Put a video, photo, logo or watermark on top of your video, at the red line.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        ActionRow {
+            SmallAction("Video", I.VideoLibrary, ToolColors.Create, onClick = pickVideo)
+            SmallAction("Photo / logo", I.AddPhotoAlternate, ToolColors.Create, onClick = pickImage)
+            SmallAction("Draw", I.Brush, ToolColors.Create, onClick = draw)
+        }
+        if (project.layers.isNotEmpty() || project.videoLayers.isNotEmpty()) {
+            PanelTitle("On your video (${project.layers.size + project.videoLayers.size})")
         }
         project.videoLayers.forEachIndexed { i, layer ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Video ${i + 1}" + if (layer.chromaKey) " · green screen" else "")
-                    Text(
-                        "${MediaUtils.formatTime(layer.startMs)} – " +
-                            MediaUtils.formatTime(layer.startMs + layer.durationMs),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                TextButton(onClick = { onEditing(layer.id) }) { Text("Edit") }
-                TextButton(onClick = { vm.deleteVideoLayer(layer.id) }) { Text("Delete") }
-            }
+            ItemCard(
+                "Video ${i + 1}" + if (layer.chromaKey) " · green screen" else "",
+                "${MediaUtils.formatTime(layer.startMs)} – " + MediaUtils.formatTime(layer.startMs + layer.durationMs),
+                I.VideoLibrary, ToolColors.Create,
+                onEdit = { onEditing(layer.id) },
+                onDelete = { vm.deleteVideoLayer(layer.id) },
+            )
         }
         project.layers.forEachIndexed { i, layer ->
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Layer ${i + 1}")
-                    Text(
-                        "${MediaUtils.formatTime(layer.startMs)} – ${MediaUtils.formatTime(layer.endMs)}",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                TextButton(onClick = { onEditing(layer.id) }) { Text("Edit") }
-                TextButton(onClick = { vm.deleteLayer(layer.id) }) { Text("Delete") }
-            }
+            ItemCard(
+                "Layer ${i + 1}",
+                "${MediaUtils.formatTime(layer.startMs)} – ${MediaUtils.formatTime(layer.endMs)}",
+                I.Layers, ToolColors.Create,
+                onEdit = { onEditing(layer.id) },
+                onDelete = { vm.deleteLayer(layer.id) },
+            )
         }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = pickVideo) { Text("Add video") }
-            Button(onClick = pickImage) { Text("Add image") }
-            TextButton(onClick = draw) { Text("Draw") }
-            if (project.layers.isNotEmpty()) {
-                TextButton(onClick = { vm.deleteAllLayers() }) { Text("Delete all") }
-            }
+        if (project.layers.size > 1) {
+            QuietAction("Delete all layers", I.DeleteSweep) { vm.deleteAllLayers() }
         }
-        Text(
-            "Tip: tap any layer on the video to edit it.",
-            style = MaterialTheme.typography.bodySmall,
-        )
+        TipBox("Tap any layer on the video to edit it; drag or pinch it to move and resize.")
         return
     }
 
@@ -877,17 +858,17 @@ fun AudioPanel(
     pickSound: () -> Unit,
     pickVideoSound: () -> Unit = {},
 ) {
-    PanelTitle("Voice-over and sounds")
     if (vm.isRecording) {
         Text("Recording… the video is playing so you can speak along with it.")
         Spacer(Modifier.height(8.dp))
         Button(onClick = { vm.stopRecording() }) { Text("Stop recording") }
         return
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = record) { Text("Record at playhead") }
-        TextButton(onClick = pickSound) { Text("Add audio file") }
-    }
+    val I = androidx.compose.material.icons.Icons.Rounded
+    ActionCard(
+        "Record voice-over", "Speak while the video plays, from the red line.",
+        I.Mic, ToolColors.Sound, main = true, onClick = record,
+    )
     val soundWork = vm.soundWork
     if (soundWork != null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -895,13 +876,16 @@ fun AudioPanel(
             TextButton(onClick = { vm.cancelSoundWork() }) { Text("Cancel") }
         }
     } else {
-        OutlinedButton(onClick = pickVideoSound) { Text("🎵 Sound from a video") }
-        Text(
-            "Takes the sound out of any video on your phone and adds it at the red line. To take the " +
-                "sound out of a clip on the timeline, select the clip and tap Extract sound.",
-            style = MaterialTheme.typography.bodySmall,
+        ActionRow {
+            SmallAction("Audio file", I.AudioFile, ToolColors.Sound, onClick = pickSound)
+            SmallAction("Sound from a video", I.LibraryMusic, ToolColors.Sound, onClick = pickVideoSound)
+        }
+        TipBox(
+            "Sound from a video takes the sound of any video on your phone. For a clip already on the " +
+                "timeline, select it and tap Extract sound."
         )
     }
+    PanelTitle("Recording")
     Text("Countdown before recording", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(0, 3, 5).forEach { sec ->
@@ -1049,7 +1033,6 @@ private fun MotionControls(
 /** What fills the bars around clips that do not fill the frame. */
 @Composable
 fun BackgroundPanel(vm: EditorViewModel, project: Project) {
-    PanelTitle("Backdrop")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Background.entries.forEach { b ->
             FilterChip(
@@ -1357,7 +1340,6 @@ fun DuckSlider(vm: EditorViewModel, project: Project?) {
  */
 @Composable
 fun CaptionsPanel(vm: EditorViewModel, project: Project) {
-    PanelTitle("Auto captions")
     var language by remember { mutableStateOf(com.reelforge.editor.engine.CaptionLanguage.EN_IN) }
     val hasVoice = project.audio.any { it.voice }
     val hasVideoSound = project.clips.any { it.type == ClipType.VIDEO && it.hasAudio && !it.muted }
@@ -1368,6 +1350,7 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
 
     val work = vm.captionWork
     if (work != null) {
+        PanelTitle("Working")
         Text(work)
         androidx.compose.material3.LinearProgressIndicator(
             progress = { vm.captionProgress },
@@ -1381,7 +1364,7 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
         return
     }
 
-    Text("Spoken language", style = MaterialTheme.typography.labelLarge)
+    PanelTitle("1. Spoken language")
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1396,22 +1379,22 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
         style = MaterialTheme.typography.bodySmall,
     )
 
-    Spacer(Modifier.height(8.dp))
-    Text("Listen to", style = MaterialTheme.typography.labelLarge)
+    PanelTitle("2. Listen to")
     SwitchRow("The video's own sound", fromVideo && hasVideoSound) { fromVideo = it }
     SwitchRow("Voice-overs", fromVoice && hasVoice) { fromVoice = it }
 
     val useVideo = fromVideo && hasVideoSound
     val useVoice = fromVoice && hasVoice
-    Spacer(Modifier.height(8.dp))
-    Button(
-        onClick = { vm.makeCaptions(language, useVideo, useVoice) },
-        enabled = useVideo || useVoice,
-    ) { Text(if (vm.autoCaptionCount > 0) "Make captions again" else "Make captions") }
-    Text(
-        "Captions appear as text on the timeline: tap one to fix a word, or use the Text tool to " +
-            "change the style. Clear speech without music works best.",
-        style = MaterialTheme.typography.bodySmall,
+    PanelTitle("3. Make them")
+    ActionCard(
+        if (vm.autoCaptionCount > 0) "Make captions again" else "Make captions",
+        if (ready) "Runs on your phone; takes about as long as the video." else "Downloads the speech model first.",
+        androidx.compose.material.icons.Icons.Rounded.ClosedCaption, ToolColors.Create,
+        enabled = useVideo || useVoice, main = true,
+    ) { vm.makeCaptions(language, useVideo, useVoice) }
+    TipBox(
+        "Captions appear as texts on the timeline: tap one to fix a word, or use the Text tool to " +
+            "change the style. Clear speech without music works best."
     )
     if (vm.autoCaptionCount > 0) {
         Spacer(Modifier.height(8.dp))

@@ -82,7 +82,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /** One finger stroke; points are fractions (0..1) of the frame width and height. */
-class DrawStroke(val color: Int, val points: List<Offset>)
+/** One pen line; [width] is a share of the picture's height. */
+class DrawStroke(val color: Int, val points: List<Offset>, val width: Float = 0.012f)
 
 private const val SCRUB_INTERVAL_MS = 90L
 
@@ -926,6 +927,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     strokes.forEach { stroke ->
                         if (stroke.points.isEmpty()) return@forEach
                         paint.color = stroke.color
+                        paint.strokeWidth = h * stroke.width
                         val path = android.graphics.Path()
                         stroke.points.forEachIndexed { i, pt ->
                             if (i == 0) path.moveTo(pt.x * w, pt.y * h) else path.lineTo(pt.x * w, pt.y * h)

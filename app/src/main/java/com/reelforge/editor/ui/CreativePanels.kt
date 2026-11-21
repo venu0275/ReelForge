@@ -77,7 +77,6 @@ private fun Working(text: String, onStop: () -> Unit) {
 /** Slow pan / zoom for a photo clip (Ken Burns). */
 @Composable
 fun PhotoZoomPanel(vm: EditorViewModel, clip: Clip) {
-    PanelTitle("Photo zoom")
     Text("Slowly moves over the photo while it shows, so a slideshow feels alive.")
     Spacer(Modifier.height(8.dp))
     ChipChoices(PhotoMotion.entries, clip.motion, { it.label }) { vm.setPhotoMotion(clip.id, it) }
@@ -155,7 +154,6 @@ fun BeatSyncSection(vm: EditorViewModel, project: Project) {
 /** Ready-made looks applied to the clips already added. */
 @Composable
 fun TemplatesPanel(vm: EditorViewModel, project: Project, onDone: () -> Unit) {
-    PanelTitle("Templates")
     var picked by remember { mutableStateOf<String?>(null) }
     val template = picked?.let { Templates.byId(it) }
     if (template == null) {
@@ -215,7 +213,6 @@ fun TemplatesPanel(vm: EditorViewModel, project: Project, onDone: () -> Unit) {
 /** A cover (thumbnail) picture with a title, saved to the gallery. */
 @Composable
 fun CoverPanel(vm: EditorViewModel, project: Project) {
-    PanelTitle("Cover")
     var title by remember { mutableStateOf(project.name) }
     var style by remember { mutableStateOf(CoverStyle.BOTTOM) }
     var picture by remember { mutableStateOf<Uri?>(null) }
@@ -267,7 +264,6 @@ fun CoverPanel(vm: EditorViewModel, project: Project) {
 /** Ratio: the shape of the video. */
 @Composable
 fun RatioPanel(vm: EditorViewModel, project: com.reelforge.editor.model.Project) {
-    PanelTitle("Ratio")
     Text(
         "The shape of your video. Clips that are a different shape get bars (or the Backdrop) around " +
             "them; select a clip and tap Fill to fill the frame instead.",
