@@ -122,29 +122,31 @@ class PluginsDeviceTest {
     @Test
     fun pluginStore_everyPartShowsWithoutErrors() {
         val vm = newViewModel()
+        // The effect cards animate all the time, so the screen is never "idle": move the clock by hand.
+        rule.mainClock.autoAdvance = false
         rule.setContent {
             androidx.compose.foundation.layout.Column(
                 androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
             ) { PluginsPanel(vm) }
         }
-        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
         for (part in listOf("effects", "captions", "audio", "ai", "fonts", "text", "mine", "all")) {
             rule.onNodeWithTag("plugins_$part", useUnmergedTree = true).performScrollTo().performClick()
-            rule.waitForIdle()
-            Thread.sleep(300)
+            rule.mainClock.advanceTimeBy(1_000)
         }
         // Effects play their live preview; fonts list every language.
         rule.onNodeWithTag("plugins_effects", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(1_000)
         assertTrue(rule.onAllNodesWithTag("effect_diwali").fetchSemanticsNodes().isNotEmpty())
         assertTrue(rule.onAllNodesWithTag("effect_bubbles").fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("plugins_fonts", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(1_000)
         assertTrue(rule.onAllNodesWithText("Telugu fonts").fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("plugins_captions", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(1_000)
         assertTrue(rule.onAllNodesWithTag("speech_te").fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("plugins_audio", useUnmergedTree = true).performScrollTo().performClick()
+        rule.mainClock.advanceTimeBy(1_000)
         // AI Voice starts the phone's speech engine; it either finds voices or says there is none.
         waitUntil(20_000, "speech engine") { vm.voiceEngineReady != null }
         Log.i("ReelForgeTest", "speech engine ready=${read { vm.voiceEngineReady }} voices=${read { vm.aiVoices.size }}")
@@ -190,7 +192,8 @@ class PluginsDeviceTest {
         assertEquals(NoiseRemoval.OFF, read { vm.project!!.clips[0].denoise }) // a photo has no sound
 
         // Super Resolution swaps the small photo for a sharper copy four times its size.
-        onMain { vm.sharpenPhotos(listOf(read { vm.project!!.clips[0].id }), emptyList()) }
+        val photoId = read { vm.project!!.clips[0].id }
+        onMain { vm.sharpenPhotos(listOf(photoId), emptyList()) }
         waitUntil(180_000, "sharpen finished") { vm.enhanceWork == null && "/sharper/" in vm.project!!.clips[0].uri }
         val sharper = Uri.parse(read { vm.project!!.clips[0].uri })
         assertEquals(1200 to 800, MediaUtils.photoSize(context, sharper))
