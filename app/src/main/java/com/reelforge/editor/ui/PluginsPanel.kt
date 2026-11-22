@@ -66,8 +66,8 @@ import kotlinx.coroutines.withContext
 
 /** The parts of the plug-in store, shown as chips across the top. */
 private enum class PluginPart(val label: String) {
-    ALL("All"), EFFECTS("Effects"), CAPTIONS("Caption languages"), AUDIO("Audio"), FONTS("Fonts"),
-    TEXT("Text presets"), MINE("My plug-ins"),
+    ALL("All"), EFFECTS("Effects"), CAPTIONS("Caption languages"), AUDIO("Audio"), AI("AI photo"),
+    FONTS("Fonts"), TEXT("Text presets"), MINE("My plug-ins"),
 }
 
 /**
@@ -97,7 +97,12 @@ fun PluginsPanel(vm: EditorViewModel) {
             CaptionLanguage.entries.filter { it.group == "India" }.take(4).forEach { SpeechCard(vm, it) }
             TextButton(onClick = { part = PluginPart.CAPTIONS }) { Text("See all ${CaptionLanguage.entries.size} languages") }
             SectionTitle("Audio", "Built in")
+            AudioTeaser { part = PluginPart.AUDIO }
             NoiseRemoverCard(vm)
+            if (vm.superResolutionReady) {
+                SectionTitle("AI photo", "Built in")
+                SuperResolutionCard(vm)
+            }
             SectionTitle("Fonts by language", "Free download")
             vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }.take(3).forEach { FontPackCard(vm, it) }
             TextButton(onClick = { part = PluginPart.FONTS }) { Text("See all font packs") }
@@ -152,7 +157,12 @@ fun PluginsPanel(vm: EditorViewModel) {
                     "free offline speech model for them that fits on a phone. We will add them when there is.",
             )
         }
-        PluginPart.AUDIO -> NoiseRemoverCard(vm)
+        PluginPart.AI -> if (vm.superResolutionReady) SuperResolutionCard(vm)
+        else TipBox("Super Resolution is not in this version of the app.")
+        PluginPart.AUDIO -> {
+            AiVoicePanel(vm)
+            NoiseRemoverCard(vm)
+        }
         PluginPart.MINE -> MyPlugins(vm) { part = PluginPart.FONTS }
     }
 }
@@ -490,6 +500,33 @@ private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
 
 // ---------------------------------------------------------------- audio
 
+/** A small card that opens AI Voice (it is big, so the All page only points to it). */
+@Composable
+private fun AudioTeaser(open: () -> Unit) {
+    Surface(
+        onClick = open,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Sound.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.RecordVoiceOver, null, tint = ToolColors.Sound) }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("AI Voice", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "Type words, hear them in Hindi, Telugu, Tamil, English and more.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Icon(Icons.Rounded.ChevronRight, null)
+        }
+    }
+}
+
 @Composable
 private fun NoiseRemoverCard(vm: EditorViewModel) {
     val clips = vm.project?.clips.orEmpty().filter { it.type == com.reelforge.editor.model.ClipType.VIDEO && it.hasAudio }
@@ -552,6 +589,53 @@ private fun NoiseRemoverCard(vm: EditorViewModel) {
     }
 }
 
+// ---------------------------------------------------------------- AI photo
+
+@Composable
+private fun SuperResolutionCard(vm: EditorViewModel) {
+    val (clips, layers) = vm.photosToSharpen()
+    val count = clips.size + layers.size
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("super_resolution_card"),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Look.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.AutoFixHigh, null, tint = ToolColors.Look) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Super Resolution", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Makes small, old or blurry photos 4x bigger and sharper. Built in · works offline.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (count == 0) {
+                Text(
+                    "Add a photo to your video, then come back. For one photo: select it, then Make sharper.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                SharpenRow(vm, "✨ Make all $count photo${if (count == 1) "" else "s"} sharper") {
+                    vm.sharpenPhotos(clips, layers)
+                }
+                Text(
+                    "Photos that are already large are left as they are. Works on photos, not videos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- mine
 
 @Composable
@@ -607,7 +691,7 @@ private fun MyPlugins(vm: EditorViewModel, openFonts: () -> Unit) {
     }
     SectionTitle("Built in", "Always available")
     Text(
-        "${SceneEffect.entries.size} effects, ${TextPresets.ALL.size} text presets and the noise remover. " +
+        "${SceneEffect.entries.size} effects, ${TextPresets.ALL.size} text presets, AI Voice and the noise remover. " +
             "They take no space and work without internet.",
         style = MaterialTheme.typography.bodySmall,
     )

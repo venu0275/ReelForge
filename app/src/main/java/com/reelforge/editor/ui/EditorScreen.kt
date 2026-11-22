@@ -981,6 +981,12 @@ private fun EditorMenu(
                     ToolTile("Adjust", I.Tune, ToolColors.Look) { openPanel(Panel.ADJUST) }
                     ToolTile("Fade", I.Gradient, ToolColors.Look) { openPanel(Panel.FADE) }
                     if (!isVideo) ToolTile("Photo zoom", I.ZoomIn, ToolColors.Look) { openPanel(Panel.PHOTO_ZOOM) }
+                    if (!isVideo && vm.superResolutionReady) {
+                        val working = vm.enhanceWork
+                        ToolTile(working ?: "Make sharper", I.AutoFixHigh, ToolColors.Look, active = working != null) {
+                            if (working != null) vm.cancelSharpen() else vm.sharpenPhotos(listOf(id), emptyList())
+                        }
+                    }
                 }
                 ToolGroup("Frame", ToolColors.Frame) {
                     ToolTile(if (clip.fill) "Fit" else "Fill", if (clip.fill) I.FitScreen else I.Fullscreen, ToolColors.Frame) {

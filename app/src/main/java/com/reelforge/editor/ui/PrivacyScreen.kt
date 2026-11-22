@@ -72,7 +72,11 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
         "• Remove background: the first time you use it, a cut-out model is downloaded once from Google's " +
             "public model storage (storage.googleapis.com). Your pictures and videos are processed on your " +
             "phone and never uploaded. Google receives a normal web request, which includes your IP address.",
-        "• Clean voice: noise removal uses your phone's own audio features and the app's code, on your phone.",
+        "• Clean voice and Noise remover: noise removal uses your phone's own audio features and the app's code, on your phone.",
+        "• AI Voice: the words you type are turned into speech by your phone's own text-to-speech engine " +
+            "(for example Speech Services by Google), using voices stored on the phone. If you choose to " +
+            "download a voice, that happens in your phone's speech settings.",
+        "• Super Resolution: photos are made sharper by a model built into the app, on your phone. Nothing is uploaded.",
         "• Update check: when the app opens, it asks the Google Play Store app on your phone whether a " +
             "newer version is available. This is handled by Google Play under Google's privacy policy; the " +
             "app sends nothing of yours.",

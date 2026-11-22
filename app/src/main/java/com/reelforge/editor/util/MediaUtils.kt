@@ -137,6 +137,15 @@ object MediaUtils {
         }
     }
 
+    /** A photo's width and height in pixels, without loading it; null if it cannot be read. */
+    fun photoSize(context: Context, uri: Uri): Pair<Int, Int>? = try {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth > 0 && bounds.outHeight > 0) bounds.outWidth to bounds.outHeight else null
+    } catch (e: Exception) {
+        null
+    }
+
     fun decodeImage(context: Context, uri: Uri, maxSide: Int): Bitmap? = try {
         val source = ImageDecoder.createSource(context.contentResolver, uri)
         ImageDecoder.decodeBitmap(source) { decoder, info, _ ->

@@ -613,6 +613,34 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun superResolution_makesPhotosFourTimesBigger() {
+        val sr = com.reelforge.editor.engine.SuperResolution
+        assertTrue(sr.isBundled(context))
+        sr.Upscaler(context).use { up ->
+            // A small picture with a sharp edge: left half red, right half blue.
+            val small = android.graphics.Bitmap.createBitmap(150, 90, android.graphics.Bitmap.Config.ARGB_8888)
+            for (y in 0 until 90) for (x in 0 until 150) small.setPixel(x, y, if (x < 75) red else blue)
+            var last = 0f
+            val big = up.upscale(small, { last = it })
+            assertEquals(600, big.width)
+            assertEquals(360, big.height)
+            assertEquals(1f, last, 1e-6f)
+            assertColour("left stays red", red, big.getPixel(100, 180), tolerance = 40)
+            assertColour("right stays blue", blue, big.getPixel(500, 180), tolerance = 40)
+            // Tiny and see-through pictures work too, and see-through stays see-through.
+            val tiny = android.graphics.Bitmap.createBitmap(10, 6, android.graphics.Bitmap.Config.ARGB_8888)
+            tiny.eraseColor(0x00000000)
+            val tinyBig = up.upscale(tiny)
+            assertEquals(40, tinyBig.width)
+            assertEquals(0, tinyBig.getPixel(20, 12) ushr 24)
+            // Stopping works.
+            var threw = false
+            try { up.upscale(small, stop = { true }) } catch (e: kotlinx.coroutines.CancellationException) { threw = true }
+            assertTrue(threw)
+        }
+    }
+
+    @Test
     fun extractSound_writesTheClipsSoundAndExportsWithIt() {
         val source = videoClip(baseVideo(2_000))
         val out = File(context.cacheDir, "extract_${System.nanoTime()}.m4a")

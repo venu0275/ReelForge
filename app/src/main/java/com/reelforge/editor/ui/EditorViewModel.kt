@@ -1997,19 +1997,24 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     var isSpeaking by mutableStateOf(false)
         private set
 
-    /** Turns typed text into a spoken sound clip at the playhead, using the phone's own voice. */
+    /** Turns typed text into a spoken sound clip at the playhead, with the AI Voice settings. */
     fun speakText(text: String) {
-        val words = text.trim()
+        val words = text.trim().take(3_900)
         if (words.isEmpty() || isSpeaking || project == null) return
         val start = playheadMs
         val dir = File(ctx.filesDir, "voice").apply { mkdirs() }
         val file = File(dir, "speech_${System.currentTimeMillis()}.wav")
         isSpeaking = true
-        SpeechMaker.speak(ctx, words, file) { ok ->
+        stopVoicePreview()
+        SpeechMaker.speak(ctx, words, file, aiVoiceName, aiRate, aiPitch) { ok ->
             if (!ok) {
                 isSpeaking = false
                 file.delete()
-                message = "This phone has no text-to-speech voice installed"
+                toast(
+                    if (aiVoiceName != null) "That voice could not speak. Download it in the phone's speech settings, or pick another."
+                    else "This phone has no text-to-speech voice installed",
+                    ToastKind.ERROR,
+                )
                 return@speak
             }
             viewModelScope.launch {
@@ -2017,12 +2022,105 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val duration = withContext(Dispatchers.IO) { MediaUtils.audioDurationMs(ctx, uri) }
                 isSpeaking = false
                 val clip = AudioClip(
-                    uri = uri.toString(), title = "Speech: " + words.take(18), startMs = start, durationMs = duration,
+                    uri = uri.toString(), title = "AI voice: " + words.take(18), startMs = start, durationMs = duration,
                     voice = true,
                 )
                 mutate { it.copy(audio = it.audio + clip) }
+                toast("Voice added at the red line", undo = true)
             }
         }
+    }
+
+    // ------------------------------------------------------------ AI voice
+
+    private var voiceEngine: android.speech.tts.TextToSpeech? = null
+
+    /** null while the phone's speech engine starts, false when there is none. */
+    var voiceEngineReady by mutableStateOf<Boolean?>(null)
+        private set
+
+    /** The phone's offline voices in the languages AI Voice offers. */
+    var aiVoices by mutableStateOf<List<com.reelforge.editor.util.AiVoice>>(emptyList())
+        private set
+
+    /** The chosen voice (null = the phone's default). */
+    var aiVoiceName by mutableStateOf<String?>(null)
+    var aiRate by mutableFloatStateOf(1f)
+    var aiPitch by mutableFloatStateOf(1f)
+    var previewingVoice by mutableStateOf(false)
+        private set
+
+    /** Starts the speech engine (once) and lists its voices. Call again after voices are downloaded. */
+    fun loadAiVoices(again: Boolean = false) {
+        if (voiceEngine != null && !again) return
+        runCatching { voiceEngine?.shutdown() }
+        voiceEngineReady = null
+        var engine: android.speech.tts.TextToSpeech? = null
+        engine = android.speech.tts.TextToSpeech(ctx) { status ->
+            val tts = engine
+            if (status != android.speech.tts.TextToSpeech.SUCCESS || tts == null) {
+                voiceEngineReady = false
+                return@TextToSpeech
+            }
+            val infos = runCatching { tts.voices.orEmpty() }.getOrDefault(emptySet()).map { v ->
+                com.reelforge.editor.util.VoiceInfo(
+                    v.name, v.locale.toLanguageTag(), v.isNetworkConnectionRequired,
+                    android.speech.tts.TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in v.features.orEmpty(),
+                )
+            }
+            aiVoices = com.reelforge.editor.util.AiVoices.choose(infos)
+            if (aiVoiceName != null && aiVoices.none { it.name == aiVoiceName }) aiVoiceName = null
+            tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+                override fun onDone(utteranceId: String?) {
+                    viewModelScope.launch { previewingVoice = false }
+                }
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    viewModelScope.launch { previewingVoice = false }
+                }
+            })
+            voiceEngineReady = true
+        }
+        voiceEngine = engine
+    }
+
+    /** Plays [text] (or a sample) with the chosen voice, speed and pitch, without adding anything. */
+    fun previewVoice(text: String) {
+        val tts = voiceEngine ?: return
+        if (previewingVoice) {
+            stopVoicePreview()
+            return
+        }
+        val voice = aiVoices.firstOrNull { it.name == aiVoiceName }
+        val words = text.trim().ifEmpty { sampleFor(voice?.language) }.take(400)
+        runCatching {
+            tts.voices?.firstOrNull { it.name == aiVoiceName }?.let { tts.voice = it }
+            tts.setSpeechRate(aiRate)
+            tts.setPitch(aiPitch)
+            pause()
+            previewingVoice = tts.speak(words, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "preview") ==
+                android.speech.tts.TextToSpeech.SUCCESS
+        }
+    }
+
+    fun stopVoicePreview() {
+        runCatching { voiceEngine?.stop() }
+        previewingVoice = false
+    }
+
+    private fun sampleFor(language: String?): String = when (language) {
+        "hi-IN" -> "नमस्ते दोस्तों, मेरे चैनल में आपका स्वागत है।"
+        "te-IN" -> "నమస్కారం మిత్రులారా, నా ఛానెల్‌కి స్వాగతం."
+        "ta-IN" -> "வணக்கம் நண்பர்களே, என் சேனலுக்கு வரவேற்கிறேன்."
+        "kn-IN" -> "ನಮಸ್ಕಾರ ಸ್ನೇಹಿತರೆ, ನನ್ನ ಚಾನೆಲ್‌ಗೆ ಸ್ವಾಗತ."
+        "ml-IN" -> "നമസ്കാരം സുഹൃത്തുക്കളെ, എന്റെ ചാനലിലേക്ക് സ്വാഗതം."
+        "mr-IN" -> "नमस्कार मित्रांनो, माझ्या चॅनेलवर आपले स्वागत आहे."
+        "bn-IN" -> "নমস্কার বন্ধুরা, আমার চ্যানেলে স্বাগতম।"
+        "gu-IN" -> "નમસ્તે મિત્રો, મારી ચેનલમાં આપનું સ્વાગત છે."
+        "pa-IN" -> "ਸਤ ਸ੍ਰੀ ਅਕਾਲ ਦੋਸਤੋ, ਮੇਰੇ ਚੈਨਲ ਵਿੱਚ ਜੀ ਆਇਆਂ ਨੂੰ।"
+        "ur-IN" -> "آداب دوستو، میرے چینل میں خوش آمدید۔"
+        else -> "Hi friends, welcome to my channel. Don't forget to subscribe."
     }
 
     fun updateAudioClip(id: String, block: (AudioClip) -> AudioClip) = mutate { p ->
@@ -2472,6 +2570,117 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 postStatus(cutoutHandler, "Downloading the cut-out model… $pct%") { cutoutWork = it }
             }
         }
+    }
+
+    // ------------------------------------------------------------ super resolution
+
+    /** What is shown while photos are made sharper (null when idle). */
+    var enhanceWork by mutableStateOf<String?>(null)
+        private set
+    var enhanceProgress by mutableFloatStateOf(0f)
+        private set
+    private var enhanceJob: Job? = null
+
+    /** True when this build carries the Super Resolution model. */
+    val superResolutionReady: Boolean by lazy { com.reelforge.editor.engine.SuperResolution.isBundled(ctx) }
+
+    /** Photo clips and picture layers that are small enough to gain from Super Resolution. */
+    fun photosToSharpen(): Pair<List<String>, List<String>> {
+        val p = project ?: return emptyList<String>() to emptyList()
+        return p.clips.filter { it.type == ClipType.IMAGE }.map { it.id } to
+            p.layers.filter { it.button == null }.map { it.id }
+    }
+
+    /**
+     * Makes the given photo clips and picture layers four times sharper, one after another, and
+     * swaps each for its sharper copy (Undo brings the old one back). Photos that are already large
+     * are left as they are.
+     */
+    fun sharpenPhotos(clipIds: List<String>, layerIds: List<String>) {
+        if (enhanceJob?.isActive == true || project == null) return
+        if (!superResolutionReady) {
+            toast("Super Resolution is not in this version of the app", ToastKind.ERROR)
+            return
+        }
+        val items = clipIds.map { true to it } + layerIds.map { false to it }
+        if (items.isEmpty()) {
+            toast("Add a photo first", ToastKind.INFO)
+            return
+        }
+        pause()
+        enhanceProgress = 0f
+        enhanceJob = viewModelScope.launch {
+            var sharpened = 0
+            var skipped = 0
+            try {
+                val upscaler = withContext(Dispatchers.IO) { com.reelforge.editor.engine.SuperResolution.Upscaler(ctx) }
+                upscaler.use { up ->
+                    items.forEachIndexed { index, (isClip, id) ->
+                        val p = project ?: return@forEachIndexed
+                        val uri = (if (isClip) p.clips.firstOrNull { it.id == id }?.uri
+                        else p.layers.firstOrNull { it.id == id }?.uri) ?: return@forEachIndexed
+                        val label = if (items.size == 1) "Making the photo sharper" else "Photo ${index + 1} of ${items.size}"
+                        enhanceWork = "$label… 0%"
+                        val file = withContext(Dispatchers.Default) {
+                            val size = MediaUtils.photoSize(ctx, Uri.parse(uri))
+                            if (size != null && !com.reelforge.editor.engine.SuperResolution.worthIt(size.first, size.second)) {
+                                return@withContext null
+                            }
+                            val photo = MediaUtils.decodeImage(ctx, Uri.parse(uri), com.reelforge.editor.engine.SuperResolution.ALREADY_SHARP)
+                                ?: return@withContext null
+                            val big = up.upscale(photo, { f ->
+                                val whole = (index + f) / items.size
+                                postStatus(cutoutHandler, "$label… ${(f * 100).toInt()}%") { enhanceWork = it }
+                                cutoutHandler.post { enhanceProgress = whole }
+                            }, { !isActive })
+                            val dir = File(ctx.filesDir, "sharper").apply { mkdirs() }
+                            val alpha = photo.hasAlpha()
+                            File(dir, "photo_${System.currentTimeMillis()}.${if (alpha) "png" else "jpg"}").also { f ->
+                                f.outputStream().use {
+                                    big.compress(if (alpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 95, it)
+                                }
+                                big.recycle()
+                                photo.recycle()
+                            }
+                        }
+                        if (file == null) {
+                            skipped++
+                            return@forEachIndexed
+                        }
+                        val newUri = Uri.fromFile(file).toString()
+                        if (isClip) updateClip(id) { it.copy(uri = newUri) }
+                        else updateLayer(id) { it.copy(uri = newUri) }
+                        sharpened++
+                    }
+                }
+                toast(
+                    when {
+                        sharpened == 0 -> "These photos are already sharp (large enough), so nothing changed."
+                        skipped > 0 -> "$sharpened photo${if (sharpened == 1) "" else "s"} made sharper; $skipped already sharp."
+                        else -> "Photo${if (sharpened == 1) "" else "s"} made 4x sharper. Use Undo to go back."
+                    },
+                    if (sharpened == 0) ToastKind.INFO else ToastKind.SUCCESS,
+                    undo = sharpened > 0,
+                )
+                if (sharpened > 0) com.reelforge.editor.work.WorkService.finished(ctx, "Photos are sharper", "$sharpened photo(s) done.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                toast("Stopped. Photos already done stay sharper.", ToastKind.INFO)
+                throw e
+            } catch (e: OutOfMemoryError) {
+                toast("This phone ran out of memory for that photo", ToastKind.ERROR)
+            } catch (e: Throwable) {
+                android.util.Log.e("CutMitra", "Super resolution failed", e)
+                toast("Could not make this photo sharper on this phone", ToastKind.ERROR)
+            } finally {
+                cutoutHandler.removeCallbacksAndMessages(null)
+                enhanceWork = null
+                enhanceProgress = 0f
+            }
+        }
+    }
+
+    fun cancelSharpen() {
+        enhanceJob?.cancel()
     }
 
     /** Removes the background around the person in a picture layer. */
@@ -3634,6 +3843,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             soundWork != null -> (soundWork?.substringBefore('…') ?: "Working") to
                 soundWork?.substringAfterLast(' ')?.removeSuffix("%")?.toIntOrNull()
             pack != null -> "Downloading stickers" to (pack.first * 100 / pack.second.coerceAtLeast(1))
+            enhanceWork != null -> "Making photos sharper" to (enhanceProgress * 100).toInt()
             else -> null
         }
     }
@@ -3681,6 +3891,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        runCatching { voiceEngine?.shutdown() }
         com.reelforge.editor.work.WorkService.onStopRequested = null
         com.reelforge.editor.work.WorkService.hide(ctx)
         runCatching { booster?.release() }

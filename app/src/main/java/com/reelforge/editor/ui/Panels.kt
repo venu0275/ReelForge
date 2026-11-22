@@ -818,6 +818,7 @@ fun LayerPanel(
     }
     CutRow(vm.canCut(editing.startMs, editing.endMs)) { cut -> vm.cutLayer(id, cut) }
     RemoveBackgroundRow(vm, video = false) { vm.removeImageBackground(id) }
+    if (vm.superResolutionReady) SharpenRow(vm) { vm.sharpenPhotos(emptyList(), listOf(id)) }
     LabeledSlider("Size", editing.scale, 0.05f..1f) { v -> vm.updateLayer(id) { it.copy(scale = v) } }
     PoseControls(vm, ItemKind.LAYER, id)
     TimeRange(editing.startMs, editing.endMs, project.durationMs) { s, e ->
@@ -947,25 +948,8 @@ fun AudioPanel(
     Spacer(Modifier.height(8.dp))
     DuckSlider(vm, project)
     Spacer(Modifier.height(8.dp))
-    var speech by remember { mutableStateOf("") }
-    OutlinedTextField(
-        value = speech,
-        onValueChange = { speech = it },
-        label = { Text("Type words to be spoken") },
-        modifier = Modifier.fillMaxWidth(),
-        maxLines = 3,
-    )
+    AiVoicePanel(vm)
     val hint = LocalHint.current
-    Button(
-        onClick = {
-            when {
-                vm.isSpeaking -> hint("Still creating the last voice, one moment")
-                speech.isBlank() -> hint("Type the words to be spoken first")
-                else -> vm.speakText(speech)
-            }
-        },
-        modifier = Modifier.alpha(if (speech.isNotBlank() && !vm.isSpeaking) 1f else 0.5f),
-    ) { Text(if (vm.isSpeaking) "Creating voice…" else "Add as spoken voice") }
     project.audio.forEach { clip ->
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1191,6 +1175,29 @@ private fun RemoveBackgroundRow(vm: EditorViewModel, video: Boolean, onRemove: (
             "take about as long as the video). First time only: downloads a ${com.reelforge.editor.engine.CutOut.MODEL_MB} MB model."
         else "Keeps the person and makes the rest see-through. First time only: downloads a " +
             "${com.reelforge.editor.engine.CutOut.MODEL_MB} MB model.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+/** "Make sharper" (Super Resolution) for a picture, with progress and Stop while it works. */
+@Composable
+fun SharpenRow(vm: EditorViewModel, label: String = "✨ Make sharper (4x)", onSharpen: () -> Unit) {
+    val work = vm.enhanceWork
+    if (work != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(work, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { vm.cancelSharpen() }) { Text("Stop") }
+        }
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { vm.enhanceProgress },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        return
+    }
+    OutlinedButton(onClick = onSharpen) { Text(label) }
+    Text(
+        "AI makes a small or blurry photo four times bigger and sharper, on your phone. It takes " +
+            "a little while (about a minute for a typical photo).",
         style = MaterialTheme.typography.bodySmall,
     )
 }
