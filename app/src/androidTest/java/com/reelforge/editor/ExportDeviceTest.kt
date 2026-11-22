@@ -616,7 +616,7 @@ class ExportDeviceTest {
     fun superResolution_makesPhotosFourTimesBigger() {
         val sr = com.reelforge.editor.engine.SuperResolution
         assertTrue(sr.isBundled(context))
-        sr.Upscaler(context).use { up ->
+        com.reelforge.editor.engine.SuperResolution.Upscaler(context).use { up ->
             // A small picture with a sharp edge: left half red, right half blue.
             val small = android.graphics.Bitmap.createBitmap(150, 90, android.graphics.Bitmap.Config.ARGB_8888)
             for (y in 0 until 90) for (x in 0 until 150) small.setPixel(x, y, if (x < 75) red else blue)
