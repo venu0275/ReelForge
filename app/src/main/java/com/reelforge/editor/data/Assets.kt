@@ -13,7 +13,53 @@ data class FontAsset(
     val group: String,
     val licence: String,
     val url: String,
+    /** Download size in bytes (0 when not known). */
+    val bytes: Long = 0,
 )
+
+/** A language's fonts, offered together in the plug-in store. */
+data class FontPack(val group: String, val fonts: List<FontAsset>) {
+    val bytes: Long get() = fonts.sumOf { it.bytes }
+
+    /** A few words in the pack's own script, to show what the fonts look like. */
+    val sample: String get() = FontPacks.sample(group)
+}
+
+object FontPacks {
+    /** Groups of fonts made for one language, in the order the store shows them. */
+    val LANGUAGES = listOf(
+        "Telugu", "Hindi & Marathi", "Tamil", "Kannada", "Malayalam", "Bengali", "Gujarati", "Punjabi", "Odia",
+    )
+
+    fun sample(group: String): String = when (group) {
+        "Telugu" -> "తెలుగు అక్షరాలు"
+        "Hindi & Marathi" -> "हिंदी मराठी"
+        "Tamil" -> "தமிழ் எழுத்து"
+        "Kannada" -> "ಕನ್ನಡ ಅಕ್ಷರ"
+        "Malayalam" -> "മലയാളം"
+        "Bengali" -> "বাংলা লেখা"
+        "Gujarati" -> "ગુજરાતી"
+        "Punjabi" -> "ਪੰਜਾਬੀ"
+        "Odia" -> "ଓଡ଼ିଆ"
+        "Handwriting" -> "Handwritten"
+        "Clean" -> "Clean & simple"
+        else -> "Aa Bb Cc"
+    }
+
+    /** Every group as a pack: languages first, then the English styles. */
+    fun packs(fonts: List<FontAsset>): List<FontPack> {
+        val groups = fonts.groupBy { it.group }
+        val order = LANGUAGES + groups.keys.filter { it !in LANGUAGES }
+        return order.mapNotNull { g -> groups[g]?.let { FontPack(g, it) } }
+    }
+
+    /** "1.2 MB" / "350 KB": a download size people can read. */
+    fun size(bytes: Long): String = when {
+        bytes <= 0 -> ""
+        bytes >= 1_000_000 -> String.format(java.util.Locale.US, "%.1f MB", bytes / 1_000_000.0)
+        else -> "${(bytes / 1000).coerceAtLeast(1)} KB"
+    }
+}
 
 /**
  * Things the app can download after it is installed, so the install stays small. The list ships
@@ -32,6 +78,7 @@ object AssetCatalog {
                 group = o.optString("group", "Other"),
                 licence = o.optString("licence", ""),
                 url = o.getString("url"),
+                bytes = o.optLong("bytes", 0),
             )
         }
     }

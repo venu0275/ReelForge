@@ -578,6 +578,41 @@ class ExportDeviceTest {
     }
 
     @Test
+    fun sceneEffects_drawMovingFramesAndExport() {
+        val effects = com.reelforge.editor.engine.SceneEffect.entries
+        for (e in effects) {
+            val early = com.reelforge.editor.engine.MovingArt.render(e, 900, e.defaultMs, 160, 9f / 16f)
+            val later = com.reelforge.editor.engine.MovingArt.render(e, 2_300, e.defaultMs, 160, 9f / 16f)
+            assertTrue("${e.name} draws nothing", (0 until early.width step 3).any { x ->
+                (0 until early.height step 3).any { y -> (early.getPixel(x, y) ushr 24) != 0 }
+            })
+            assertTrue("${e.name} does not move", !early.sameAs(later))
+            // Faded out completely once it is over; odd sizes and times still draw.
+            val after = com.reelforge.editor.engine.MovingArt.render(e, e.defaultMs, e.defaultMs, 40, 16f / 9f)
+            assertTrue("${e.name} still shows at its end", (0 until after.width).all { x ->
+                (0 until after.height).all { y -> (after.getPixel(x, y) ushr 24) == 0 }
+            })
+            com.reelforge.editor.engine.MovingArt.render(e, -500, 0, 2, 0.01f)
+            com.reelforge.editor.engine.MovingArt.render(e, 999_999, 1_000, 400, 30f)
+        }
+        val source = videoClip(baseVideo(3_000))
+        val still = File(context.cacheDir, "scene_still.png").apply {
+            outputStream().use {
+                com.reelforge.editor.engine.MovingArt.render(effects.first(), 1_500, 5_000, 200, 9f / 16f)
+                    .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }
+        val layers = effects.take(3).mapIndexed { i, e ->
+            com.reelforge.editor.model.ImageLayer(
+                uri = Uri.fromFile(still).toString(), startMs = i * 600L, endMs = i * 600L + 1_800,
+                scale = 1f, button = e.name,
+            )
+        }
+        val info = inspect(exportOk(Project(name = "scene", clips = listOf(source), layers = layers)).file!!)
+        assertNear("duration", source.durationMs, info.durationMs, 500)
+    }
+
+    @Test
     fun extractSound_writesTheClipsSoundAndExportsWithIt() {
         val source = videoClip(baseVideo(2_000))
         val out = File(context.cacheDir, "extract_${System.nanoTime()}.m4a")

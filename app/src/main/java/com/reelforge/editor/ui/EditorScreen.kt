@@ -115,7 +115,7 @@ enum class Panel(
     AUDIO("Voice & sounds", Icons.Rounded.GraphicEq, ToolColors.Sound, "Record voice-overs and add sound clips."),
     MUSIC("Music", Icons.Rounded.MusicNote, ToolColors.Sound, "Background music, volume and beat sync."),
     BACKGROUND("Backdrop", Icons.Rounded.Wallpaper, ToolColors.Style, "What shows around clips that do not fill the frame."),
-    STORE("Store", Icons.Rounded.Storefront, ToolColors.Style, "Animated buttons, free stickers, reactions, sound effects and music."),
+    STORE("Store", Icons.Rounded.Storefront, ToolColors.Style, "Plug-ins (effects, fonts by language, text presets), animated buttons, stickers, sounds and music."),
     RECORD("Record screen", Icons.Rounded.Videocam, ToolColors.Finish, "Record your phone screen into the video."),
     DRAW("Draw", Icons.Rounded.Brush, ToolColors.Create, "Draw on your video by hand."),
     EXPORT("Export", Icons.Rounded.IosShare, ToolColors.Cut, "Save the finished video to your phone."),
@@ -1299,8 +1299,9 @@ private fun Timeline(
         Bar(it.id, it.text.replace("\n", " ").ifBlank { "Text" }, it.startMs, it.endMs, BarKind.TEXT, I.TextFields)
     }
     val layerBars = project.layers.mapIndexed { i, l ->
-        val animated = com.reelforge.editor.engine.AnimatedButton.of(l.button)
+        val animated = com.reelforge.editor.engine.MovingArt.of(l.button)
         val (name, color, icon) = when {
+            animated?.fullFrame == true -> Triple(animated.title, BarKind.STICKER, I.Celebration)
             animated != null -> Triple(animated.title, BarKind.STICKER, I.AutoAwesome)
             "/stickers/" in l.uri || "social_" in l.uri -> Triple("Sticker", BarKind.STICKER, I.EmojiEmotions)
             "/drawings/" in l.uri -> Triple("Drawing", BarKind.PHOTO, I.Brush)
@@ -2270,12 +2271,15 @@ private fun PreviewArea(
                             )
                             val shownScale = anim.scale * (pose?.scale ?: 1f)
                             val shownAngle = -((pose?.rotation ?: layer.rotation) + anim.rotation)
-                            val canMove = layer.keyframes.isEmpty()
+                            val art = com.reelforge.editor.engine.MovingArt.of(layer.button)
+                            // A scene effect covers the whole video and stays put.
+                            val canMove = layer.keyframes.isEmpty() && art?.fullFrame != true
                             LayerPicture(
                                 still,
-                                com.reelforge.editor.engine.AnimatedButton.of(layer.button),
+                                art,
                                 now - layer.startMs,
                                 layer.endMs - layer.startMs,
+                                frameWidthPx / frameHeightPx.coerceAtLeast(1f),
                                 modifier = Modifier
                                     .align(place)
                                     .height(frameHeight * layer.scale)
@@ -2713,20 +2717,19 @@ private fun RatioTourCard(vm: EditorViewModel, shape: com.reelforge.editor.model
 @Composable
 private fun LayerPicture(
     still: androidx.compose.ui.graphics.ImageBitmap,
-    button: com.reelforge.editor.engine.AnimatedButton?,
+    button: com.reelforge.editor.engine.MovingArt?,
     sinceMs: Long,
     durationMs: Long,
+    frameAspect: Float,
     modifier: Modifier,
 ) {
     if (button == null) {
         Image(bitmap = still, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier)
         return
     }
-    Canvas(modifier.aspectRatio(com.reelforge.editor.engine.AnimatedButtons.aspect(button), matchHeightConstraintsFirst = true)) {
+    Canvas(modifier.aspectRatio(button.aspect(frameAspect), matchHeightConstraintsFirst = true)) {
         drawIntoCanvas { c ->
-            com.reelforge.editor.engine.AnimatedButtons.draw(
-                c.nativeCanvas, button, sinceMs, durationMs, size.width, size.height,
-            )
+            button.draw(c.nativeCanvas, sinceMs, durationMs, size.width, size.height)
         }
     }
 }

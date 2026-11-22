@@ -436,7 +436,7 @@ data class ImageLayer(
     val y2: Float = 0f,
     val keyframes: List<Keyframe> = emptyList(),
     val loop: LoopFx = LoopFx.NONE,
-    /** An animated channel button (AnimatedButton name) drawn frame by frame instead of [uri]. */
+    /** An animated button or scene effect (MovingArt name) drawn frame by frame instead of [uri]. */
     val button: String? = null,
 )
 

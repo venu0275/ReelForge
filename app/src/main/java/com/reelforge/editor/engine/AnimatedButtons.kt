@@ -22,18 +22,23 @@ import kotlin.math.sin
  *  - FOLLOW, SHARE, COMMENT: slide in, pulse, and slide out at the end.
  */
 enum class AnimatedButton(
-    val title: String,
+    override val title: String,
     val label: String,
     val colour: Int,
     val textColour: Int = 0xFFFFFFFF.toInt(),
     /** How long it is on the video when added (it can be changed like any layer). */
-    val defaultMs: Long,
-) {
+    override val defaultMs: Long,
+) : MovingArt {
     SUBSCRIBE("Subscribe + bell", "SUBSCRIBE", 0xFFE53935.toInt(), defaultMs = 4_000),
     LIKE("Like", "LIKE", 0xFF1565C0.toInt(), defaultMs = 3_000),
     FOLLOW("Follow", "FOLLOW", 0xFF1E88E5.toInt(), defaultMs = 3_500),
     SHARE("Share", "↗ SHARE", 0xFF2E7D32.toInt(), defaultMs = 3_500),
     COMMENT("Comment", "💬 COMMENT", 0xFFEF6C00.toInt(), defaultMs = 3_500);
+
+    override fun aspect(frameAspect: Float): Float = AnimatedButtons.aspect(this)
+
+    override fun draw(canvas: Canvas, tMs: Long, durationMs: Long, w: Float, h: Float) =
+        AnimatedButtons.draw(canvas, this, tMs, durationMs, w, h)
 
     companion object {
         fun of(name: String?): AnimatedButton? = entries.firstOrNull { it.name == name }
@@ -292,33 +297,4 @@ object AnimatedButtons {
     /** The still used for the layer's thumbnail and size: the button in its finished state. */
     fun still(b: AnimatedButton, height: Int = 240): Bitmap =
         render(b, if (b == AnimatedButton.SUBSCRIBE || b == AnimatedButton.LIKE) 3_000 else 1_000, 10_000, height)
-
-    /**
-     * Draws frames for the exporter on demand, into two pictures used in turn (the video
-     * pipeline uploads a picture again only when it gets a different one).
-     */
-    class Frames(private val b: AnimatedButton, private val durationMs: Long, height: Int) {
-        private val hgt = height.coerceAtLeast(8)
-        private val wid = (hgt * aspect(b)).toInt().coerceAtLeast(8)
-        private val buffers = Array(2) { Bitmap.createBitmap(wid, hgt, Bitmap.Config.ARGB_8888) }
-        private var next = 0
-        private var lastMs = Long.MIN_VALUE
-        private var last: Bitmap = buffers[0]
-
-        /** The picture [sinceMs] after the button appears. */
-        fun at(sinceMs: Long): Bitmap {
-            // Frames close together in time (well under one frame at 60 fps) reuse the last picture.
-            if (lastMs != Long.MIN_VALUE && kotlin.math.abs(sinceMs - lastMs) < 8) return last
-            val bmp = buffers[next]
-            next = 1 - next
-            bmp.eraseColor(0)
-            draw(Canvas(bmp), b, sinceMs.coerceAtLeast(0), durationMs, wid.toFloat(), hgt.toFloat())
-            lastMs = sinceMs
-            last = bmp
-            return bmp
-        }
-
-        /** The finished state, for the overlay's first set-up. */
-        val first: Bitmap get() = at(min(3_000L, durationMs / 2))
-    }
 }

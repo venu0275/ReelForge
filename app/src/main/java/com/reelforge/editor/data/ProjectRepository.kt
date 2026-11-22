@@ -369,7 +369,7 @@ object ProjectJson {
                 y2 = l.optDouble("y2", 0.0).toFloat(),
                 keyframes = keysFromJson(l.optJSONArray("keyframes")),
                 // Only names the app knows; anything else shows the layer's still picture.
-                button = l.optString("button").takeIf { com.reelforge.editor.engine.AnimatedButton.of(it) != null },
+                button = l.optString("button").takeIf { com.reelforge.editor.engine.MovingArt.of(it) != null },
             )
         }
         val videoJson = o.optJSONArray("videoLayers") ?: JSONArray()

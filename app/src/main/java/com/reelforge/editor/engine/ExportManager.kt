@@ -132,7 +132,7 @@ object ExportManager {
         val loop: com.reelforge.editor.model.LoopFx = com.reelforge.editor.model.LoopFx.NONE,
         val reveal: List<Bitmap> = emptyList(),
         val revealMs: Long = 0,
-        val frames: AnimatedButtons.Frames? = null,
+        val frames: MovingArt.Frames? = null,
     )
 
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
@@ -146,10 +146,11 @@ object ExportManager {
 
         // Image layers sit below text and stickers.
         val specs = project.layers.mapNotNull { layer ->
-            // Animated buttons are drawn frame by frame at the size they appear.
-            AnimatedButton.of(layer.button)?.let { kind ->
-                val frames = AnimatedButtons.Frames(
+            // Animated buttons and scene effects are drawn frame by frame at the size they appear.
+            MovingArt.of(layer.button)?.let { kind ->
+                val frames = MovingArt.Frames(
                     kind, layer.endMs - layer.startMs, (layer.scale * height).toInt().coerceAtLeast(8),
+                    width.toFloat() / height,
                 )
                 return@mapNotNull OverlaySpec(
                     frames.first,

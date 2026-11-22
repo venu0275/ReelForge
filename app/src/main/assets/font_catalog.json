@@ -1,277 +1,892 @@
 {
  "fonts": [
   {
+   "id": "notosanstelugu",
+   "name": "Noto Sans Telugu",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstelugu/NotoSansTelugu%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 888808
+  },
+  {
+   "id": "notoseriftelugu",
+   "name": "Noto Serif Telugu",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftelugu/NotoSerifTelugu%5Bwght%5D.ttf",
+   "bytes": 543100
+  },
+  {
+   "id": "tirotelugu",
+   "name": "Tiro Telugu",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirotelugu/TiroTelugu-Regular.ttf",
+   "bytes": 635592
+  },
+  {
+   "id": "anektelugu",
+   "name": "Anek Telugu",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anektelugu/AnekTelugu%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 1806540
+  },
+  {
+   "id": "balootammudu2",
+   "name": "Baloo Tammudu 2",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/balootammudu2/BalooTammudu2%5Bwght%5D.ttf",
+   "bytes": 669816
+  },
+  {
+   "id": "hindguntur",
+   "name": "Hind Guntur",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/hindguntur/HindGuntur-SemiBold.ttf",
+   "bytes": 326228
+  },
+  {
+   "id": "mallanna",
+   "name": "Mallanna",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/mallanna/Mallanna-Regular.ttf",
+   "bytes": 722912
+  },
+  {
+   "id": "mandali",
+   "name": "Mandali",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/mandali/Mandali-Regular.ttf",
+   "bytes": 619212
+  },
+  {
+   "id": "ntr",
+   "name": "NTR",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ntr/NTR-Regular.ttf",
+   "bytes": 374932
+  },
+  {
+   "id": "ramaraja",
+   "name": "Ramaraja",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ramaraja/Ramaraja-Regular.ttf",
+   "bytes": 704256
+  },
+  {
+   "id": "ramabhadra",
+   "name": "Ramabhadra",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ramabhadra/Ramabhadra-Regular.ttf",
+   "bytes": 733308
+  },
+  {
+   "id": "gurajada",
+   "name": "Gurajada",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/gurajada/Gurajada-Regular.ttf",
+   "bytes": 442756
+  },
+  {
+   "id": "suravaram",
+   "name": "Suravaram",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/suravaram/Suravaram-Regular.ttf",
+   "bytes": 270044
+  },
+  {
+   "id": "peddana",
+   "name": "Peddana",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/peddana/Peddana-Regular.ttf",
+   "bytes": 714796
+  },
+  {
+   "id": "ponnala",
+   "name": "Ponnala",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/ponnala/Ponnala-Regular.ttf",
+   "bytes": 473792
+  },
+  {
+   "id": "dhurjati",
+   "name": "Dhurjati",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/dhurjati/Dhurjati-Regular.ttf",
+   "bytes": 990048
+  },
+  {
+   "id": "gidugu",
+   "name": "Gidugu",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/gidugu/Gidugu-Regular.ttf",
+   "bytes": 460988
+  },
+  {
+   "id": "timmana",
+   "name": "Timmana",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/timmana/Timmana-Regular.ttf",
+   "bytes": 760696
+  },
+  {
+   "id": "tenaliramakrishna",
+   "name": "Tenali Ramakrishna",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tenaliramakrishna/TenaliRamakrishna-Regular.ttf",
+   "bytes": 710220
+  },
+  {
+   "id": "sreekrushnadevaraya",
+   "name": "Sree Krushnadevaraya",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sreekrushnadevaraya/SreeKrushnadevaraya-Regular.ttf",
+   "bytes": 612636
+  },
+  {
+   "id": "akayatelivigala",
+   "name": "Akaya Telivigala",
+   "group": "Telugu",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/akayatelivigala/AkayaTelivigala-Regular.ttf",
+   "bytes": 561640
+  },
+  {
+   "id": "notosansdevanagari",
+   "name": "Noto Sans Devanagari",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 641944
+  },
+  {
+   "id": "notoserifdevanagari",
+   "name": "Noto Serif Devanagari",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifdevanagari/NotoSerifDevanagari%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 757692
+  },
+  {
+   "id": "tirodevanagarihindi",
+   "name": "Tiro Devanagari Hindi",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirodevanagarihindi/TiroDevanagariHindi-Regular.ttf",
+   "bytes": 423224
+  },
+  {
+   "id": "tirodevanagarimarathi",
+   "name": "Tiro Devanagari Marathi",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirodevanagarimarathi/TiroDevanagariMarathi-Regular.ttf",
+   "bytes": 439712
+  },
+  {
+   "id": "anekdevanagari",
+   "name": "Anek Devanagari",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anekdevanagari/AnekDevanagari%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 2190532
+  },
+  {
+   "id": "mukta",
+   "name": "Mukta",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/mukta/Mukta-SemiBold.ttf",
+   "bytes": 411160
+  },
+  {
+   "id": "hind",
+   "name": "Hind",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/hind/Hind-SemiBold.ttf",
+   "bytes": 281940
+  },
+  {
+   "id": "rozhaone",
+   "name": "Rozha One",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/rozhaone/RozhaOne-Regular.ttf",
+   "bytes": 322828
+  },
+  {
+   "id": "yatraone",
+   "name": "Yatra One",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/yatraone/YatraOne-Regular.ttf",
+   "bytes": 276324
+  },
+  {
+   "id": "martel",
+   "name": "Martel",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/martel/Martel-Bold.ttf",
+   "bytes": 170240
+  },
+  {
+   "id": "khand",
+   "name": "Khand",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/khand/Khand-SemiBold.ttf",
+   "bytes": 348692
+  },
+  {
+   "id": "teko",
+   "name": "Teko",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/teko/Teko%5Bwght%5D.ttf",
+   "bytes": 292108
+  },
+  {
+   "id": "amita",
+   "name": "Amita",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/amita/Amita-Regular.ttf",
+   "bytes": 215672
+  },
+  {
+   "id": "eczar",
+   "name": "Eczar",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/eczar/Eczar%5Bwght%5D.ttf",
+   "bytes": 407304
+  },
+  {
+   "id": "gotu",
+   "name": "Gotu",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/gotu/Gotu-Regular.ttf",
+   "bytes": 697792
+  },
+  {
+   "id": "sura",
+   "name": "Sura",
+   "group": "Hindi & Marathi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sura/Sura-Bold.ttf",
+   "bytes": 148800
+  },
+  {
+   "id": "notosanstamil",
+   "name": "Noto Sans Tamil",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstamil/NotoSansTamil%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 340668
+  },
+  {
+   "id": "notoseriftamil",
+   "name": "Noto Serif Tamil",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoseriftamil/NotoSerifTamil%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 420124
+  },
+  {
+   "id": "tirotamil",
+   "name": "Tiro Tamil",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirotamil/TiroTamil-Regular.ttf",
+   "bytes": 197432
+  },
+  {
+   "id": "anektamil",
+   "name": "Anek Tamil",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anektamil/AnekTamil%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 899668
+  },
+  {
+   "id": "baloothambi2",
+   "name": "Baloo Thambi 2",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloothambi2/BalooThambi2%5Bwght%5D.ttf",
+   "bytes": 307136
+  },
+  {
+   "id": "catamaran",
+   "name": "Catamaran",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/catamaran/Catamaran%5Bwght%5D.ttf",
+   "bytes": 184276
+  },
+  {
+   "id": "muktamalar",
+   "name": "Mukta Malar",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/muktamalar/MuktaMalar-SemiBold.ttf",
+   "bytes": 241480
+  },
+  {
+   "id": "meerainimai",
+   "name": "Meera Inimai",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/meerainimai/MeeraInimai-Regular.ttf",
+   "bytes": 72260
+  },
+  {
+   "id": "hindmadurai",
+   "name": "Hind Madurai",
+   "group": "Tamil",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/hindmadurai/HindMadurai-SemiBold.ttf",
+   "bytes": 139348
+  },
+  {
+   "id": "notosanskannada",
+   "name": "Noto Sans Kannada",
+   "group": "Kannada",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskannada/NotoSansKannada%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 641372
+  },
+  {
+   "id": "notoserifkannada",
+   "name": "Noto Serif Kannada",
+   "group": "Kannada",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifkannada/NotoSerifKannada%5Bwght%5D.ttf",
+   "bytes": 495384
+  },
+  {
+   "id": "tirokannada",
+   "name": "Tiro Kannada",
+   "group": "Kannada",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirokannada/TiroKannada-Regular.ttf",
+   "bytes": 482772
+  },
+  {
+   "id": "anekkannada",
+   "name": "Anek Kannada",
+   "group": "Kannada",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anekkannada/AnekKannada%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 1346860
+  },
+  {
+   "id": "balootamma2",
+   "name": "Baloo Tamma 2",
+   "group": "Kannada",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/balootamma2/BalooTamma2%5Bwght%5D.ttf",
+   "bytes": 475932
+  },
+  {
+   "id": "notosansmalayalam",
+   "name": "Noto Sans Malayalam",
+   "group": "Malayalam",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmalayalam/NotoSansMalayalam%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 504204
+  },
+  {
+   "id": "notoserifmalayalam",
+   "name": "Noto Serif Malayalam",
+   "group": "Malayalam",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifmalayalam/NotoSerifMalayalam%5Bwght%5D.ttf",
+   "bytes": 242048
+  },
+  {
+   "id": "anekmalayalam",
+   "name": "Anek Malayalam",
+   "group": "Malayalam",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anekmalayalam/AnekMalayalam%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 668244
+  },
+  {
+   "id": "baloochettan2",
+   "name": "Baloo Chettan 2",
+   "group": "Malayalam",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloochettan2/BalooChettan2%5Bwght%5D.ttf",
+   "bytes": 339860
+  },
+  {
+   "id": "manjari",
+   "name": "Manjari",
+   "group": "Malayalam",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/manjari/Manjari-Regular.ttf",
+   "bytes": 151056
+  },
+  {
+   "id": "notosansbengali",
+   "name": "Noto Sans Bengali",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 463668
+  },
+  {
+   "id": "notoserifbengali",
+   "name": "Noto Serif Bengali",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifbengali/NotoSerifBengali%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 981812
+  },
+  {
+   "id": "tirobangla",
+   "name": "Tiro Bangla",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirobangla/TiroBangla-Regular.ttf",
+   "bytes": 323776
+  },
+  {
+   "id": "anekbangla",
+   "name": "Anek Bangla",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anekbangla/AnekBangla%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 1344456
+  },
+  {
+   "id": "balooda2",
+   "name": "Baloo Da 2",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/balooda2/BalooDa2%5Bwght%5D.ttf",
+   "bytes": 451504
+  },
+  {
+   "id": "hindsiliguri",
+   "name": "Hind Siliguri",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/hindsiliguri/HindSiliguri-SemiBold.ttf",
+   "bytes": 272740
+  },
+  {
+   "id": "galada",
+   "name": "Galada",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/galada/Galada-Regular.ttf",
+   "bytes": 187776
+  },
+  {
+   "id": "atma",
+   "name": "Atma",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/atma/Atma-SemiBold.ttf",
+   "bytes": 219984
+  },
+  {
+   "id": "mina",
+   "name": "Mina",
+   "group": "Bengali",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/mina/Mina-Bold.ttf",
+   "bytes": 152604
+  },
+  {
+   "id": "notosansgujarati",
+   "name": "Noto Sans Gujarati",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgujarati/NotoSansGujarati%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 672904
+  },
+  {
+   "id": "notoserifgujarati",
+   "name": "Noto Serif Gujarati",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notoserifgujarati/NotoSerifGujarati%5Bwght%5D.ttf",
+   "bytes": 378356
+  },
+  {
+   "id": "anekgujarati",
+   "name": "Anek Gujarati",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anekgujarati/AnekGujarati%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 1621452
+  },
+  {
+   "id": "baloobhai2",
+   "name": "Baloo Bhai 2",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloobhai2/BalooBhai2%5Bwght%5D.ttf",
+   "bytes": 710488
+  },
+  {
+   "id": "hindvadodara",
+   "name": "Hind Vadodara",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/hindvadodara/HindVadodara-SemiBold.ttf",
+   "bytes": 252704
+  },
+  {
+   "id": "shrikhand",
+   "name": "Shrikhand",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/shrikhand/Shrikhand-Regular.ttf",
+   "bytes": 220804
+  },
+  {
+   "id": "rasa",
+   "name": "Rasa",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/rasa/Rasa%5Bwght%5D.ttf",
+   "bytes": 474404
+  },
+  {
+   "id": "kumarone",
+   "name": "Kumar One",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/kumarone/KumarOne-Regular.ttf",
+   "bytes": 95852
+  },
+  {
+   "id": "farsan",
+   "name": "Farsan",
+   "group": "Gujarati",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/farsan/Farsan-Regular.ttf",
+   "bytes": 243932
+  },
+  {
+   "id": "notosansgurmukhi",
+   "name": "Noto Sans Gurmukhi",
+   "group": "Punjabi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgurmukhi/NotoSansGurmukhi%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 268608
+  },
+  {
+   "id": "tirogurmukhi",
+   "name": "Tiro Gurmukhi",
+   "group": "Punjabi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/tirogurmukhi/TiroGurmukhi-Regular.ttf",
+   "bytes": 150708
+  },
+  {
+   "id": "anekgurmukhi",
+   "name": "Anek Gurmukhi",
+   "group": "Punjabi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anekgurmukhi/AnekGurmukhi%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 357420
+  },
+  {
+   "id": "baloopaaji2",
+   "name": "Baloo Paaji 2",
+   "group": "Punjabi",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloopaaji2/BalooPaaji2%5Bwght%5D.ttf",
+   "bytes": 243180
+  },
+  {
+   "id": "notosansoriya",
+   "name": "Noto Sans Oriya",
+   "group": "Odia",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansoriya/NotoSansOriya%5Bwdth%2Cwght%5D.ttf",
+   "bytes": 613116
+  },
+  {
+   "id": "baloobhaina2",
+   "name": "Baloo Bhaina 2",
+   "group": "Odia",
+   "licence": "OFL-1.1",
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloobhaina2/BalooBhaina2%5Bwght%5D.ttf",
+   "bytes": 473060
+  },
+  {
    "id": "lobster",
    "name": "Lobster",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/lobster/Lobster-Regular.ttf",
+   "bytes": 406076
   },
   {
    "id": "pacifico",
    "name": "Pacifico",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pacifico/Pacifico-Regular.ttf",
+   "bytes": 329380
   },
   {
    "id": "bebasneue",
    "name": "Bebas Neue",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf",
+   "bytes": 61400
   },
   {
    "id": "anton",
    "name": "Anton",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/anton/Anton-Regular.ttf",
+   "bytes": 170812
   },
   {
    "id": "bangers",
    "name": "Bangers",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bangers/Bangers-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/bangers/Bangers-Regular.ttf",
+   "bytes": 93148
   },
   {
    "id": "righteous",
    "name": "Righteous",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/righteous/Righteous-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/righteous/Righteous-Regular.ttf",
+   "bytes": 43104
   },
   {
    "id": "abrilfatface",
    "name": "Abril Fatface",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/abrilfatface/AbrilFatface-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/abrilfatface/AbrilFatface-Regular.ttf",
+   "bytes": 67364
   },
   {
    "id": "archivoblack",
    "name": "Archivo Black",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/archivoblack/ArchivoBlack-Regular.ttf",
+   "bytes": 90988
   },
   {
    "id": "pressstart2p",
    "name": "Press Start 2P",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pressstart2p/PressStart2P-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/pressstart2p/PressStart2P-Regular.ttf",
+   "bytes": 118204
   },
   {
    "id": "specialelite",
    "name": "Special Elite",
    "group": "Stylish",
    "licence": "Apache-2.0",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/specialelite/SpecialElite-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/specialelite/SpecialElite-Regular.ttf",
+   "bytes": 166180
   },
   {
    "id": "orbitron",
    "name": "Orbitron",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/orbitron/Orbitron%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/orbitron/Orbitron%5Bwght%5D.ttf",
+   "bytes": 38576
   },
   {
    "id": "cinzel",
    "name": "Cinzel",
    "group": "Stylish",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/Cinzel%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/cinzel/Cinzel%5Bwght%5D.ttf",
+   "bytes": 125468
   },
   {
    "id": "dancingscript",
    "name": "Dancing Script",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/DancingScript%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/dancingscript/DancingScript%5Bwght%5D.ttf",
+   "bytes": 133636
   },
   {
    "id": "greatvibes",
    "name": "Great Vibes",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/greatvibes/GreatVibes-Regular.ttf",
+   "bytes": 457588
   },
   {
    "id": "sacramento",
    "name": "Sacramento",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sacramento/Sacramento-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/sacramento/Sacramento-Regular.ttf",
+   "bytes": 79696
   },
   {
    "id": "satisfy",
    "name": "Satisfy",
    "group": "Handwriting",
    "licence": "Apache-2.0",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/satisfy/Satisfy-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/satisfy/Satisfy-Regular.ttf",
+   "bytes": 47928
   },
   {
    "id": "caveat",
    "name": "Caveat",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/Caveat%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/caveat/Caveat%5Bwght%5D.ttf",
+   "bytes": 403648
   },
   {
    "id": "permanentmarker",
    "name": "Permanent Marker",
    "group": "Handwriting",
    "licence": "Apache-2.0",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/permanentmarker/PermanentMarker-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/apache/permanentmarker/PermanentMarker-Regular.ttf",
+   "bytes": 74632
   },
   {
    "id": "indieflower",
    "name": "Indie Flower",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/indieflower/IndieFlower-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/indieflower/IndieFlower-Regular.ttf",
+   "bytes": 108196
   },
   {
    "id": "shadowsintolight",
    "name": "Shadows Into Light",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/shadowsintolight/ShadowsIntoLight.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/shadowsintolight/ShadowsIntoLight.ttf",
+   "bytes": 54304
   },
   {
    "id": "amaticsc",
    "name": "Amatic SC",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/amaticsc/AmaticSC-Bold.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/amaticsc/AmaticSC-Bold.ttf",
+   "bytes": 156180
   },
   {
    "id": "kalam",
    "name": "Kalam",
    "group": "Handwriting",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/kalam/Kalam-Regular.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/kalam/Kalam-Regular.ttf",
+   "bytes": 427360
   },
   {
    "id": "montserrat",
    "name": "Montserrat",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/Montserrat%5Bwght%5D.ttf",
+   "bytes": 744936
   },
   {
    "id": "poppins",
    "name": "Poppins",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Bold.ttf",
+   "bytes": 155996
   },
   {
    "id": "oswald",
    "name": "Oswald",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/Oswald%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/oswald/Oswald%5Bwght%5D.ttf",
+   "bytes": 172088
   },
   {
    "id": "raleway",
    "name": "Raleway",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/raleway/Raleway%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/raleway/Raleway%5Bwght%5D.ttf",
+   "bytes": 312352
   },
   {
    "id": "nunito",
    "name": "Nunito",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf",
+   "bytes": 276932
   },
   {
    "id": "comfortaa",
    "name": "Comfortaa",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/comfortaa/Comfortaa%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/comfortaa/Comfortaa%5Bwght%5D.ttf",
+   "bytes": 201756
   },
   {
    "id": "playfairdisplay",
    "name": "Playfair Display",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf",
+   "bytes": 300724
   },
   {
    "id": "lora",
    "name": "Lora",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/lora/Lora%5Bwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/lora/Lora%5Bwght%5D.ttf",
+   "bytes": 212196
   },
   {
    "id": "baloo2",
    "name": "Baloo 2",
    "group": "Clean",
    "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloo2/Baloo2%5Bwght%5D.ttf"
-  },
-  {
-   "id": "notosansdevanagari",
-   "name": "Hindi (Devanagari)",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosanstelugu",
-   "name": "Telugu",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstelugu/NotoSansTelugu%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosanstamil",
-   "name": "Tamil",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstamil/NotoSansTamil%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosanskannada",
-   "name": "Kannada",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskannada/NotoSansKannada%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosansmalayalam",
-   "name": "Malayalam",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmalayalam/NotoSansMalayalam%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosansbengali",
-   "name": "Bengali",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansbengali/NotoSansBengali%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosansgujarati",
-   "name": "Gujarati",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgujarati/NotoSansGujarati%5Bwdth%2Cwght%5D.ttf"
-  },
-  {
-   "id": "notosansgurmukhi",
-   "name": "Punjabi (Gurmukhi)",
-   "group": "Indian languages",
-   "licence": "OFL-1.1",
-   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansgurmukhi/NotoSansGurmukhi%5Bwdth%2Cwght%5D.ttf"
+   "url": "https://raw.githubusercontent.com/google/fonts/main/ofl/baloo2/Baloo2%5Bwght%5D.ttf",
+   "bytes": 683200
   }
  ]
 }

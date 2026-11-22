@@ -52,19 +52,20 @@ import com.reelforge.editor.data.SoundEffect
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StorePanel(vm: EditorViewModel) {
-    // -1 = Animated (shown first), 0 stickers, 1 buttons, 2 sounds, 3 music.
-    var tab by remember { mutableIntStateOf(-1) }
+    // -2 = Plug-ins (shown first), -1 animated, 0 stickers, 1 buttons, 2 sounds, 3 music.
+    var tab by remember { mutableIntStateOf(-2) }
     // All four parts are always in view (no hidden tabs), each with an icon.
     val I = androidx.compose.material.icons.Icons.Rounded
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf(
+            Triple("Plug-ins", I.Extension, ToolColors.Create),
             Triple("Animated", I.AutoAwesome, ToolColors.Cut),
             Triple("Stickers", I.EmojiEmotions, ToolColors.Style),
             Triple("Buttons", I.ThumbUp, ToolColors.Create),
             Triple("Sounds", I.GraphicEq, ToolColors.Sound),
             Triple("Music", I.MusicNote, ToolColors.Sound),
         ).forEachIndexed { index, (name, icon, color) ->
-            val i = index - 1
+            val i = index - 2
             val on = tab == i
             androidx.compose.material3.Surface(
                 onClick = { tab = i },
@@ -85,6 +86,7 @@ fun StorePanel(vm: EditorViewModel) {
     }
     Spacer(Modifier.height(8.dp))
     when (tab) {
+        -2 -> PluginsPanel(vm)
         -1 -> {
             Text(
                 "Buttons that move on your video. Tap one to add it at the red line; drag or pinch it " +
