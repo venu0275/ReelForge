@@ -289,7 +289,7 @@ class PluginsDeviceTest {
                 v.seek(44L + i * 4L); m.seek(44L + i * 4L)
                 val vs = java.lang.Short.reverseBytes(v.readShort())
                 val ms = java.lang.Short.reverseBytes(m.readShort())
-                assertEquals("sample $i", samples[2 * i].toInt(), vs + ms, 3)
+                assertEquals("sample $i", samples[2 * i].toDouble(), (vs + ms).toDouble(), 3.0)
             }
         } finally {
             v.close(); m.close()
