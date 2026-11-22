@@ -74,6 +74,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -928,6 +929,213 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val kept = access.keys.filterNot { it.tMs == tMs }
         // Removing the last keyframe leaves the item where that keyframe had it.
         writePose(kind, id, keys = kept, base = if (kept.isEmpty()) access.keys.first() else null)
+    }
+
+    // ------------------------------------------------------------ tracking
+
+    /** What is shown while an item is being made to follow something (null when idle). */
+    var trackWork by mutableStateOf<String?>(null)
+        private set
+    var trackProgress by mutableFloatStateOf(0f)
+        private set
+    private var trackJob: Job? = null
+
+    /**
+     * Makes a text or picture follow what it covers in the video: from the red line to the item's
+     * end, the video under the item's middle is followed frame by frame and the item gets
+     * keyframes along that path. Undo removes them.
+     */
+    fun trackItem(kind: ItemKind, id: String) {
+        val p = project ?: return
+        if (trackJob?.isActive == true) return
+        val access = poseAccess(p, kind, id) ?: return
+        val from = playheadMs.coerceIn(access.startMs, (access.endMs - 200).coerceAtLeast(access.startMs))
+        val clipIndex = run {
+            var t = 0L
+            p.clips.indexOfFirst { c -> val hit = from >= t && from < t + c.durationMs; t += c.durationMs; hit }
+        }
+        val clip = p.clips.getOrNull(clipIndex)
+        if (clip == null || clip.type != ClipType.VIDEO) {
+            toast("Tracking follows things in a video. Move the red line onto a video clip, over the thing to follow.", ToastKind.INFO)
+            return
+        }
+        val clipStart = p.clipStartMs(clipIndex)
+        // Follow until the item ends or the clip ends (a new shot), whichever is first; at most a minute.
+        val until = minOf(access.endMs, clipStart + clip.durationMs, from + 60_000)
+        val startPose = ProjectOps.poseAt(access.keys, from - access.startMs, access.base)
+        val frameAspect = p.aspect.ratio
+        pause()
+        trackProgress = 0f
+        trackWork = "Following… 0%"
+        trackJob = viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    val (itemW, itemH) = itemSize(kind, id, p, frameAspect)
+                    val sizeW = itemW * startPose.scale
+                    val sizeH = itemH * startPose.scale
+                    val cx = com.reelforge.editor.model.Placement.centre(startPose.x, sizeW)
+                    val cy = com.reelforge.editor.model.Placement.centre(-startPose.y, sizeH)
+                    val points = followVideo(clip, clipStart, from, until, frameAspect, cx, cy, sizeW, sizeH) { f ->
+                        postStatus(cutoutHandler, "Following… ${(f * 100).toInt()}%") { trackWork = it }
+                        cutoutHandler.post { trackProgress = f }
+                    }
+                    Triple(points, sizeW, sizeH)
+                }
+                val (points, sizeW, sizeH) = result
+                if (points.size < 2) {
+                    toast(
+                        "Could not find anything to follow under it. Place it over something with clear " +
+                            "edges (a face, a ball, a sign) and try again.",
+                        ToastKind.WARNING,
+                    )
+                    return@launch
+                }
+                val path = com.reelforge.editor.model.TrackPath.simplify(com.reelforge.editor.model.TrackPath.smooth(points))
+                val keys = path.map { pt ->
+                    startPose.copy(
+                        tMs = pt.tMs - access.startMs,
+                        x = com.reelforge.editor.model.Placement.bias(pt.x, sizeW),
+                        y = -com.reelforge.editor.model.Placement.bias(pt.y, sizeH),
+                    )
+                }
+                // Before the red line the item waits where it was placed.
+                val lead = if (from > access.startMs) listOf(startPose.copy(tMs = 0)) else emptyList()
+                writePose(kind, id, keys = lead + keys, base = null)
+                val followed = points.last().tMs - from
+                val all = until - from
+                toast(
+                    if (followed >= all - 300) "Done. It now follows that spot. Play to see it; Undo to remove."
+                    else "Followed for ${MediaUtils.formatTime(followed)}, then lost it (it moved fast or was covered). Undo to remove.",
+                    if (followed >= all - 300) ToastKind.SUCCESS else ToastKind.INFO,
+                    undo = true,
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                toast("Tracking stopped", ToastKind.INFO)
+                throw e
+            } catch (e: Throwable) {
+                android.util.Log.e("CutMitra", "Tracking failed", e)
+                toast("Could not follow in this video", ToastKind.ERROR)
+            } finally {
+                cutoutHandler.removeCallbacksAndMessages(null)
+                trackWork = null
+                trackProgress = 0f
+            }
+        }
+    }
+
+    fun cancelTracking() {
+        trackJob?.cancel()
+    }
+
+    /** An item's width and height as fractions of the frame (before keyframe zoom). */
+    private fun itemSize(kind: ItemKind, id: String, p: Project, frameAspect: Float): Pair<Float, Float> {
+        val refHeight = 720
+        return when (kind) {
+            ItemKind.TEXT -> {
+                val t = p.texts.first { it.id == id }
+                val bmp = EffectFactory.renderText(t, refHeight)
+                val size = bmp.width / (refHeight * frameAspect) to bmp.height / refHeight.toFloat()
+                bmp.recycle()
+                size
+            }
+            ItemKind.LAYER -> {
+                val l = p.layers.first { it.id == id }
+                val aspect = com.reelforge.editor.engine.MovingArt.of(l.button)?.aspect(frameAspect)
+                    ?: MediaUtils.photoSize(ctx, Uri.parse(l.uri))?.let { it.first.toFloat() / it.second } ?: 1f
+                l.scale * aspect / frameAspect to l.scale
+            }
+            else -> 0.2f to 0.2f
+        }
+    }
+
+    /**
+     * Follows the video [clip] (on the timeline from [clipStart]) from timeline time [from] to
+     * [until], starting at frame point ([cx], [cy]). Returns the path in frame fractions.
+     */
+    private suspend fun followVideo(
+        clip: com.reelforge.editor.model.Clip,
+        clipStart: Long,
+        from: Long,
+        until: Long,
+        frameAspect: Float,
+        cx: Float,
+        cy: Float,
+        itemW: Float,
+        itemH: Float,
+        onProgress: (Float) -> Unit,
+    ): List<com.reelforge.editor.model.TrackPoint> {
+        val uri = Uri.parse(clip.uri)
+        val shown = MediaUtils.mediaAspect(ctx, uri, ClipType.VIDEO) ?: return emptyList()
+        val turned = clip.rotation % 180 != 0
+        val pictureAspect = if (turned) 1f / shown else shown
+        val framing = com.reelforge.editor.model.ClipFraming.of(clip)
+        // Small grey pictures are plenty to follow with, and quick.
+        val long = 256
+        val tw = if (pictureAspect >= 1f) long else (long * pictureAspect).toInt().coerceAtLeast(32)
+        val th = if (pictureAspect >= 1f) (long / pictureAspect).toInt().coerceAtLeast(32) else long
+        val (u0, v0) = com.reelforge.editor.model.Placement.toPicture(cx, cy, pictureAspect, frameAspect, clip.fill, framing)
+        if (u0 !in 0f..1f || v0 !in 0f..1f) return emptyList()
+        // The patch followed is about the item's size, within limits.
+        val (rw, rh) = com.reelforge.editor.model.Placement.fitted(pictureAspect, frameAspect, clip.fill)
+        val boxW = itemW / (rw * framing.zoom) * tw
+        val boxH = itemH / (rh * framing.zoom) * th
+        val half = (minOf(boxW, boxH) / 2f).toInt().coerceIn(6, 24)
+        val tracker = com.reelforge.editor.model.ObjectTracker(half, radius = 18)
+        val step = 100L
+        val out = ArrayList<com.reelforge.editor.model.TrackPoint>()
+        val r = android.media.MediaMetadataRetriever()
+        try {
+            r.setDataSource(ctx, uri)
+            val recorded = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                ?.toIntOrNull() ?: 0
+            val pixels = IntArray(tw * th)
+            var t = from
+            var first = true
+            while (t <= until) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                val sourceMs = clip.trimStartMs + ((t - clipStart) * clip.effectiveSpeed).toLong()
+                val frame = r.getScaledFrameAtTime(
+                    sourceMs * 1000, android.media.MediaMetadataRetriever.OPTION_CLOSEST, tw, th,
+                ) ?: break
+                val shownFrame = orient(frame, clip, tw, th, recorded)
+                shownFrame.getPixels(pixels, 0, tw, 0, 0, tw, th)
+                if (shownFrame !== frame) shownFrame.recycle()
+                frame.recycle()
+                val grey = com.reelforge.editor.model.ObjectTracker.grey(pixels)
+                val ok = if (first) tracker.start(grey, tw, th, u0 * tw, v0 * th) else tracker.step(grey, tw, th)
+                if (!ok) break
+                first = false
+                val (fx, fy) = com.reelforge.editor.model.Placement.toFrame(
+                    tracker.x / tw, tracker.y / th, pictureAspect, frameAspect, clip.fill, framing,
+                )
+                out += com.reelforge.editor.model.TrackPoint(t, fx, fy)
+                onProgress(((t - from).toFloat() / (until - from).coerceAtLeast(1)).coerceIn(0f, 1f))
+                t += step
+            }
+        } finally {
+            runCatching { r.release() }
+        }
+        return out
+    }
+
+    /**
+     * The frame as the clip shows it: the right way up (some phones give frames still turned the
+     * way the camera recorded them), then the clip's own turn and mirror. Always [w] x [h].
+     */
+    private fun orient(frame: Bitmap, clip: com.reelforge.editor.model.Clip, w: Int, h: Int, recorded: Int): Bitmap {
+        val m = android.graphics.Matrix()
+        val sourceWide = frame.width > frame.height
+        val wantWide = (if (clip.rotation % 180 != 0) h > w else w > h)
+        // A frame that comes sideways is turned upright first, the way the camera recorded it.
+        if (sourceWide != wantWide && frame.width != frame.height) {
+            m.postRotate(if (recorded % 180 != 0) recorded.toFloat() else 90f)
+        }
+        if (clip.flipH) m.postScale(-1f, 1f)
+        if (clip.rotation % 360 != 0) m.postRotate(clip.rotation.toFloat())
+        if (m.isIdentity && frame.width == w && frame.height == h) return frame
+        val turned = Bitmap.createBitmap(frame, 0, 0, frame.width, frame.height, m, true)
+        if (turned.width == w && turned.height == h) return turned
+        return Bitmap.createScaledBitmap(turned, w, h, true).also { if (it !== turned && turned !== frame) turned.recycle() }
     }
 
     // ------------------------------------------------------------ clip order, slip
@@ -3844,6 +4052,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 soundWork?.substringAfterLast(' ')?.removeSuffix("%")?.toIntOrNull()
             pack != null -> "Downloading stickers" to (pack.first * 100 / pack.second.coerceAtLeast(1))
             enhanceWork != null -> "Making photos sharper" to (enhanceProgress * 100).toInt()
+            trackWork != null -> "Tracking" to (trackProgress * 100).toInt()
             else -> null
         }
     }

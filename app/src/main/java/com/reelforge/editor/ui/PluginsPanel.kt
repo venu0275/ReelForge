@@ -66,7 +66,7 @@ import kotlinx.coroutines.withContext
 
 /** The parts of the plug-in store, shown as chips across the top. */
 private enum class PluginPart(val label: String) {
-    ALL("All"), EFFECTS("Effects"), CAPTIONS("Caption languages"), AUDIO("Audio"), AI("AI photo"),
+    ALL("All"), EFFECTS("Effects"), CAPTIONS("Caption languages"), AUDIO("Audio"), AI("AI tools"),
     FONTS("Fonts"), TEXT("Text presets"), MINE("My plug-ins"),
 }
 
@@ -99,10 +99,9 @@ fun PluginsPanel(vm: EditorViewModel) {
             SectionTitle("Audio", "Built in")
             AudioTeaser { part = PluginPart.AUDIO }
             NoiseRemoverCard(vm)
-            if (vm.superResolutionReady) {
-                SectionTitle("AI photo", "Built in")
-                SuperResolutionCard(vm)
-            }
+            SectionTitle("AI tools", "Built in")
+            TrackingCard()
+            if (vm.superResolutionReady) SuperResolutionCard(vm)
             SectionTitle("Fonts by language", "Free download")
             vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }.take(3).forEach { FontPackCard(vm, it) }
             TextButton(onClick = { part = PluginPart.FONTS }) { Text("See all font packs") }
@@ -157,8 +156,10 @@ fun PluginsPanel(vm: EditorViewModel) {
                     "free offline speech model for them that fits on a phone. We will add them when there is.",
             )
         }
-        PluginPart.AI -> if (vm.superResolutionReady) SuperResolutionCard(vm)
-        else TipBox("Super Resolution is not in this version of the app.")
+        PluginPart.AI -> {
+            TrackingCard()
+            if (vm.superResolutionReady) SuperResolutionCard(vm)
+        }
         PluginPart.AUDIO -> {
             AiVoicePanel(vm)
             NoiseRemoverCard(vm)
@@ -585,6 +586,40 @@ private fun NoiseRemoverCard(vm: EditorViewModel) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+// ---------------------------------------------------------------- AI tools
+
+/** Explains Tracking, which is used from a text's or sticker's own settings. */
+@Composable
+private fun TrackingCard() {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("tracking_card"),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Create.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Rounded.CenterFocusStrong, null, tint = ToolColors.Create) }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Tracking", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "A text, sticker or emoji follows a moving face, ball or car. Built in · works offline.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    "How: select the text or sticker, place it over the thing at the red line, then " +
+                        "Motion (text) or its settings (sticker) → 🎯 Track.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         }
     }
 }

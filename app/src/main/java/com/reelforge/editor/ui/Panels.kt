@@ -586,6 +586,8 @@ fun TextPanel(
                 onX = { v -> vm.updateText(id) { it.copy(x2 = v) } },
                 onY = { v -> vm.updateText(id) { it.copy(y2 = v) } },
             )
+            Spacer(Modifier.height(8.dp))
+            TrackRow(vm, ItemKind.TEXT, id, editing.keyframes.isNotEmpty())
             TextMotionExtras(vm, editing)
         }
 
@@ -652,7 +654,7 @@ private enum class TextTab(val label: String, val hint: String) {
     FONT("Font", "Built-in fonts, more fonts to download, or your own font file"),
     EFFECTS("Effects", "Outline, shadow, glow, background box and opacity"),
     STYLES("Styles", "Ready-made looks, your saved styles, apply to all texts"),
-    MOTION("Motion", "Animate in and out, keep moving, letter-by-letter reveal"),
+    MOTION("Motion", "Animate in and out, keep moving, follow something (tracking), letter-by-letter reveal"),
     PLACE("Place and time", "Position, turn, when it shows, stretch, cut, copy, read aloud"),
 }
 
@@ -842,6 +844,44 @@ fun LayerPanel(
         },
         onX = { v -> vm.updateLayer(id) { it.copy(x2 = v) } },
         onY = { v -> vm.updateLayer(id) { it.copy(y2 = v) } },
+    )
+    if (com.reelforge.editor.engine.MovingArt.of(editing.button)?.fullFrame != true) {
+        Spacer(Modifier.height(8.dp))
+        TrackRow(vm, ItemKind.LAYER, id, editing.keyframes.isNotEmpty())
+    }
+}
+
+/**
+ * Tracking: the item follows what it covers in the video (a face, a ball, a car). Shows the
+ * progress with Stop while it works.
+ */
+@Composable
+fun TrackRow(vm: EditorViewModel, kind: ItemKind, id: String, hasKeyframes: Boolean) {
+    Text("Follow something (tracking)", style = MaterialTheme.typography.labelLarge)
+    val work = vm.trackWork
+    if (work != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(work, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { vm.cancelTracking() }) { Text("Stop") }
+        }
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { vm.trackProgress },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        return
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = { vm.trackItem(kind, id) }, modifier = Modifier.testTag("track_item")) {
+            Text("🎯 Track")
+        }
+        if (hasKeyframes) {
+            TextButton(onClick = { vm.setKeyframing(kind, id, false) }) { Text("Stop following") }
+        }
+    }
+    Text(
+        "Move the red line to where it starts, place this over the thing to follow (a face, a ball, " +
+            "a car), then tap Track. It follows it to the end of this item.",
+        style = MaterialTheme.typography.bodySmall,
     )
 }
 
