@@ -1432,6 +1432,231 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
 
+    fun removeStoreFont(asset: FontAsset) {
+        AssetCatalog.fontFile(ctx, asset).delete()
+        refreshInstalledFonts()
+    }
+
+    // ------------------------------------------------------------------ store
+
+    /** Stickers that can be downloaded on demand (see assets/sticker_catalog.json). */
+    val storeStickers: List<StickerAsset> = StickerCatalog.stickers(app)
+
+    var installedStickers by mutableStateOf(emptySet<String>())
+        private set
+
+    /** Codes of stickers that are downloading right now. */
+    val stickerBusy = mutableStateMapOf<String, Boolean>()
+
+    init {
+        refreshInstalledStickers()
+    }
+
+    private fun refreshInstalledStickers() {
+        installedStickers =
+            storeStickers.filter { StickerCatalog.file(ctx, it).length() > 0 }.map { it.code }.toSet()
+    }
+
+    /** Downloads the sticker if needed, then puts it on the video at the playhead. */
+    fun addSticker(asset: StickerAsset) {
+        if (project == null) return
+        val file = StickerCatalog.file(ctx, asset)
+        if (file.length() > 0) {
+            addImageLayer(Uri.fromFile(file))
+            return
+        }
+        if (stickerBusy.containsKey(asset.code)) return
+        stickerBusy[asset.code] = true
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    AssetDownloader.download(asset.url, file)
+                    checkNotNull(android.graphics.BitmapFactory.decodeFile(file.absolutePath)) { "not a picture" }
+                }.onFailure { file.delete() }.isSuccess
+            }
+            stickerBusy.remove(asset.code)
+            refreshInstalledStickers()
+            if (ok) addImageLayer(Uri.fromFile(file))
+            else message = "Could not download the sticker. Check the internet connection."
+        }
+    }
+
+    /** "Download all" progress: how many are done of how many (null when idle). */
+    var stickerPackProgress by mutableStateOf<Pair<Int, Int>?>(null)
+        private set
+    private var stickerPackJob: Job? = null
+
+    /** Downloads every sticker not on the phone yet, a few at a time, so they work offline. */
+    fun downloadAllStickers() {
+        if (stickerPackJob?.isActive == true) {
+            stickerPackJob?.cancel()
+            return
+        }
+        val missing = storeStickers.filter { StickerCatalog.file(ctx, it).length() == 0L }
+        if (missing.isEmpty()) {
+            toast("All stickers are already on your phone", ToastKind.INFO)
+            return
+        }
+        stickerPackJob = viewModelScope.launch {
+            var done = 0
+            var failed = 0
+            stickerPackProgress = 0 to missing.size
+            try {
+                missing.chunked(4).forEach { group ->
+                    val results = group.map { asset ->
+                        async(Dispatchers.IO) {
+                            val file = StickerCatalog.file(ctx, asset)
+                            runCatching {
+                                AssetDownloader.download(asset.url, file)
+                                checkNotNull(android.graphics.BitmapFactory.decodeFile(file.absolutePath)) { "not a picture" }
+                            }.onFailure { file.delete() }.isSuccess
+                        }
+                    }.awaitAll()
+                    done += results.size
+                    failed += results.count { !it }
+                    stickerPackProgress = done to missing.size
+                }
+                if (failed == 0) toast("All ${missing.size} stickers downloaded; they now work without internet")
+                else toast("$failed stickers could not download. Check the internet and try again.", ToastKind.ERROR)
+            } finally {
+                stickerPackProgress = null
+                refreshInstalledStickers()
+            }
+        }
+    }
+
+    /** Deletes downloaded stickers that no project on screen is using. */
+    fun removeUnusedStickers() {
+        val used = project?.layers?.map { it.uri }?.toSet().orEmpty()
+        storeStickers.forEach { asset ->
+            val file = StickerCatalog.file(ctx, asset)
+            if (Uri.fromFile(file).toString() !in used) file.delete()
+        }
+        refreshInstalledStickers()
+    }
+
+    /** Adds one of the built-in channel buttons ("Subscribe", "Like", ...) at the playhead. */
+    fun addSocialSticker(sticker: SocialSticker) {
+        if (project == null) return
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                sticker.file(ctx).also { f ->
+                    if (f.length() == 0L) f.outputStream().use {
+                        sticker.render().compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                }
+            }
+            val id = addImageLayer(Uri.fromFile(file))
+            if (id.isNotEmpty()) updateLayer(id) {
+                if (sticker.burst) it.copy(scale = 0.22f, y = 0.4f, loop = sticker.loop)
+                else it.copy(scale = 0.14f, y = -0.6f, loop = sticker.loop)
+            }
+        }
+    }
+
+    /**
+     * Adds an animated channel button (Subscribe + bell, Like, Follow, Share, Comment) at the red
+     * line. It is a normal layer (move, resize, time it), drawn frame by frame.
+     */
+    fun addAnimatedButton(kind: com.reelforge.editor.engine.AnimatedButton) {
+        val p = project ?: return
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                File(StickerCatalog.dir(ctx), "animated_${kind.name.lowercase()}.png").also { f ->
+                    if (f.length() == 0L) f.outputStream().use {
+                        com.reelforge.editor.engine.AnimatedButtons.still(kind)
+                            .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                    }
+                }
+            }
+            val start = playheadMs
+            val end = (start + kind.defaultMs).coerceAtMost(maxOf(p.durationMs, start + 500))
+            val layer = ImageLayer(
+                uri = Uri.fromFile(file).toString(), startMs = start, endMs = end,
+                scale = if (kind == com.reelforge.editor.engine.AnimatedButton.SUBSCRIBE) 0.2f else 0.16f,
+                y = -0.6f, button = kind.name,
+            )
+            mutate { it.copy(layers = it.layers + layer) }
+            toast("${kind.title} added at the red line. Play to see it move.", undo = true)
+        }
+    }
+
+    /** Adds one of the built-in sound effects at the playhead. */
+    fun addSoundEffect(effect: SoundEffect) {
+        if (project == null) return
+        val start = playheadMs
+        viewModelScope.launch {
+            val (file, duration) = withContext(Dispatchers.IO) {
+                val samples = SoundMaker.samples(effect)
+                val f = effect.file(ctx)
+                if (f.length() == 0L) f.writeBytes(SoundMaker.wav(samples))
+                f to samples.size * 1000L / SoundMaker.SAMPLE_RATE
+            }
+            val clip = AudioClip(
+                uri = Uri.fromFile(file).toString(), title = effect.title, startMs = start, durationMs = duration,
+            )
+            mutate { it.copy(audio = it.audio + clip) }
+        }
+    }
+
+    // ----------------------------------------------------------- music search
+
+    var musicResults by mutableStateOf(emptyList<MusicResult>())
+        private set
+    var musicSearching by mutableStateOf(false)
+        private set
+    var musicSearchNote by mutableStateOf("")
+        private set
+
+    /** Ids of search results that are downloading right now, with progress 0..100. */
+    val musicProgress = mutableStateMapOf<String, Int>()
+
+    /** Looks for free (public-domain) music or sound effects online. */
+    fun searchMusic(query: String, soundEffects: Boolean) {
+        if (query.isBlank() || musicSearching) return
+        musicSearching = true
+        musicSearchNote = ""
+        viewModelScope.launch {
+            val found = withContext(Dispatchers.IO) { runCatching { MusicSearch.search(query, soundEffects) } }
+            musicSearching = false
+            musicResults = found.getOrDefault(emptyList())
+            musicSearchNote = when {
+                found.isFailure -> "Search did not work. Check the internet connection and try again."
+                musicResults.isEmpty() -> "Nothing found. Try a simpler word, in English."
+                else -> ""
+            }
+        }
+    }
+
+    /** Downloads a search result, then uses it as the background music or as a sound at the playhead. */
+    fun useMusicResult(result: MusicResult, asMusic: Boolean) {
+        if (project == null || musicProgress.containsKey(result.id)) return
+        val start = playheadMs
+        val file = File(File(ctx.filesDir, "music").apply { mkdirs() }, "${result.id}.${result.fileType}")
+        musicProgress[result.id] = 0
+        viewModelScope.launch {
+            val duration = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (file.length() == 0L) AssetDownloader.download(result.url, file) { percent ->
+                        viewModelScope.launch { if (musicProgress.containsKey(result.id)) musicProgress[result.id] = percent }
+                    }
+                    MediaUtils.audioDurationMs(ctx, Uri.fromFile(file)).also { check(it > 0) { "not playable" } }
+                }.onFailure { file.delete() }.getOrDefault(0L)
+            }
+            musicProgress.remove(result.id)
+            val uri = Uri.fromFile(file).toString()
+            when {
+                duration <= 0 -> message = "Could not download \"${result.title}\". Try another one."
+                asMusic -> mutate { it.copy(music = MusicTrack(uri = uri, title = result.title, durationMs = duration)) }
+                else -> mutate {
+                    it.copy(audio = it.audio + AudioClip(uri = uri, title = result.title, startMs = start, durationMs = duration))
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ custom fonts
+
     /** Copies a .ttf / .otf file into app storage and uses it for one text item. */
     fun importFont(uri: Uri, textId: String) {
         viewModelScope.launch {
