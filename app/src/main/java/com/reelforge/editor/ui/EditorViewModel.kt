@@ -3201,6 +3201,184 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ------------------------------------------------------------ vocal separator
+
+    /** True once the Vocal Separator model is on the phone. */
+    var vocalModelReady by mutableStateOf(com.reelforge.editor.engine.VocalModel.isReady(getApplication()))
+        private set
+
+    /** Download progress (0..100) of the Vocal Separator model, null when not downloading. */
+    var vocalModelProgress by mutableStateOf<Int?>(null)
+        private set
+    private var vocalModelJob: Job? = null
+
+    /** Downloads the Vocal Separator model from the plug-in store; tapping again stops it. */
+    fun downloadVocalModel() {
+        vocalModelJob?.let {
+            it.cancel()
+            return
+        }
+        if (vocalModelReady) return
+        vocalModelProgress = 0
+        vocalModelJob = viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.VocalModel.download(ctx) { pct ->
+                        soundHandler.post { if (vocalModelProgress != null) vocalModelProgress = pct }
+                    }
+                }
+                vocalModelReady = true
+                toast("Vocal Separator ready. Select a song, sound or video clip, then Split voice and music.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                com.reelforge.editor.engine.VocalModel.delete(ctx)
+                toast("Download stopped", ToastKind.INFO)
+                throw e
+            } catch (e: Throwable) {
+                toast("Could not download the Vocal Separator. Check the internet and try again.", ToastKind.ERROR)
+            } finally {
+                vocalModelJob = null
+                vocalModelProgress = null
+            }
+        }
+    }
+
+    fun deleteVocalModel() {
+        com.reelforge.editor.engine.VocalModel.delete(ctx)
+        vocalModelReady = false
+        toast("Vocal Separator removed. You can download it again any time.", ToastKind.INFO)
+    }
+
+    /** What to keep after splitting: only the voice, only the music (karaoke), or both as two sounds. */
+    enum class Keep(val label: String) { VOICE("Voice only"), MUSIC("Music only (karaoke)"), BOTH("Both, as two sounds") }
+
+    /** What is split: a video clip's own sound, a sound clip, or the background music. */
+    enum class SplitSource { CLIP, SOUND, MUSIC }
+
+    /**
+     * Splits a song into voice and music on the phone and keeps [keep]. The model downloads first
+     * if needed. One step for Undo.
+     */
+    fun splitVoiceAndMusic(source: SplitSource, id: String?, keep: Keep) {
+        val p = project ?: return
+        val label = "Splitting voice and music"
+        soundTask(label, "Could not split this sound on this phone") {
+            if (!vocalModelReady) {
+                soundWork = "Downloading the Vocal Separator (${com.reelforge.editor.engine.VocalModel.SIZE_MB} MB)… 0%"
+                withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.VocalModel.download(ctx) { pct ->
+                        postStatus(soundHandler, "Downloading the Vocal Separator… $pct%") { soundWork = it }
+                    }
+                }
+                vocalModelReady = true
+            }
+            // Where the sound comes from, and which part of the file.
+            var made: File? = null
+            val (uri, from, upTo, name) = when (source) {
+                SplitSource.CLIP -> {
+                    val clip = p.clips.firstOrNull { it.id == id } ?: return@soundTask
+                    if (clip.durationMs > com.reelforge.editor.engine.VocalModel.MAX_MS) {
+                        toast("Split up to 5 minutes at a time. Cut this clip first.", ToastKind.WARNING)
+                        return@soundTask
+                    }
+                    val out = extractTo(Uri.parse(clip.uri), clip.trimStartMs, clip.trimEndMs, clip.effectiveSpeed, clip.pitch, "Taking the sound")
+                    made = out
+                    Quad(Uri.fromFile(out), 0L, clip.durationMs + 500, clip.name.ifBlank { "clip" })
+                }
+                SplitSource.SOUND -> {
+                    val a = p.audio.firstOrNull { it.id == id } ?: return@soundTask
+                    Quad(Uri.parse(a.uri), a.offsetMs, a.offsetMs + a.durationMs, a.title.substringAfter(": "))
+                }
+                SplitSource.MUSIC -> {
+                    val m = p.music ?: return@soundTask
+                    val start = if (m.durationMs > 0) m.offsetMs % m.durationMs else m.offsetMs
+                    Quad(Uri.parse(m.uri), start, minOf(m.durationMs, start + com.reelforge.editor.engine.VocalModel.MAX_MS), m.title)
+                }
+            }
+            if (upTo - from > com.reelforge.editor.engine.VocalModel.MAX_MS + 1_000) {
+                toast("Split up to 5 minutes at a time. Cut this sound first.", ToastKind.WARNING)
+                return@soundTask
+            }
+            soundWork = "$label… 0%"
+            val sound = withContext(Dispatchers.IO) {
+                com.reelforge.editor.engine.StereoDecoder.decode(ctx, uri, from, upTo) { !isActive }
+            } ?: error("no sound to split")
+            val dir = File(ctx.filesDir, "sounds").apply { mkdirs() }
+            val stamp = System.currentTimeMillis()
+            val voiceFile = File(dir, "voice_$stamp.wav")
+            val musicFile = File(dir, "music_$stamp.wav")
+            try {
+                withContext(Dispatchers.Default) {
+                    com.reelforge.editor.engine.VocalSeparator(com.reelforge.editor.engine.VocalModel.file(ctx)).use { sep ->
+                        sep.separate(sound, voiceFile, musicFile, { f ->
+                            postStatus(soundHandler, "$label… ${(f * 100).toInt()}%") { soundWork = it }
+                        }, { !isActive })
+                    }
+                }
+            } catch (e: Throwable) {
+                voiceFile.delete(); musicFile.delete()
+                throw e
+            } finally {
+                made?.delete()
+            }
+            val length = sound.frames * 1000L / com.reelforge.editor.engine.StereoSound.RATE
+            val voiceUri = Uri.fromFile(voiceFile).toString()
+            val musicUri = Uri.fromFile(musicFile).toString()
+            if (keep == Keep.VOICE) musicFile.delete()
+            if (keep == Keep.MUSIC) voiceFile.delete()
+            val now = project ?: return@soundTask
+            mutate { pr ->
+                when (source) {
+                    SplitSource.CLIP -> {
+                        val index = pr.clips.indexOfFirst { it.id == id }
+                        if (index < 0) return@mutate pr
+                        val clip = pr.clips[index]
+                        val at = pr.clipStartMs(index)
+                        val base = AudioClip(uri = "", title = "", startMs = at, durationMs = minOf(length, clip.durationMs),
+                            volume = if (clip.muted) 1f else clip.volume.coerceIn(0f, 2f), fadeInMs = clip.fadeInMs, fadeOutMs = clip.fadeOutMs)
+                        val added = buildList {
+                            if (keep != Keep.MUSIC) add(base.copy(id = newId(), uri = voiceUri, title = "Voice: $name"))
+                            if (keep != Keep.VOICE) add(base.copy(id = newId(), uri = musicUri, title = "Music: $name", duck = true))
+                        }
+                        pr.copy(clips = pr.clips.map { if (it.id == id) it.copy(muted = true) else it }, audio = pr.audio + added)
+                    }
+                    SplitSource.SOUND -> {
+                        val a = pr.audio.firstOrNull { it.id == id } ?: return@mutate pr
+                        val main = a.copy(
+                            uri = if (keep == Keep.VOICE) voiceUri else musicUri, offsetMs = 0,
+                            durationMs = minOf(a.durationMs, length),
+                            title = (if (keep == Keep.VOICE) "Voice: " else "Music: ") + name,
+                        )
+                        val extra = if (keep == Keep.BOTH) listOf(a.copy(id = newId(), uri = voiceUri, offsetMs = 0,
+                            durationMs = main.durationMs, title = "Voice: $name", duck = false)) else emptyList()
+                        pr.copy(audio = pr.audio.map { if (it.id == id) main else it } + extra)
+                    }
+                    SplitSource.MUSIC -> {
+                        val m = pr.music ?: return@mutate pr
+                        val track = m.copy(
+                            uri = if (keep == Keep.VOICE) voiceUri else musicUri, durationMs = length, offsetMs = 0,
+                            title = (if (keep == Keep.VOICE) "Voice: " else "Karaoke: ") + name, beats = emptyList(),
+                        )
+                        val extra = if (keep == Keep.BOTH) listOf(AudioClip(uri = voiceUri, title = "Voice: $name",
+                            startMs = m.startMs, durationMs = minOf(length, maxOf(0, now.durationMs - m.startMs)), volume = m.volume))
+                        else emptyList()
+                        pr.copy(music = track, audio = pr.audio + extra)
+                    }
+                }
+            }
+            toast(
+                when (keep) {
+                    Keep.VOICE -> "Done: only the voice is left. Undo to go back."
+                    Keep.MUSIC -> "Done: the voice is removed (karaoke). Undo to go back."
+                    Keep.BOTH -> "Done: voice and music are now two sounds you can change on their own."
+                },
+                undo = true,
+            )
+            com.reelforge.editor.work.WorkService.finished(ctx, "Voice and music are split", "Open CutMitra to hear them.")
+        }
+    }
+
+    private data class Quad(val uri: Uri, val from: Long, val to: Long, val name: String)
+
     /** Takes the whole sound of a video from the gallery and adds it as a sound clip at the red line. */
     fun addSoundFromVideo(uri: Uri) {
         val start = playheadMs
