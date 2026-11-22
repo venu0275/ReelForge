@@ -79,6 +79,9 @@ def load(model, ckpt):
             model.get_layer(f"{prefix}_dec{i}").set_weights([var("conv2d_transpose", t[i], "kernel"), var("conv2d_transpose", t[i], "bias")])
         model.get_layer(f"{prefix}_out").set_weights([var("conv2d", c[6], "kernel"), var("conv2d", c[6], "bias")])
         for i in range(12):
+            # Spleeter computes a 6th encoder batch norm but never uses it; Keras leaves it out.
+            if i == 5:
+                continue
             layer = model.get_layer(f"{prefix}_encbn{i}" if i < 6 else f"{prefix}_decbn{i - 6}")
             layer.set_weights([var("batch_normalization", b[i], f) for f in ("gamma", "beta", "moving_mean", "moving_variance")])
 
