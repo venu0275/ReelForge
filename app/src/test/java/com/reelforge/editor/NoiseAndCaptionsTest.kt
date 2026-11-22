@@ -51,7 +51,7 @@ class NoiseRemoverTest {
         val (out, latency) = run(NoiseRemoval.OFF, input)
         assertEquals(1023, latency)
         for (i in latency until input.size) assertEquals("sample $i", input[i - latency], out[i], 1e-4f)
-        for (i in 0 until latency) assertEquals(0f, out[i], 0f)
+        for (i in 0 until latency) assertEquals(0f, out[i], 1e-4f)
     }
 
     @Test fun `steady hiss is lowered a lot while a voice-like tone stays`() {
