@@ -1,0 +1,5 @@
+kind=int8
+vocals_output_index=1
+mask_error_mean=9.657291229814291e-05
+0 StatefulPartitionedCall:1 [1, 512, 1024, 2]
+1 StatefulPartitionedCall:0 [1, 512, 1024, 2]
