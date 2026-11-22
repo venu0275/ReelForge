@@ -98,6 +98,7 @@ fun PluginsPanel(vm: EditorViewModel) {
             TextButton(onClick = { part = PluginPart.CAPTIONS }) { Text("See all ${CaptionLanguage.entries.size} languages") }
             SectionTitle("Audio", "Built in")
             AudioTeaser { part = PluginPart.AUDIO }
+            VocalSeparatorCard(vm)
             NoiseRemoverCard(vm)
             SectionTitle("AI tools", "Built in")
             TrackingCard()
@@ -162,6 +163,7 @@ fun PluginsPanel(vm: EditorViewModel) {
         }
         PluginPart.AUDIO -> {
             AiVoicePanel(vm)
+            VocalSeparatorCard(vm)
             NoiseRemoverCard(vm)
         }
         PluginPart.MINE -> MyPlugins(vm) { part = PluginPart.FONTS }
@@ -513,6 +515,56 @@ private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
 
 // ---------------------------------------------------------------- audio
 
+@Composable
+private fun VocalSeparatorCard(vm: EditorViewModel) {
+    val percent = vm.vocalModelProgress
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("vocal_separator_card"),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Sound.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Rounded.Mic, null, tint = ToolColors.Sound) }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Vocal Separator", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Split a song into voice and music: karaoke, or keep only the singing.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "AI · about ${com.reelforge.editor.engine.VocalModel.SIZE_MB} MB · works offline after download",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                when {
+                    percent != null -> Box(
+                        Modifier.size(44.dp).clip(CircleShape).clickable { vm.downloadVocalModel() },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(progress = { percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
+                        Text("$percent", fontSize = 10.sp)
+                    }
+                    vm.vocalModelReady -> PackButton(1, 1, null) {}
+                    else -> PackButton(0, 1, null) { vm.downloadVocalModel() }
+                }
+            }
+            Text(
+                "How: select a song in Music, a sound, or a video clip's Volume, then Split voice and music.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+    }
+}
+
 /** A small card that opens AI Voice (it is big, so the All page only points to it). */
 @Composable
 private fun AudioTeaser(open: () -> Unit) {
@@ -689,7 +741,25 @@ private fun SuperResolutionCard(vm: EditorViewModel) {
 private fun MyPlugins(vm: EditorViewModel, openFonts: () -> Unit) {
     val packs = vm.fontPacks.filter { p -> p.fonts.any { it.id in vm.installedFonts } }
     val speech = CaptionLanguage.entries.filter { it.model in vm.speechModels }.distinctBy { it.model }
-    if (packs.isEmpty() && speech.isEmpty()) {
+    if (vm.vocalModelReady) {
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Mic, null, tint = ToolColors.Sound)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Vocal Separator", style = MaterialTheme.typography.titleSmall)
+                    Text("AI model · about ${com.reelforge.editor.engine.VocalModel.SIZE_MB} MB",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { vm.deleteVocalModel() }) { Text("Delete") }
+            }
+        }
+    }
+    if (packs.isEmpty() && speech.isEmpty() && !vm.vocalModelReady) {
         TipBox("Nothing downloaded yet. Effects, text presets and the noise remover are built in, so they are always here.")
         TextButton(onClick = openFonts) { Text("Browse font packs") }
     }

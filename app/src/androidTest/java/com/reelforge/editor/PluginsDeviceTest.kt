@@ -254,4 +254,45 @@ class PluginsDeviceTest {
         assertTrue("stayed level", keys.all { kotlin.math.abs(it.y) < 0.2f })
         assertTrue("followed most of the way", keys.last().tMs >= 2_000)
     }
+
+    @Test
+    fun vocalSeparator_splitsIntoVoiceAndMusicThatAddUp() {
+        val sep = com.reelforge.editor.engine.VocalModel
+        if (!sep.isReady(context)) {
+            val got = runCatching { sep.download(context) {} }
+            org.junit.Assume.assumeTrue("model not published yet: ${got.exceptionOrNull()}", got.isSuccess)
+        }
+        // Five seconds of a "song": a steady chord plus a sung-like tone that comes and goes.
+        val rate = com.reelforge.editor.engine.StereoSound.RATE
+        val frames = rate * 5
+        val samples = ShortArray(frames * 2) { i ->
+            val t = (i / 2).toDouble() / rate
+            val chord = 0.15 * (kotlin.math.sin(2 * Math.PI * 110 * t) + kotlin.math.sin(2 * Math.PI * 165 * t))
+            val sing = if ((t * 2).toInt() % 2 == 0) 0.25 * kotlin.math.sin(2 * Math.PI * (440 + 20 * kotlin.math.sin(30 * t)) * t) else 0.0
+            ((chord + sing) * 32767).toInt().coerceIn(-32768, 32767).toShort()
+        }
+        val sound = com.reelforge.editor.engine.StereoSound(samples, frames)
+        val voice = File(context.cacheDir, "sep_voice.wav")
+        val music = File(context.cacheDir, "sep_music.wav")
+        var last = 0f
+        val started = System.currentTimeMillis()
+        com.reelforge.editor.engine.VocalSeparator(sep.file(context)).use { it.separate(sound, voice, music, { f -> last = f }, { false }) }
+        Log.i("ReelForgeTest", "vocal separator: 5 s of sound in ${System.currentTimeMillis() - started} ms")
+        assertEquals(1f, last, 1e-6f)
+        // Both files hold the whole length, and voice + music is the song again.
+        assertEquals(44L + frames * 4L, voice.length())
+        assertEquals(44L + frames * 4L, music.length())
+        val v = java.io.RandomAccessFile(voice, "r")
+        val m = java.io.RandomAccessFile(music, "r")
+        try {
+            for (i in listOf(1_000, frames / 2, frames - 10)) {
+                v.seek(44L + i * 4L); m.seek(44L + i * 4L)
+                val vs = java.lang.Short.reverseBytes(v.readShort())
+                val ms = java.lang.Short.reverseBytes(m.readShort())
+                assertEquals("sample $i", samples[2 * i].toInt(), vs + ms, 3)
+            }
+        } finally {
+            v.close(); m.close()
+        }
+    }
 }

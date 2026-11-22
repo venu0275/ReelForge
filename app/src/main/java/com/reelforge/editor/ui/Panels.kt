@@ -216,6 +216,10 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
     Spacer(Modifier.height(8.dp))
     NoiseChips(clip.denoise) { level -> vm.updateClip(clip.id) { it.copy(denoise = level) } }
     Spacer(Modifier.height(8.dp))
+    if (clip.type == ClipType.VIDEO && clip.hasAudio) {
+        SplitVoiceRow(vm) { keep -> vm.splitVoiceAndMusic(EditorViewModel.SplitSource.CLIP, clip.id, keep) }
+        Spacer(Modifier.height(8.dp))
+    }
     FxChips(clip.audioFx) { fx -> vm.updateClip(clip.id) { it.copy(audioFx = fx) } }
 }
 
@@ -717,6 +721,8 @@ fun MusicPanel(vm: EditorViewModel, project: Project, pickAudio: () -> Unit) {
         Text("Loop to fill the video", Modifier.weight(1f))
         Switch(checked = music.loop, onCheckedChange = { l -> vm.updateMusic { it.copy(loop = l) } })
     }
+    Spacer(Modifier.height(8.dp))
+    SplitVoiceRow(vm) { keep -> vm.splitVoiceAndMusic(EditorViewModel.SplitSource.MUSIC, null, keep) }
     BeatSyncSection(vm, project)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = pickAudio) { Text("Replace") }
@@ -1010,6 +1016,7 @@ fun AudioPanel(
         CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
         SwitchRow("Clean voice", clip.clean) { on -> vm.updateAudioClip(clip.id) { it.copy(clean = on) } }
         NoiseChips(clip.denoise) { level -> vm.updateAudioClip(clip.id) { it.copy(denoise = level) } }
+        SplitVoiceRow(vm) { keep -> vm.splitVoiceAndMusic(EditorViewModel.SplitSource.SOUND, clip.id, keep) }
         if (!clip.voice) {
             SwitchRow("Lower under voice-overs", clip.duck) { on -> vm.updateAudioClip(clip.id) { it.copy(duck = on) } }
         }
@@ -1277,6 +1284,41 @@ private fun FxChips(
             style = MaterialTheme.typography.bodySmall,
         )
     }
+}
+
+/**
+ * Vocal Separator: split a song into voice and music, keeping the voice, the music (karaoke) or
+ * both. Shows the progress, with Stop, while it works.
+ */
+@Composable
+fun SplitVoiceRow(vm: EditorViewModel, onSplit: (EditorViewModel.Keep) -> Unit) {
+    Text("Split voice and music", style = MaterialTheme.typography.labelLarge)
+    val work = vm.soundWork
+    if (work != null && (work.startsWith("Splitting") || work.startsWith("Downloading the Vocal") || work.startsWith("Taking"))) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(work, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { vm.cancelSoundWork() }) { Text("Stop") }
+        }
+        androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        return
+    }
+    val hint = LocalHint.current
+    HintRow(spacing = 8.dp) {
+        EditorViewModel.Keep.entries.forEach { keep ->
+            FilterChip(
+                selected = false,
+                onClick = { if (work != null) hint("Wait for the current sound job to finish") else onSplit(keep) },
+                label = { Text(keep.label) },
+                modifier = Modifier.testTag("split_${keep.name.lowercase()}"),
+            )
+        }
+    }
+    Text(
+        (if (vm.vocalModelReady) "" else "First time only: downloads the Vocal Separator " +
+            "(about ${com.reelforge.editor.engine.VocalModel.SIZE_MB} MB). ") +
+            "Runs on your phone; a 3-minute song takes a few minutes. Up to 5 minutes at a time.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 /** Noise remover strength: Off / Low / Medium / High, with a line saying what it does. */

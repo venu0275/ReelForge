@@ -77,6 +77,9 @@ private val PrivacyPolicy: List<Pair<String, List<String>>> = listOf(
             "(for example Speech Services by Google), using voices stored on the phone. If you choose to " +
             "download a voice, that happens in your phone's speech settings.",
         "• Super Resolution: photos are made sharper by a model built into the app, on your phone. Nothing is uploaded.",
+        "• Vocal Separator: the first time you use it, its model is downloaded once from the app's public " +
+            "files on GitHub (raw.githubusercontent.com). Your songs and videos are split on your phone and " +
+            "never uploaded. GitHub receives a normal web request, which includes your IP address.",
         "• Update check: when the app opens, it asks the Google Play Store app on your phone whether a " +
             "newer version is available. This is handled by Google Play under Google's privacy policy; the " +
             "app sends nothing of yours.",
