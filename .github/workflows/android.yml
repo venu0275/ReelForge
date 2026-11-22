@@ -95,6 +95,8 @@ jobs:
         if: always() && github.ref == 'refs/heads/main'
         run: |
           ls -la screenshots || exit 0
+          # A run of only some tests may take no pictures; nothing to publish then.
+          [ -n "$(ls -A screenshots 2>/dev/null)" ] || exit 0
           cd screenshots
           git init -q -b ci-screenshots
           git config user.name "github-actions"
