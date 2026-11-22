@@ -1,0 +1,33 @@
+name: Build vocal separator model
+# Run by hand. Converts Deezer's Spleeter 2stems (MIT) to LiteRT and pushes the result to the
+# "models" branch of this repo (from there it is published to the public assets repo).
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install "tensorflow-cpu==2.16.2" numpy
+      - name: Convert
+        run: python tools/models/convert_spleeter.py out
+      - name: Push to the models branch
+        run: |
+          mkdir -p /tmp/pub && cp out/vocal_separator_2stems.tflite out/vocal_separator_2stems.txt /tmp/pub/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan models
+          git rm -rq --cached . && git clean -fdq -e out
+          cp /tmp/pub/* .
+          git add vocal_separator_2stems.tflite vocal_separator_2stems.txt
+          git commit -qm "Vocal separator model (Spleeter 2stems, MIT, LiteRT fp16)"
+          git push -f origin models
