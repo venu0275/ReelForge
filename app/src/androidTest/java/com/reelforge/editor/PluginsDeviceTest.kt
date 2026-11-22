@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.foundation.verticalScroll
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -119,6 +120,15 @@ class PluginsDeviceTest {
         return output
     }
 
+    /** Picks a part of the store (by its own click action, so nothing on top can catch the tap). */
+    private fun openPart(part: String) {
+        rule.onNodeWithTag("plugins_$part", useUnmergedTree = true)
+            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
+        rule.waitForIdle()
+    }
+
+    private fun hasTag(tag: String) = rule.onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
     @Test
     fun pluginStore_everyPartShowsWithoutErrors() {
         val vm = newViewModel()
@@ -128,23 +138,21 @@ class PluginsDeviceTest {
             ) { PluginsPanel(vm) }
         }
         rule.waitForIdle()
-        for (part in listOf("effects", "captions", "audio", "ai", "fonts", "text", "mine", "all")) {
-            rule.onNodeWithTag("plugins_$part", useUnmergedTree = true).performScrollTo().performClick()
-            rule.waitForIdle()
-        }
-        // Effects play their live preview; fonts list every language.
-        rule.onNodeWithTag("plugins_effects", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
-        assertTrue(rule.onAllNodesWithTag("effect_diwali").fetchSemanticsNodes().isNotEmpty())
-        assertTrue(rule.onAllNodesWithTag("effect_bubbles").fetchSemanticsNodes().isNotEmpty())
-        rule.onNodeWithTag("plugins_fonts", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
-        assertTrue(rule.onAllNodesWithText("Telugu fonts").fetchSemanticsNodes().isNotEmpty())
-        rule.onNodeWithTag("plugins_captions", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
-        assertTrue(rule.onAllNodesWithTag("speech_te").fetchSemanticsNodes().isNotEmpty())
-        rule.onNodeWithTag("plugins_audio", useUnmergedTree = true).performScrollTo().performClick()
-        rule.waitForIdle()
+        for (part in listOf("effects", "captions", "audio", "ai", "fonts", "text", "mine", "all")) openPart(part)
+        // Each part shows its own things.
+        openPart("effects")
+        assertTrue(hasTag("effect_diwali") && hasTag("effect_bubbles"))
+        openPart("fonts")
+        assertTrue(hasTag("fontpack_Telugu") && hasTag("fontpack_Odia"))
+        assertTrue(!hasTag("effect_bubbles"))
+        openPart("captions")
+        assertTrue(hasTag("speech_te") && hasTag("speech_hinglish"))
+        openPart("text")
+        assertTrue(hasTag("preset_te_diwali"))
+        openPart("ai")
+        assertTrue(hasTag("tracking_card"))
+        openPart("audio")
+        assertTrue(hasTag("ai_voice") && hasTag("noise_remover_card"))
         // AI Voice starts the phone's speech engine; it either finds voices or says there is none.
         waitUntil(20_000, "speech engine") { vm.voiceEngineReady != null }
         Log.i("ReelForgeTest", "speech engine ready=${read { vm.voiceEngineReady }} voices=${read { vm.aiVoices.size }}")
