@@ -1,8 +1,10 @@
 name: Build super resolution model
-# Run by hand once. Converts the official Real-ESRGAN (BSD-3) weights to LiteRT and uploads the
-# .tflite as a build artifact, to be copied into app/src/main/assets.
+# Run by hand once. Converts the official Real-ESRGAN (BSD-3) weights to LiteRT and commits the
+# .tflite to app/src/main/assets, where the app loads it from.
 on:
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   convert:
     runs-on: ubuntu-latest
@@ -27,3 +29,11 @@ jobs:
         with:
           name: super-resolution-model
           path: out/*.tflite
+      - name: Add the model to the app
+        run: |
+          cp out/super_resolution_x4.tflite app/src/main/assets/super_resolution_x4.tflite
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/assets/super_resolution_x4.tflite
+          git commit -m "Add the Super Resolution model (Real-ESRGAN general-x4v3, BSD-3, converted to LiteRT)" || exit 0
+          git push
