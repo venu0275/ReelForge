@@ -441,7 +441,57 @@ fun EditorScreen(vm: EditorViewModel) {
     }
 
     val open = panel
-    val sidePanel = open != null && open != Panel.EXPORT && open != Panel.DRAW
+    val sidePanel = open != null && open != Panel.EXPORT && open != Panel.DRAW && open != Panel.STORE
+
+    // Other places ask for a tool (a Store link in a tool, "Use" on a download).
+    LaunchedEffect(vm.panelRequest) {
+        vm.panelRequest?.let {
+            if (it == Panel.TEXT) editingTextId = null
+            panel = it
+            vm.panelRequest = null
+        }
+    }
+    // A tool that is opened has been seen: its "new" dot goes.
+    LaunchedEffect(panel) { panel?.let { vm.newIn.remove(it) } }
+    // "Use" on something downloaded in the Store: go to the tool it is for.
+    LaunchedEffect(vm.useRequest) {
+        val use = vm.useRequest ?: return@LaunchedEffect
+        vm.useRequest = null
+        when (use) {
+            is StoreUse.Fonts -> {
+                val id = vm.addLanguageText(use.group)
+                if (id.isNotEmpty()) {
+                    vm.fontTabRequest = true
+                    editingTextId = id
+                    previewPick = id
+                    panel = Panel.TEXT
+                }
+            }
+            is StoreUse.Captions -> {
+                vm.captionLanguageRequest = use.language
+                panel = Panel.CAPTIONS
+            }
+            StoreUse.VocalSeparator -> {
+                val clip = vm.selectedClip
+                when {
+                    project.music != null -> panel = Panel.MUSIC
+                    clip != null && clip.type == ClipType.VIDEO && clip.hasAudio -> panel = Panel.VOLUME
+                    project.audio.isNotEmpty() -> {
+                        panel = Panel.AUDIO
+                        vm.toast("Tap a sound below, then Split voice and music", ToastKind.INFO)
+                    }
+                    else -> {
+                        panel = null
+                        vm.toast(
+                            "Add music (Music) or select a video clip with singing, then Split voice and music " +
+                                "in its Volume.",
+                            ToastKind.INFO,
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     // A finished screen recording is put into the project as soon as it arrives.
     val finishedRecording = com.reelforge.editor.record.ScreenRecording.finished
@@ -701,6 +751,8 @@ fun EditorScreen(vm: EditorViewModel) {
 
     if (open == Panel.EXPORT) {
         ExportDialog(vm, project) { panel = null }
+    } else if (open == Panel.STORE) {
+        StoreScreen(vm) { panel = null }
     } else if (open == Panel.DRAW) {
         DrawScreen(
             project = project,
@@ -886,11 +938,12 @@ private fun EditorMenu(
             if (clip == null) {
                 ToolGroup("Create", ToolColors.Create) {
                     ToolTile("Media", I.AddPhotoAlternate, ToolColors.Create, active = !hasClips) { addMedia() }
-                    ToolTile("Text", I.TextFields, ToolColors.Create, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.TEXT) }
+                    ToolTile("Text", I.TextFields, ToolColors.Create, enabled = hasClips, whyOff = addFirst, dot = vm.newIn[Panel.TEXT] == true) { openPanel(Panel.TEXT) }
                     val captions = vm.captionWork != null
                     ToolTile(
                         if (captions) "Captions ${(vm.captionProgress * 100).toInt()}%" else "Captions",
                         I.ClosedCaption, ToolColors.Create, enabled = hasClips, active = captions, whyOff = addFirst,
+                        dot = vm.newIn[Panel.CAPTIONS] == true,
                     ) { openPanel(Panel.CAPTIONS) }
                     ToolTile("Layers", I.Layers, ToolColors.Create, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.LAYER) }
                     ToolTile("Draw", I.Brush, ToolColors.Create, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.DRAW) }
@@ -908,9 +961,9 @@ private fun EditorMenu(
                         active = vm.isRecording || vm.voiceCountdown > 0,
                         whyOff = addFirst,
                     ) { recordVoice() }
-                    ToolTile("Voice & sounds", I.GraphicEq, ToolColors.Sound, enabled = hasClips, whyOff = addFirst) { openPanel(Panel.AUDIO) }
+                    ToolTile("Voice & sounds", I.GraphicEq, ToolColors.Sound, enabled = hasClips, whyOff = addFirst, dot = vm.newIn[Panel.AUDIO] == true) { openPanel(Panel.AUDIO) }
                     // Opens the music screen; with music already added, its settings are one tap away there.
-                    ToolTile("Music", I.MusicNote, ToolColors.Sound) {
+                    ToolTile("Music", I.MusicNote, ToolColors.Sound, dot = vm.newIn[Panel.MUSIC] == true) {
                         if (project.music == null) openMusic() else openPanel(Panel.MUSIC)
                     }
                 }

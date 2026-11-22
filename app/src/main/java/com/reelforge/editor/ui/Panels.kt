@@ -427,6 +427,13 @@ fun TextPanel(
 
     val id = editing.id
     var tab by remember { mutableStateOf(TextTab.LOOK) }
+    // "Use" on a font pack in the Store opens straight on the fonts.
+    androidx.compose.runtime.LaunchedEffect(vm.fontTabRequest) {
+        if (vm.fontTabRequest) {
+            tab = TextTab.FONT
+            vm.fontTabRequest = false
+        }
+    }
     // Which effect is open on the Effects tab: 0 outline, 1 shadow, 2 glow, 3 background, 4 opacity.
     var effect by remember { mutableStateOf(0) }
 
@@ -1096,35 +1103,46 @@ fun BackgroundPanel(vm: EditorViewModel, project: Project) {
 private fun FontStore(vm: EditorViewModel, currentPath: String?, textId: String) {
     if (vm.storeFonts.isEmpty()) return
     Spacer(Modifier.height(8.dp))
-    Text("More fonts (free download)", style = MaterialTheme.typography.labelLarge)
-    vm.storeFonts.groupBy { it.group }.forEach { (group, fonts) ->
-        Text(group, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        HintRow(spacing = 8.dp) {
-            fonts.forEach { font ->
-                val installed = font.id in vm.installedFonts
-                val progress = vm.fontProgress[font.id]
-                FilterChip(
-                    selected = installed && currentPath == vm.fontPath(font),
-                    onClick = { vm.useStoreFont(font, textId) },
-                    label = {
-                        Text(
-                            when {
-                                progress != null -> "${font.name} $progress%"
-                                installed -> font.name
-                                else -> "↓ ${font.name}"
-                            }
-                        )
-                    },
-                )
-            }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("More fonts (free download)", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+        TextButton(onClick = { vm.openStoreAt("fonts") }, modifier = Modifier.testTag("get_more_fonts")) {
+            Text("Get more fonts →")
         }
     }
-    if (vm.installedFonts.isNotEmpty()) {
-        Text(
-            "${vm.installedFonts.size} downloaded. Fonts marked ↓ download when tapped.",
-            style = MaterialTheme.typography.bodySmall,
+    val chip: @Composable (com.reelforge.editor.data.FontAsset) -> Unit = { font ->
+        val installed = font.id in vm.installedFonts
+        val progress = vm.fontProgress[font.id]
+        FilterChip(
+            selected = installed && currentPath == vm.fontPath(font),
+            onClick = { vm.useStoreFont(font, textId) },
+            label = {
+                Text(
+                    when {
+                        progress != null -> "${font.name} $progress%"
+                        installed -> font.name
+                        else -> "↓ ${font.name}"
+                    }
+                )
+            },
         )
     }
+    // Fonts already on the phone come first, so new downloads are easy to find.
+    val mine = vm.storeFonts.filter { it.id in vm.installedFonts }
+    if (mine.isNotEmpty()) {
+        Text("Downloaded", style = MaterialTheme.typography.bodySmall, color = ToolColors.Create)
+        HintRow(spacing = 8.dp) { mine.forEach { chip(it) } }
+    }
+    com.reelforge.editor.data.FontPacks.packs(vm.storeFonts).forEach { pack ->
+        val rest = pack.fonts.filter { it.id !in vm.installedFonts }
+        if (rest.isEmpty()) return@forEach
+        Text(pack.group, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        HintRow(spacing = 8.dp) { rest.forEach { chip(it) } }
+    }
+    Text(
+        if (mine.isNotEmpty()) "${mine.size} downloaded. Fonts marked ↓ download when tapped."
+        else "Fonts marked ↓ download when tapped, or get a whole language in the Store.",
+        style = MaterialTheme.typography.bodySmall,
+    )
 }
 
 /** Settings for one picture-in-picture video layer, including green-screen removal. */
@@ -1457,6 +1475,13 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
                 ?: com.reelforge.editor.engine.CaptionLanguage.EN_IN
         )
     }
+    // "Use" on a caption language in the Store starts on it.
+    androidx.compose.runtime.LaunchedEffect(vm.captionLanguageRequest) {
+        vm.captionLanguageRequest?.let {
+            language = it
+            vm.captionLanguageRequest = null
+        }
+    }
     val hasVoice = project.audio.any { it.voice }
     val hasVideoSound = project.clips.any { it.type == ClipType.VIDEO && it.hasAudio && !it.muted }
     var fromVideo by remember { mutableStateOf(true) }
@@ -1480,7 +1505,12 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
         return
     }
 
-    PanelTitle("1. Spoken language")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) { PanelTitle("1. Spoken language") }
+        TextButton(onClick = { vm.openStoreAt("captions") }, modifier = Modifier.testTag("more_languages")) {
+            Text("More languages →")
+        }
+    }
     com.reelforge.editor.engine.CaptionLanguage.entries.groupBy { it.group }.forEach { (group, languages) ->
         HintRow(spacing = 8.dp, verticalAlignment = Alignment.CenterVertically) {
             Text(group, Modifier.width(48.dp), style = MaterialTheme.typography.bodySmall)

@@ -91,7 +91,14 @@ import java.io.File
 enum class ToastKind { SUCCESS, INFO, WARNING, ERROR }
 
 /** A short message at the top of the editor. [id] makes each one new, even with the same words. */
-data class Toast(val text: String, val kind: ToastKind, val undo: Boolean, val id: Long) {
+data class Toast(
+    val text: String,
+    val kind: ToastKind,
+    val undo: Boolean,
+    val id: Long,
+    val actionLabel: String? = null,
+    val action: (() -> Unit)? = null,
+) {
     companion object {
         /** Guesses the kind of an older plain message from its words. */
         fun kindOf(text: String): ToastKind {
@@ -210,6 +217,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Shows a toast. [undo] adds an Undo button that takes the change back. */
     fun toast(text: String, kind: ToastKind = ToastKind.SUCCESS, undo: Boolean = false) {
         toast = Toast(text, kind, undo, System.nanoTime())
+    }
+
+    /** A toast with its own button, e.g. "Use now" after a download. */
+    fun toast(text: String, actionLabel: String, action: () -> Unit) {
+        toast = Toast(text, ToastKind.SUCCESS, false, System.nanoTime(), actionLabel, action)
     }
 
     fun dismissToast(id: Long) {
@@ -1465,6 +1477,48 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // -------------------------------------------------------------- store navigation
+
+    /** The Store part to open at ("fonts", "captions", ...), set by links in the tools. */
+    var storePart by mutableStateOf<String?>(null)
+
+    /** A tool the editor should open (set from places that cannot open tools themselves). */
+    var panelRequest by mutableStateOf<Panel?>(null)
+
+    /** A downloaded plug-in the user wants to use now; the editor takes them to its tool. */
+    var useRequest by mutableStateOf<StoreUse?>(null)
+
+    /** Tools that got something new from the Store; they show a dot until opened. */
+    val newIn = mutableStateMapOf<Panel, Boolean>()
+
+    /** The caption language Captions should start on (after "Use" in the Store). */
+    var captionLanguageRequest by mutableStateOf<com.reelforge.editor.engine.CaptionLanguage?>(null)
+
+    /** True when the text tool should open on its Font tab (after "Use" on a font pack). */
+    var fontTabRequest by mutableStateOf(false)
+
+    /** Opens the Store at one of its plug-in parts. */
+    fun openStoreAt(part: String) {
+        storePart = part
+        panelRequest = Panel.STORE
+    }
+
+    fun useFromStore(use: StoreUse) {
+        useRequest = use
+    }
+
+    /**
+     * Adds a text written in a font pack's language, in its first downloaded font, so the new
+     * fonts can be tried straight away. Returns the text's id ("" without a project).
+     */
+    fun addLanguageText(group: String): String {
+        val pack = fontPacks.firstOrNull { it.group == group } ?: return ""
+        val font = pack.fonts.firstOrNull { it.id in installedFonts }
+        val id = addText(pack.sample, 0.09f)
+        if (id.isNotEmpty() && font != null) updateText(id) { it.copy(fontPath = fontPath(font)) }
+        return id
+    }
+
     // -------------------------------------------------------------- font store
 
     /** Fonts that can be downloaded on demand (see assets/font_catalog.json). */
@@ -1570,7 +1624,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 packProgress.remove(pack.group)
                 refreshInstalledFonts()
             }
-            if (failed == 0) toast("${pack.group} fonts ready. Pick them in Text → Font.")
+            if (failed == 0) {
+                newIn[Panel.TEXT] = true
+                toast("${pack.group} fonts are ready", "Use now") { useFromStore(StoreUse.Fonts(pack.group)) }
+            }
             else toast("$failed of ${missing.size} fonts could not download. Check the internet and try again.", ToastKind.ERROR)
         }
     }
@@ -2733,7 +2790,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         captionHandler.post { if (speechProgress.containsKey(key)) speechProgress[key] = pct }
                     }
                 }
-                toast("${language.label} captions ready. Use them in Captions → Auto captions.")
+                newIn[Panel.CAPTIONS] = true
+                toast("${language.label} captions are ready", "Use now") { useFromStore(StoreUse.Captions(language)) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 toast("Download stopped", ToastKind.INFO)
                 throw e
@@ -3228,7 +3286,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
                 vocalModelReady = true
-                toast("Vocal Separator ready. Select a song, sound or video clip, then Split voice and music.")
+                newIn[Panel.MUSIC] = true
+                newIn[Panel.AUDIO] = true
+                toast("Vocal Separator is ready", "Use now") { useFromStore(StoreUse.VocalSeparator) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 com.reelforge.editor.engine.VocalModel.delete(ctx)
                 toast("Download stopped", ToastKind.INFO)

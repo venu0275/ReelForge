@@ -70,6 +70,36 @@ private enum class PluginPart(val label: String) {
     FONTS("Fonts"), TEXT("Text presets"), MINE("My plug-ins"),
 }
 
+/** How many cards fit side by side: 2 on a phone held upright, more in the full-screen Store. */
+val LocalStoreColumns = androidx.compose.runtime.compositionLocalOf { 2 }
+
+/** True when the Store has the whole (wide) screen: the parts are listed down the left side. */
+val LocalStoreWide = androidx.compose.runtime.compositionLocalOf { false }
+
+/** Called after something is added to the video from the Store (the full-screen Store closes). */
+val LocalStoreAdded = androidx.compose.runtime.compositionLocalOf<() -> Unit> { {} }
+
+/** Lays [items] out [columns] to a row, each cell the same width. */
+@Composable
+fun <T> CardGrid(items: List<T>, columns: Int, cell: @Composable (T) -> Unit) {
+    if (columns <= 1) {
+        items.forEach { cell(it) }
+        return
+    }
+    Column {
+        items.chunked(columns).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { Box(Modifier.weight(1f)) { cell(it) } }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+/** Wide cards (font packs, languages) per row: one on a phone, two or more on a wide screen. */
+@Composable
+private fun wideColumns(): Int = (LocalStoreColumns.current / 2).coerceAtLeast(1)
+
 /**
  * Plug-ins: extras people add when they need them, like KineMaster's asset store. Fonts download
  * on demand (open-licence Google Fonts); effects and text presets are made by the app.
@@ -77,38 +107,60 @@ private enum class PluginPart(val label: String) {
 @Composable
 fun PluginsPanel(vm: EditorViewModel) {
     var part by rememberSaveable { mutableStateOf(PluginPart.ALL) }
-    HintRow(spacing = 6.dp) {
-        PluginPart.entries.forEach { p ->
-            FilterChip(
-                selected = part == p,
-                onClick = { part = p },
-                label = { Text(p.label) },
-                modifier = Modifier.testTag("plugins_${p.name.lowercase()}"),
-            )
+    // Opened from a tool ("Get more fonts →"): start on that part.
+    androidx.compose.runtime.LaunchedEffect(vm.storePart) {
+        vm.storePart?.let { wanted ->
+            PluginPart.entries.firstOrNull { it.name.equals(wanted, ignoreCase = true) }?.let { part = it }
+            vm.storePart = null
         }
     }
-    Spacer(Modifier.height(6.dp))
+    val chip: @Composable (PluginPart, Modifier) -> Unit = { p, modifier ->
+        FilterChip(
+            selected = part == p,
+            onClick = { part = p },
+            label = { Text(p.label) },
+            modifier = modifier.testTag("plugins_${p.name.lowercase()}"),
+        )
+    }
+    if (LocalStoreWide.current) {
+        Row {
+            Column(Modifier.width(190.dp).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                PluginPart.entries.forEach { chip(it, Modifier.fillMaxWidth()) }
+            }
+            Column(Modifier.weight(1f)) { PluginPartBody(vm, part) { part = it } }
+        }
+    } else {
+        HintRow(spacing = 6.dp) {
+            PluginPart.entries.forEach { chip(it, Modifier) }
+        }
+        Spacer(Modifier.height(6.dp))
+        PluginPartBody(vm, part) { part = it }
+    }
+}
+
+@Composable
+private fun PluginPartBody(vm: EditorViewModel, part: PluginPart, setPart: (PluginPart) -> Unit) {
     when (part) {
         PluginPart.ALL -> {
             SectionTitle("Effects", "Built in · no download")
             EffectGrid(vm, SceneEffect.entries.filter { it.group == "Festival" })
-            TextButton(onClick = { part = PluginPart.EFFECTS }) { Text("See all ${SceneEffect.entries.size} effects") }
+            TextButton(onClick = { setPart(PluginPart.EFFECTS) }) { Text("See all ${SceneEffect.entries.size} effects") }
             SectionTitle("Auto caption languages", "Free download")
-            CaptionLanguage.entries.filter { it.group == "India" }.take(4).forEach { SpeechCard(vm, it) }
-            TextButton(onClick = { part = PluginPart.CAPTIONS }) { Text("See all ${CaptionLanguage.entries.size} languages") }
+            CardGrid(CaptionLanguage.entries.filter { it.group == "India" }.take(4), wideColumns()) { SpeechCard(vm, it) }
+            TextButton(onClick = { setPart(PluginPart.CAPTIONS) }) { Text("See all ${CaptionLanguage.entries.size} languages") }
             SectionTitle("Audio", "Built in")
-            AudioTeaser { part = PluginPart.AUDIO }
+            AudioTeaser { setPart(PluginPart.AUDIO) }
             VocalSeparatorCard(vm)
             NoiseRemoverCard(vm)
             SectionTitle("AI tools", "Built in")
             TrackingCard()
             if (vm.superResolutionReady) SuperResolutionCard(vm)
             SectionTitle("Fonts by language", "Free download")
-            vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }.take(3).forEach { FontPackCard(vm, it) }
-            TextButton(onClick = { part = PluginPart.FONTS }) { Text("See all font packs") }
+            CardGrid(vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }.take(if (wideColumns() > 1) 4 else 3), wideColumns()) { FontPackCard(vm, it) }
+            TextButton(onClick = { setPart(PluginPart.FONTS) }) { Text("See all font packs") }
             SectionTitle("Text presets", "Tap to add")
             PresetRow(vm, TextPresets.ALL.filter { it.group == "Festivals" })
-            TextButton(onClick = { part = PluginPart.TEXT }) { Text("See all text presets") }
+            TextButton(onClick = { setPart(PluginPart.TEXT) }) { Text("See all text presets") }
         }
         PluginPart.EFFECTS -> {
             Text(
@@ -127,9 +179,9 @@ fun PluginsPanel(vm: EditorViewModel) {
                 style = MaterialTheme.typography.bodySmall,
             )
             SectionTitle("Indian languages", null)
-            vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }.forEach { FontPackCard(vm, it) }
+            CardGrid(vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }, wideColumns()) { FontPackCard(vm, it) }
             SectionTitle("English styles", null)
-            vm.fontPacks.filter { it.group !in FontPacks.LANGUAGES }.forEach { FontPackCard(vm, it) }
+            CardGrid(vm.fontPacks.filter { it.group !in FontPacks.LANGUAGES }, wideColumns()) { FontPackCard(vm, it) }
         }
         PluginPart.TEXT -> {
             Text(
@@ -150,7 +202,7 @@ fun PluginsPanel(vm: EditorViewModel) {
             )
             CaptionLanguage.entries.groupBy { it.group }.forEach { (group, languages) ->
                 SectionTitle(if (group == "India") "Indian languages" else "Other languages", null)
-                languages.forEach { SpeechCard(vm, it) }
+                CardGrid(languages, wideColumns()) { SpeechCard(vm, it) }
             }
             TipBox(
                 "Tamil, Marathi, Bengali, Kannada and Malayalam are not available yet: there is no " +
@@ -166,7 +218,7 @@ fun PluginsPanel(vm: EditorViewModel) {
             VocalSeparatorCard(vm)
             NoiseRemoverCard(vm)
         }
-        PluginPart.MINE -> MyPlugins(vm) { part = PluginPart.FONTS }
+        PluginPart.MINE -> MyPlugins(vm) { setPart(PluginPart.FONTS) }
     }
 }
 
@@ -207,11 +259,18 @@ private fun clockMs(): Long {
 @Composable
 private fun EffectGrid(vm: EditorViewModel, effects: List<SceneEffect>) {
     val now = clockMs()
+    val columns = LocalStoreColumns.current
+    val added = LocalStoreAdded.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        effects.chunked(2).forEach { row ->
+        effects.chunked(columns).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { EffectCard(it, now, Modifier.weight(1f)) { vm.addSceneEffect(it) } }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
+                row.forEach { e ->
+                    EffectCard(e, now, Modifier.weight(1f)) {
+                        vm.addSceneEffect(e)
+                        added()
+                    }
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -307,7 +366,15 @@ private fun FontPackCard(vm: EditorViewModel, pack: FontPack) {
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                PackButton(have, pack.fonts.size, progress) { vm.downloadFontPack(pack) }
+                if (have > 0 && progress == null) {
+                    UseButton { vm.useFromStore(StoreUse.Fonts(pack.group)) }
+                    if (have < pack.fonts.size) {
+                        Spacer(Modifier.width(4.dp))
+                        PackButton(have, pack.fonts.size, null) { vm.downloadFontPack(pack) }
+                    }
+                } else {
+                    PackButton(have, pack.fonts.size, progress) { vm.downloadFontPack(pack) }
+                }
             }
             if (open) {
                 Spacer(Modifier.height(8.dp))
@@ -327,6 +394,24 @@ private fun FontPackCard(vm: EditorViewModel, pack: FontPack) {
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
+        }
+    }
+}
+
+/** "Use": after a download, takes the user to the tool where the plug-in is used. */
+@Composable
+private fun UseButton(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = ToolColors.Create,
+        contentColor = Color.White,
+        modifier = Modifier.testTag("store_use"),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Use", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -418,8 +503,12 @@ private fun PresetCard(vm: EditorViewModel, preset: TextPreset) {
             runCatching { EffectFactory.renderText(preset.item(path).copy(size = 0.11f), 420).asImageBitmap() }.getOrNull()
         }
     }
+    val added = LocalStoreAdded.current
     Surface(
-        onClick = { vm.addTextPreset(preset) },
+        onClick = {
+            vm.addTextPreset(preset)
+            added()
+        },
         enabled = !busy,
         shape = RoundedCornerShape(14.dp),
         color = Color(0xFF15151F),
@@ -506,7 +595,7 @@ private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
                     CircularProgressIndicator(progress = { percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
                     Text("$percent", fontSize = 10.sp)
                 }
-                installed -> PackButton(1, 1, null) {}
+                installed -> UseButton { vm.useFromStore(StoreUse.Captions(language)) }
                 else -> PackButton(0, 1, null) { vm.downloadCaptionModel(language) }
             }
         }
@@ -551,7 +640,7 @@ private fun VocalSeparatorCard(vm: EditorViewModel) {
                         CircularProgressIndicator(progress = { percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
                         Text("$percent", fontSize = 10.sp)
                     }
-                    vm.vocalModelReady -> PackButton(1, 1, null) {}
+                    vm.vocalModelReady -> UseButton { vm.useFromStore(StoreUse.VocalSeparator) }
                     else -> PackButton(0, 1, null) { vm.downloadVocalModel() }
                 }
             }

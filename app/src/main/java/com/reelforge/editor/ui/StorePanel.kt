@@ -54,6 +54,7 @@ import com.reelforge.editor.data.SoundEffect
 fun StorePanel(vm: EditorViewModel) {
     // -2 = Plug-ins (shown first), -1 animated, 0 stickers, 1 buttons, 2 sounds, 3 music.
     var tab by remember { mutableIntStateOf(-2) }
+    val added = LocalStoreAdded.current
     // All four parts are always in view (no hidden tabs), each with an icon.
     val I = androidx.compose.material.icons.Icons.Rounded
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -99,7 +100,10 @@ fun StorePanel(vm: EditorViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 com.reelforge.editor.engine.AnimatedButton.entries.forEach { kind ->
-                    AnimatedButtonCard(kind) { vm.addAnimatedButton(kind) }
+                    AnimatedButtonCard(kind) {
+                        vm.addAnimatedButton(kind)
+                        added()
+                    }
                 }
             }
         }
@@ -139,7 +143,10 @@ fun StorePanel(vm: EditorViewModel) {
                                 .size(46.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .clickable(enabled = !busy) { vm.addSticker(sticker) },
+                                .clickable(enabled = !busy) {
+                                    vm.addSticker(sticker)
+                                    if (installed) added()
+                                },
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
@@ -174,7 +181,10 @@ fun StorePanel(vm: EditorViewModel) {
                         Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color(sticker.background))
-                            .clickable { vm.addSocialSticker(sticker) }
+                            .clickable {
+                                vm.addSocialSticker(sticker)
+                                added()
+                            }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     ) {
                         Text(sticker.label, color = Color(sticker.foreground), fontWeight = FontWeight.Bold)
@@ -192,7 +202,10 @@ fun StorePanel(vm: EditorViewModel) {
                         Modifier
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color(0xFF37474F))
-                            .clickable { vm.addSocialSticker(sticker) }
+                            .clickable {
+                                vm.addSocialSticker(sticker)
+                                added()
+                            }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     ) {
                         Text(sticker.label, color = Color(sticker.foreground), fontWeight = FontWeight.Black)
@@ -215,7 +228,7 @@ fun StorePanel(vm: EditorViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SoundEffect.entries.filter { !it.comedy }.forEach { effect ->
-                    FilterChip(selected = false, onClick = { vm.addSoundEffect(effect) }, label = { Text(effect.title) })
+                    FilterChip(selected = false, onClick = { vm.addSoundEffect(effect); added() }, label = { Text(effect.title) })
                 }
             }
             Text("Comedy sounds", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
@@ -224,7 +237,7 @@ fun StorePanel(vm: EditorViewModel) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SoundEffect.entries.filter { it.comedy }.forEach { effect ->
-                    FilterChip(selected = false, onClick = { vm.addSoundEffect(effect) }, label = { Text(effect.title) })
+                    FilterChip(selected = false, onClick = { vm.addSoundEffect(effect); added() }, label = { Text(effect.title) })
                 }
             }
             Text(

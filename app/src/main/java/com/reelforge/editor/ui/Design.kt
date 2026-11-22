@@ -33,6 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.getValue
@@ -100,6 +102,8 @@ fun ToolTile(
     highlight: Boolean = false,
     /** Shows a finger tapping the tile (used by the guided tours). */
     tapping: Boolean = false,
+    /** A small dot in the corner: something new is waiting here (from the Store). */
+    dot: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -172,6 +176,16 @@ fun ToolTile(
                 .size(if (tapping) 24.dp else 28.dp)
                 .background(color, CircleShape)
                 .padding(3.dp),
+        )
+    }
+    if (dot) {
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 6.dp, end = 8.dp)
+                .size(10.dp)
+                .background(Color(0xFFFF5252), CircleShape)
+                .semantics { contentDescription = "New" },
         )
     }
     }

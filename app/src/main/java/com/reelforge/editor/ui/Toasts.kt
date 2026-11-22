@@ -57,7 +57,7 @@ fun toastMillis(toast: Toast): Long {
     val base = 1_800L + toast.text.length * 35L
     val extra = when {
         toast.kind == ToastKind.ERROR -> 1_500L
-        toast.undo -> 1_200L
+        toast.undo || toast.actionLabel != null -> 1_200L
         else -> 0L
     }
     return (base + extra).coerceIn(2_200L, 6_500L)
@@ -102,7 +102,7 @@ fun ToastHost(vm: EditorViewModel) {
                 modifier = Modifier.padding(horizontal = 16.dp).widthIn(min = 200.dp, max = 520.dp),
             ) {
                 Row(
-                    Modifier.padding(start = 10.dp, end = if (current.undo) 4.dp else 14.dp, top = 8.dp, bottom = 8.dp),
+                    Modifier.padding(start = 10.dp, end = if (current.undo || current.actionLabel != null) 4.dp else 14.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
@@ -118,6 +118,16 @@ fun ToastHost(vm: EditorViewModel) {
                         color = Color.White,
                         modifier = Modifier.weight(1f, fill = false),
                     )
+                    val action = current.action
+                    if (current.actionLabel != null && action != null) {
+                        Spacer(Modifier.width(6.dp))
+                        TextButton(onClick = {
+                            vm.dismissToast(current.id)
+                            action()
+                        }) {
+                            Text(current.actionLabel, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                     if (current.undo) {
                         Spacer(Modifier.width(6.dp))
                         TextButton(onClick = {
