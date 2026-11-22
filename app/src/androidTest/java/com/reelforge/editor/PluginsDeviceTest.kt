@@ -122,31 +122,29 @@ class PluginsDeviceTest {
     @Test
     fun pluginStore_everyPartShowsWithoutErrors() {
         val vm = newViewModel()
-        // The effect cards animate all the time, so the screen is never "idle": move the clock by hand.
-        rule.mainClock.autoAdvance = false
         rule.setContent {
             androidx.compose.foundation.layout.Column(
                 androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
             ) { PluginsPanel(vm) }
         }
-        rule.mainClock.advanceTimeBy(500)
+        rule.waitForIdle()
         for (part in listOf("effects", "captions", "audio", "ai", "fonts", "text", "mine", "all")) {
             rule.onNodeWithTag("plugins_$part", useUnmergedTree = true).performScrollTo().performClick()
-            rule.mainClock.advanceTimeBy(1_000)
+            rule.waitForIdle()
         }
         // Effects play their live preview; fonts list every language.
         rule.onNodeWithTag("plugins_effects", useUnmergedTree = true).performScrollTo().performClick()
-        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
         assertTrue(rule.onAllNodesWithTag("effect_diwali").fetchSemanticsNodes().isNotEmpty())
         assertTrue(rule.onAllNodesWithTag("effect_bubbles").fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("plugins_fonts", useUnmergedTree = true).performScrollTo().performClick()
-        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
         assertTrue(rule.onAllNodesWithText("Telugu fonts").fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("plugins_captions", useUnmergedTree = true).performScrollTo().performClick()
-        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
         assertTrue(rule.onAllNodesWithTag("speech_te").fetchSemanticsNodes().isNotEmpty())
         rule.onNodeWithTag("plugins_audio", useUnmergedTree = true).performScrollTo().performClick()
-        rule.mainClock.advanceTimeBy(1_000)
+        rule.waitForIdle()
         // AI Voice starts the phone's speech engine; it either finds voices or says there is none.
         waitUntil(20_000, "speech engine") { vm.voiceEngineReady != null }
         Log.i("ReelForgeTest", "speech engine ready=${read { vm.voiceEngineReady }} voices=${read { vm.aiVoices.size }}")

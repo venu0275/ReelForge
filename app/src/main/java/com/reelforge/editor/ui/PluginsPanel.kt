@@ -180,9 +180,21 @@ private fun SectionTitle(title: String, note: String?) {
 
 // ---------------------------------------------------------------- effects
 
-/** Milliseconds since this first showed, updated every frame, for live previews. */
+/**
+ * Milliseconds since this first showed, updated every frame, for live previews. When the phone's
+ * animations are turned off (Settings → Accessibility → Remove animations) it stays still.
+ */
 @Composable
 private fun clockMs(): Long {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val still = remember {
+        runCatching {
+            android.provider.Settings.Global.getFloat(
+                context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f,
+            ) == 0f
+        }.getOrDefault(false)
+    }
+    if (still) return 1_500L
     val time by produceState(0L) {
         val start = withFrameMillis { it }
         while (true) withFrameMillis { value = it - start }
