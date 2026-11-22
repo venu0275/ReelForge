@@ -125,9 +125,9 @@ class ObjectTracker(
 
     /** Starts following the patch around ([cx], [cy]) of [grey] ([w] x [h]). */
     fun start(grey: FloatArray, w: Int, h: Int, cx: Float, cy: Float): Boolean {
+        if (w < side || h < side || grey.size < w * h) return false
         x = cx.coerceIn(half.toFloat(), (w - 1 - half).toFloat())
         y = cy.coerceIn(half.toFloat(), (h - 1 - half).toFloat())
-        if (w < side || h < side) return false
         val patch = patch(grey, w, x.toInt(), y.toInt()) ?: return false
         template = patch
         original = patch.copyOf()
