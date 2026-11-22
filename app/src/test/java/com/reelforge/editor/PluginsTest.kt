@@ -34,7 +34,9 @@ class PluginsTest {
         assertEquals(FontPacks.LANGUAGES, packs.take(FontPacks.LANGUAGES.size).map { it.group })
         assertTrue(packs.first { it.group == "Telugu" }.fonts.size >= 15)
         assertTrue("every font has a size", fonts.all { it.bytes > 0 })
-        assertTrue("only open-licence fonts", fonts.all { it.licence == "OFL-1.1" && "/ofl/" in it.url })
+        assertTrue("only open-licence fonts", fonts.all {
+            (it.licence == "OFL-1.1" && "/ofl/" in it.url) || (it.licence == "Apache-2.0" && "/apache/" in it.url)
+        })
     }
 
     @Test fun `sizes read well`() {
