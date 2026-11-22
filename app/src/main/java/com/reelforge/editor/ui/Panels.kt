@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
@@ -212,6 +213,8 @@ fun VolumePanel(vm: EditorViewModel, clip: Clip) {
                 )
             }
     }
+    Spacer(Modifier.height(8.dp))
+    NoiseChips(clip.denoise) { level -> vm.updateClip(clip.id) { it.copy(denoise = level) } }
     Spacer(Modifier.height(8.dp))
     FxChips(clip.audioFx) { fx -> vm.updateClip(clip.id) { it.copy(audioFx = fx) } }
 }
@@ -982,6 +985,7 @@ fun AudioPanel(
         }
         CutRow(vm.canCut(clip.startMs, clip.startMs + clip.durationMs)) { cut -> vm.cutAudio(clip.id, cut) }
         SwitchRow("Clean voice", clip.clean) { on -> vm.updateAudioClip(clip.id) { it.copy(clean = on) } }
+        NoiseChips(clip.denoise) { level -> vm.updateAudioClip(clip.id) { it.copy(denoise = level) } }
         if (!clip.voice) {
             SwitchRow("Lower under voice-overs", clip.duck) { on -> vm.updateAudioClip(clip.id) { it.copy(duck = on) } }
         }
@@ -1228,6 +1232,32 @@ private fun FxChips(
     }
 }
 
+/** Noise remover strength: Off / Low / Medium / High, with a line saying what it does. */
+@Composable
+fun NoiseChips(current: com.reelforge.editor.model.NoiseRemoval, onChange: (com.reelforge.editor.model.NoiseRemoval) -> Unit) {
+    Text("Noise remover", style = MaterialTheme.typography.labelLarge)
+    HintRow(spacing = 8.dp) {
+        com.reelforge.editor.model.NoiseRemoval.entries.forEach { level ->
+            FilterChip(
+                selected = current == level,
+                onClick = { onChange(level) },
+                label = { Text(level.label) },
+                modifier = Modifier.testTag("noise_${level.name.lowercase()}"),
+            )
+        }
+    }
+    Text(
+        when (current) {
+            com.reelforge.editor.model.NoiseRemoval.OFF ->
+                "Removes steady background noise from voices: fan, AC, hiss, hum, traffic. Not for music."
+            com.reelforge.editor.model.NoiseRemoval.HIGH ->
+                "Strongest. If the voice sounds thin, try Medium."
+            else -> "Play to hear it; the exported video sounds the same."
+        },
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
 /** "+3" / "-5" / "0" for a pitch shift in semitones. */
 private fun semitoneText(semitones: Int) = when {
     semitones > 0 -> "+$semitones"
@@ -1331,7 +1361,13 @@ fun DuckSlider(vm: EditorViewModel, project: Project?) {
  */
 @Composable
 fun CaptionsPanel(vm: EditorViewModel, project: Project) {
-    var language by remember { mutableStateOf(com.reelforge.editor.engine.CaptionLanguage.EN_IN) }
+    // Starts on a language that is already downloaded, if there is one.
+    var language by remember {
+        mutableStateOf(
+            com.reelforge.editor.engine.CaptionLanguage.entries.firstOrNull { it.model in vm.speechModels }
+                ?: com.reelforge.editor.engine.CaptionLanguage.EN_IN
+        )
+    }
     val hasVoice = project.audio.any { it.voice }
     val hasVideoSound = project.clips.any { it.type == ClipType.VIDEO && it.hasAudio && !it.muted }
     var fromVideo by remember { mutableStateOf(true) }
@@ -1356,13 +1392,23 @@ fun CaptionsPanel(vm: EditorViewModel, project: Project) {
     }
 
     PanelTitle("1. Spoken language")
-    HintRow(spacing = 8.dp) {
-        com.reelforge.editor.engine.CaptionLanguage.entries.forEach { lang ->
-            FilterChip(selected = language == lang, onClick = { language = lang }, label = { Text(lang.label) })
+    com.reelforge.editor.engine.CaptionLanguage.entries.groupBy { it.group }.forEach { (group, languages) ->
+        HintRow(spacing = 8.dp, verticalAlignment = Alignment.CenterVertically) {
+            Text(group, Modifier.width(48.dp), style = MaterialTheme.typography.bodySmall)
+            languages.forEach { lang ->
+                FilterChip(
+                    selected = language == lang,
+                    onClick = { language = lang },
+                    label = { Text(if (lang.model in vm.speechModels) "${lang.label} ✓" else lang.label) },
+                )
+            }
         }
     }
     Text(
-        if (ready) "${language.label} is ready on this phone."
+        when {
+            language.roman -> "Hindi speech written in English letters (\"kya haal hai\"). "
+            else -> ""
+        } + if (ready) "${language.label} is ready on this phone."
         else "First time only: downloads the ${language.label} speech model (about ${language.sizeMb} MB).",
         style = MaterialTheme.typography.bodySmall,
     )

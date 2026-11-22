@@ -1407,6 +1407,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         if (id.isNotEmpty() && announce) toast("\"${preset.text.lines().first()}\" added at the red line", undo = true)
     }
 
+    /** Sets the noise remover on every video clip with sound and every voice-over. */
+    fun setNoiseRemovalEverywhere(level: com.reelforge.editor.model.NoiseRemoval) {
+        if (project == null) return
+        mutate { p ->
+            p.copy(
+                clips = p.clips.map { if (it.type == ClipType.VIDEO && it.hasAudio) it.copy(denoise = level) else it },
+                audio = p.audio.map { if (it.voice) it.copy(denoise = level) else it },
+            )
+        }
+        toast(
+            if (level == com.reelforge.editor.model.NoiseRemoval.OFF) "Noise remover off"
+            else "Noise remover ${level.label} on. Play to hear it.",
+            undo = true,
+        )
+    }
+
     /** Adds a scene effect (snow, Diwali lights, ...) over the whole video, from the red line. */
     fun addSceneEffect(effect: com.reelforge.editor.engine.SceneEffect) {
         val p = project ?: return
@@ -2211,6 +2227,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         fun effectsOff() {
             fx.fx = com.reelforge.editor.model.AudioFx.NONE
             fx.clean = false
+            fx.denoise = com.reelforge.editor.model.NoiseRemoval.OFF
         }
 
         fun sync(p: Project, clip: AudioClip?, level: Float = 1f) {
@@ -2221,6 +2238,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             // Effect and clean-up are picked up live, so changing them is heard straight away.
             fx.fx = if (previewEffectsOff) com.reelforge.editor.model.AudioFx.NONE else clip.audioFx
             fx.clean = clip.clean && !previewEffectsOff
+            fx.denoise = if (previewEffectsOff) com.reelforge.editor.model.NoiseRemoval.OFF else clip.denoise
             fx.amount = clip.fxAmount
             val pitch = if (previewEffectsOff) 1f else clip.totalPitch
             if (player.playbackParameters.pitch != pitch) {
@@ -2338,7 +2356,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         }
                     }
                 }
-                val lines = com.reelforge.editor.engine.CaptionText.group(words)
+                val lines = com.reelforge.editor.engine.CaptionText.group(words, spaced = language.spaced)
                 if (lines.isEmpty()) {
                     message = "No speech was heard. Try another language, or check the sound is on."
                     return@launch
@@ -2347,7 +2365,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val items = lines.filter { it.startMs < total }.map { line ->
                     TextItem(
                         id = CAPTION_PREFIX + newId(),
-                        text = com.reelforge.editor.engine.CaptionText.tidy(line.text),
+                        text = language.shown(line.text),
                         size = 0.06f,
                         y = -0.62f,
                         startMs = line.startMs.coerceAtLeast(0),
@@ -2370,6 +2388,55 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 captionHandler.removeCallbacksAndMessages(null)
                 captionWork = null
                 captionProgress = 0f
+                refreshSpeechModels()
+            }
+        }
+    }
+
+    /** Folder names of the speech models on this phone (Hindi and Hinglish share one). */
+    var speechModels by mutableStateOf(installedSpeechModels())
+        private set
+
+    private fun installedSpeechModels(): Set<String> = com.reelforge.editor.engine.CaptionLanguage.entries
+        .filter { captionModelReady(it) }.map { it.model }.toSet()
+
+    /** Download progress (0..100) per model folder while it downloads from the plug-in store. */
+    val speechProgress = mutableStateMapOf<String, Int>()
+    private val speechJobs = HashMap<String, Job>()
+
+    fun refreshSpeechModels() {
+        speechModels = installedSpeechModels()
+    }
+
+    /** Downloads a language's speech model ahead of time; tapping again stops it. */
+    fun downloadCaptionModel(language: com.reelforge.editor.engine.CaptionLanguage) {
+        val key = language.model
+        speechJobs[key]?.let {
+            it.cancel()
+            return
+        }
+        if (captionModelReady(language)) {
+            toast("${language.label} captions are ready", ToastKind.INFO)
+            return
+        }
+        speechProgress[key] = 0
+        speechJobs[key] = viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    com.reelforge.editor.engine.CaptionModels.install(ctx, language) { pct ->
+                        captionHandler.post { if (speechProgress.containsKey(key)) speechProgress[key] = pct }
+                    }
+                }
+                toast("${language.label} captions ready. Use them in Captions → Auto captions.")
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                toast("Download stopped", ToastKind.INFO)
+                throw e
+            } catch (e: Throwable) {
+                toast("Could not download ${language.label}. Check the internet and try again.", ToastKind.ERROR)
+            } finally {
+                speechJobs.remove(key)
+                speechProgress.remove(key)
+                refreshSpeechModels()
             }
         }
     }
@@ -2386,7 +2453,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     /** Removes a downloaded speech model to free space. */
     fun deleteCaptionModel(language: com.reelforge.editor.engine.CaptionLanguage) {
         com.reelforge.editor.engine.CaptionModels.delete(ctx, language)
-        message = "${language.label} speech model removed"
+        refreshSpeechModels()
+        toast("${language.label} speech model removed", ToastKind.INFO)
     }
 
     // ------------------------------------------------------------ remove background
@@ -2983,6 +3051,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             previewEffectsOff = true
             mainFx.fx = com.reelforge.editor.model.AudioFx.NONE
             mainFx.clean = false
+            mainFx.denoise = com.reelforge.editor.model.NoiseRemoval.OFF
             voiceLane.effectsOff()
             soundLane.effectsOff()
             runCatching { if (effectsEverSet) player.setVideoEffects(emptyList()) }
@@ -3069,6 +3138,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         shownClipIndex = shown.first
         // The preview player tops out at 8x; faster clips still export at their full speed.
         mainFx.fx = if (clip.type == ClipType.VIDEO) clip.audioFx else com.reelforge.editor.model.AudioFx.NONE
+        mainFx.denoise = if (clip.type == ClipType.VIDEO) clip.denoise else com.reelforge.editor.model.NoiseRemoval.OFF
         mainFx.amount = 1f
         player.playbackParameters = PlaybackParameters(
             clip.effectiveSpeed.coerceIn(0.1f, 8f),
@@ -3077,6 +3147,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         setMainVolume(clip, 1f)
         if (previewEffectsOff) {
             mainFx.fx = com.reelforge.editor.model.AudioFx.NONE
+            mainFx.denoise = com.reelforge.editor.model.NoiseRemoval.OFF
             return
         }
         val signature = EffectFactory.previewSignature(clip, p)

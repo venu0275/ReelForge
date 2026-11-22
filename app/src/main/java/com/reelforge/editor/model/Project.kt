@@ -43,6 +43,17 @@ enum class FilterPreset(val label: String) {
  * For videos, [trimStartMs]..[trimEndMs] is the used range of the source file.
  * For images, [trimStartMs] is 0-based filler and (trimEnd - trimStart) is the display time.
  */
+/**
+ * How hard the noise remover works on a clip's sound. Stronger removes more noise but can make
+ * a voice sound thinner. [overSubtract] and [floorGain] tune the remover.
+ */
+enum class NoiseRemoval(val label: String, val overSubtract: Float, val floorGain: Float) {
+    OFF("Off", 0f, 1f),
+    LOW("Low", 1.0f, 0.32f),
+    MEDIUM("Medium", 1.3f, 0.16f),
+    HIGH("High", 1.7f, 0.08f),
+}
+
 data class Clip(
     val id: String = newId(),
     val uri: String,
@@ -72,6 +83,7 @@ data class Clip(
     val pitch: Float = 1f,        // voice changer: <1 deeper, >1 higher
     val audioFx: AudioFx = AudioFx.NONE,
     val motion: PhotoMotion = PhotoMotion.NONE, // slow pan / zoom on a photo (Ken Burns)
+    val denoise: NoiseRemoval = NoiseRemoval.OFF, // background noise removed from its sound
 ) {
     val effectiveSpeed: Float get() = if (type == ClipType.IMAGE) 1f else speed
 
@@ -485,6 +497,7 @@ data class AudioClip(
     val pitch: Float = 1f,      // voice pitch on top of the style (1 = as recorded); length unchanged
     val fxAmount: Float = 1f,   // how strong the style's filter is, 0..1
     val duck: Boolean = false,  // lowered under voice-overs, like a video's own sound (Extract sound)
+    val denoise: NoiseRemoval = NoiseRemoval.OFF, // background noise removed
 ) {
     /** The total pitch heard: the style's pitch times the user's own pitch. */
     val totalPitch: Float get() = (pitch * audioFx.pitch).coerceIn(MIN_PITCH, MAX_PITCH)

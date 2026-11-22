@@ -125,6 +125,7 @@ object ProjectJson {
                     put("pitch", a.pitch.toDouble())
                     put("fxAmount", a.fxAmount.toDouble())
                     put("duck", a.duck)
+                    put("denoise", a.denoise.name)
                 })
             }
         })
@@ -174,6 +175,7 @@ object ProjectJson {
         put("pitch", c.pitch.toDouble())
         put("audioFx", c.audioFx.name)
         put("motion", c.motion.name)
+        put("denoise", c.denoise.name)
     }
 
     private fun textToJson(t: TextItem) = JSONObject().apply {
@@ -245,6 +247,10 @@ object ProjectJson {
 
     private fun fx(name: String): AudioFx = runCatching { AudioFx.valueOf(name) }.getOrDefault(AudioFx.NONE)
 
+    private fun denoise(name: String): com.reelforge.editor.model.NoiseRemoval =
+        runCatching { com.reelforge.editor.model.NoiseRemoval.valueOf(name) }
+            .getOrDefault(com.reelforge.editor.model.NoiseRemoval.OFF)
+
     private fun anim(name: String): OverlayAnim =
         runCatching { OverlayAnim.valueOf(name) }.getOrDefault(OverlayAnim.NONE)
 
@@ -285,6 +291,7 @@ object ProjectJson {
                 audioFx = fx(c.optString("audioFx")),
                 motion = runCatching { com.reelforge.editor.model.PhotoMotion.valueOf(c.optString("motion")) }
                     .getOrDefault(com.reelforge.editor.model.PhotoMotion.NONE),
+                denoise = denoise(c.optString("denoise")),
             )
         }
         val texts = (0 until textsJson.length()).map { i ->
@@ -414,6 +421,7 @@ object ProjectJson {
                 // Older projects did not mark voice-overs; their recordings are named "Voice …".
                 voice = a.optBoolean("voice", a.optString("title").startsWith("Voice")),
                 clean = a.optBoolean("clean", false),
+                denoise = denoise(a.optString("denoise")),
                 pitch = a.optDouble("pitch", 1.0).toFloat().coerceIn(AudioClip.MIN_PITCH, AudioClip.MAX_PITCH),
                 fxAmount = a.optDouble("fxAmount", 1.0).toFloat().coerceIn(0f, 1f),
                 duck = a.optBoolean("duck", false),

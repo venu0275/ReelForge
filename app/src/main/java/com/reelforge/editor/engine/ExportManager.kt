@@ -415,7 +415,7 @@ object ExportManager {
         }
         if (clip.volume != 1f) audio += volumeProcessor(clip.volume)
         if (duckRangesUs.isNotEmpty()) audio += DuckProcessor(duckRangesUs, duckLevel)
-        audio += fxChain(clip.audioFx)
+        audio += fxChain(clip.audioFx, denoise = clip.denoise)
         if (clip.fadeInMs > 0 || clip.fadeOutMs > 0) {
             audio += AudioFadeProcessor(clip.durationMs * 1000, clip.fadeInMs * 1000, clip.fadeOutMs * 1000)
         }
@@ -451,7 +451,10 @@ object ExportManager {
         clean: Boolean = false,
         pitch: Float = fx.pitch,
         amount: Float = 1f,
+        denoise: com.reelforge.editor.model.NoiseRemoval = com.reelforge.editor.model.NoiseRemoval.OFF,
     ): List<AudioProcessor> = buildList {
+        // Noise comes out first, so the voice clean-up and effects work on the clean sound.
+        if (denoise != com.reelforge.editor.model.NoiseRemoval.OFF) add(NoiseRemoverProcessor(denoise))
         if (clean) add(VoiceCleanProcessor())
         if (pitch != 1f) add(SonicAudioProcessor().apply { setPitch(pitch) })
         if (!fx.filterless && amount > 0f) add(AudioFxProcessor(fx, amount))
@@ -500,7 +503,7 @@ object ExportManager {
             .setRemoveVideo(true)
             .setEffects(
                 Effects(
-                    fxChain(clip.audioFx, clip.clean, clip.totalPitch, clip.fxAmount) +
+                    fxChain(clip.audioFx, clip.clean, clip.totalPitch, clip.fxAmount, clip.denoise) +
                         audioChain(clip.volume, playMs, clip.fadeInMs, clip.fadeOutMs) +
                         duckFor(clip, playMs, project),
                     emptyList(),
@@ -594,8 +597,10 @@ object ExportManager {
                 durationUs, if (dims) inUs else 0L, if (dims) outUs else 0L, clip.opacity
             )
         }
-        if (!isImage && !clip.muted && clip.hasAudio && clip.audioFx != AudioFx.NONE) {
-            audio += fxChain(clip.audioFx)
+        if (!isImage && !clip.muted && clip.hasAudio &&
+            (clip.audioFx != AudioFx.NONE || clip.denoise != com.reelforge.editor.model.NoiseRemoval.OFF)
+        ) {
+            audio += fxChain(clip.audioFx, denoise = clip.denoise)
         }
         val hasFade = clip.fadeInMs > 0 || clip.fadeOutMs > 0
         if (!isImage && !clip.muted && clip.hasAudio && hasFade) {

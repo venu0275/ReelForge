@@ -55,7 +55,9 @@ import androidx.compose.ui.unit.sp
 import com.reelforge.editor.data.FontAsset
 import com.reelforge.editor.data.FontPack
 import com.reelforge.editor.data.FontPacks
+import com.reelforge.editor.engine.CaptionLanguage
 import com.reelforge.editor.engine.EffectFactory
+import com.reelforge.editor.model.NoiseRemoval
 import com.reelforge.editor.engine.SceneEffect
 import com.reelforge.editor.model.TextPreset
 import com.reelforge.editor.model.TextPresets
@@ -64,7 +66,8 @@ import kotlinx.coroutines.withContext
 
 /** The parts of the plug-in store, shown as chips across the top. */
 private enum class PluginPart(val label: String) {
-    ALL("All"), EFFECTS("Effects"), FONTS("Fonts"), TEXT("Text presets"), MINE("My plug-ins"),
+    ALL("All"), EFFECTS("Effects"), CAPTIONS("Caption languages"), AUDIO("Audio"), FONTS("Fonts"),
+    TEXT("Text presets"), MINE("My plug-ins"),
 }
 
 /**
@@ -90,6 +93,11 @@ fun PluginsPanel(vm: EditorViewModel) {
             SectionTitle("Effects", "Built in · no download")
             EffectGrid(vm, SceneEffect.entries.filter { it.group == "Festival" })
             TextButton(onClick = { part = PluginPart.EFFECTS }) { Text("See all ${SceneEffect.entries.size} effects") }
+            SectionTitle("Auto caption languages", "Free download")
+            CaptionLanguage.entries.filter { it.group == "India" }.take(4).forEach { SpeechCard(vm, it) }
+            TextButton(onClick = { part = PluginPart.CAPTIONS }) { Text("See all ${CaptionLanguage.entries.size} languages") }
+            SectionTitle("Audio", "Built in")
+            NoiseRemoverCard(vm)
             SectionTitle("Fonts by language", "Free download")
             vm.fontPacks.filter { it.group in FontPacks.LANGUAGES }.take(3).forEach { FontPackCard(vm, it) }
             TextButton(onClick = { part = PluginPart.FONTS }) { Text("See all font packs") }
@@ -129,6 +137,22 @@ fun PluginsPanel(vm: EditorViewModel) {
                 PresetRow(vm, TextPresets.ALL.filter { it.group == group })
             }
         }
+        PluginPart.CAPTIONS -> {
+            Text(
+                "Download a language once and Auto captions works with it offline. Your sound never " +
+                    "leaves the phone.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            CaptionLanguage.entries.groupBy { it.group }.forEach { (group, languages) ->
+                SectionTitle(if (group == "India") "Indian languages" else "Other languages", null)
+                languages.forEach { SpeechCard(vm, it) }
+            }
+            TipBox(
+                "Tamil, Marathi, Bengali, Kannada and Malayalam are not available yet: there is no " +
+                    "free offline speech model for them that fits on a phone. We will add them when there is.",
+            )
+        }
+        PluginPart.AUDIO -> NoiseRemoverCard(vm)
         PluginPart.MINE -> MyPlugins(vm) { part = PluginPart.FONTS }
     }
 }
@@ -397,14 +421,167 @@ private fun PresetCard(vm: EditorViewModel, preset: TextPreset) {
     }
 }
 
+// ---------------------------------------------------------------- captions
+
+/** A few words in the language, so people recognise it. */
+private fun speechSample(language: CaptionLanguage): String = when (language) {
+    CaptionLanguage.EN_IN, CaptionLanguage.EN_US -> "Hello, how are you?"
+    CaptionLanguage.HI -> "नमस्ते, आप कैसे हैं?"
+    CaptionLanguage.HINGLISH -> "Namaste, aap kaise hain? (uses the Hindi pack)"
+    CaptionLanguage.TE -> "నమస్కారం, ఎలా ఉన్నారు?"
+    CaptionLanguage.GU -> "નમસ્તે, કેમ છો?"
+    CaptionLanguage.ES -> "Hola, ¿cómo estás?"
+    CaptionLanguage.FR -> "Bonjour, ça va ?"
+    CaptionLanguage.DE -> "Hallo, wie geht's?"
+    CaptionLanguage.PT -> "Olá, tudo bem?"
+    CaptionLanguage.IT -> "Ciao, come stai?"
+    CaptionLanguage.RU -> "Привет, как дела?"
+    CaptionLanguage.TR -> "Merhaba, nasılsın?"
+    CaptionLanguage.VI -> "Xin chào, bạn khỏe không?"
+    CaptionLanguage.KO -> "안녕하세요"
+    CaptionLanguage.JA -> "こんにちは"
+    CaptionLanguage.ZH -> "你好"
+}
+
+@Composable
+private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
+    val installed = language.model in vm.speechModels
+    val percent = vm.speechProgress[language.model]
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("speech_${language.name.lowercase()}"),
+    ) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Create.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Rounded.ClosedCaption, null, tint = ToolColors.Create)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(language.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    speechSample(language), style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "Auto captions · ${language.sizeMb} MB",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            when {
+                percent != null -> Box(
+                    Modifier.size(44.dp).clip(CircleShape).clickable { vm.downloadCaptionModel(language) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(progress = { percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
+                    Text("$percent", fontSize = 10.sp)
+                }
+                installed -> PackButton(1, 1, null) {}
+                else -> PackButton(0, 1, null) { vm.downloadCaptionModel(language) }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- audio
+
+@Composable
+private fun NoiseRemoverCard(vm: EditorViewModel) {
+    val clips = vm.project?.clips.orEmpty().filter { it.type == com.reelforge.editor.model.ClipType.VIDEO && it.hasAudio }
+    val voices = vm.project?.audio.orEmpty().filter { it.voice }
+    val levels = (clips.map { it.denoise } + voices.map { it.denoise }).toSet()
+    val current = levels.singleOrNull()
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("noise_remover_card"),
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Sound.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Rounded.GraphicEq, null, tint = ToolColors.Sound)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Noise remover", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Takes out fan, AC, hiss, hum and traffic noise. Built in · works offline.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (clips.isEmpty() && voices.isEmpty()) {
+                Text(
+                    "Add a video with sound or record a voice-over, then come back here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
+            Text(
+                "For all ${clips.size} video clip${if (clips.size == 1) "" else "s"}" +
+                    (if (voices.isNotEmpty()) " and ${voices.size} voice-over${if (voices.size == 1) "" else "s"}" else ""),
+                style = MaterialTheme.typography.labelLarge,
+            )
+            HintRow(spacing = 8.dp) {
+                NoiseRemoval.entries.forEach { level ->
+                    FilterChip(
+                        selected = current == level,
+                        onClick = { vm.setNoiseRemovalEverywhere(level) },
+                        label = { Text(level.label) },
+                        modifier = Modifier.testTag("noise_all_${level.name.lowercase()}"),
+                    )
+                }
+            }
+            Text(
+                if (current == null) "Clips use different levels. Pick one to use it on all of them."
+                else "For one clip only: select it, then Sound → Noise remover.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 // ---------------------------------------------------------------- mine
 
 @Composable
 private fun MyPlugins(vm: EditorViewModel, openFonts: () -> Unit) {
     val packs = vm.fontPacks.filter { p -> p.fonts.any { it.id in vm.installedFonts } }
-    if (packs.isEmpty()) {
-        TipBox("No fonts downloaded yet. Effects and text presets are built in, so they are always here.")
+    val speech = CaptionLanguage.entries.filter { it.model in vm.speechModels }.distinctBy { it.model }
+    if (packs.isEmpty() && speech.isEmpty()) {
+        TipBox("Nothing downloaded yet. Effects, text presets and the noise remover are built in, so they are always here.")
         TextButton(onClick = openFonts) { Text("Browse font packs") }
+    }
+    speech.forEach { language ->
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        ) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.ClosedCaption, null, tint = ToolColors.Create)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (language == CaptionLanguage.HI) "Hindi + Hinglish captions" else "${language.label} captions",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text("Speech model · about ${language.sizeMb} MB", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { vm.deleteCaptionModel(language) }) { Text("Delete") }
+            }
+        }
     }
     packs.forEach { pack ->
         val mine = pack.fonts.filter { it.id in vm.installedFonts }
@@ -430,8 +607,8 @@ private fun MyPlugins(vm: EditorViewModel, openFonts: () -> Unit) {
     }
     SectionTitle("Built in", "Always available")
     Text(
-        "${SceneEffect.entries.size} effects and ${TextPresets.ALL.size} text presets. They take no space " +
-            "and work without internet.",
+        "${SceneEffect.entries.size} effects, ${TextPresets.ALL.size} text presets and the noise remover. " +
+            "They take no space and work without internet.",
         style = MaterialTheme.typography.bodySmall,
     )
 }

@@ -12,12 +12,39 @@ import java.util.zip.ZipInputStream
  * Speech models for Auto captions, from the Vosk project (alphacephei.com). They are Apache 2.0
  * licensed, so no payment or credit is needed. Each is downloaded once, when first used.
  */
-enum class CaptionLanguage(val label: String, val model: String, val sizeMb: Int) {
-    EN_IN("English (India)", "vosk-model-small-en-in-0.4", 36),
+enum class CaptionLanguage(
+    val label: String,
+    val model: String,
+    val sizeMb: Int,
+    /** "India" or "World": how the language list is grouped. */
+    val group: String = "World",
+    /** Hindi written in English letters (Hinglish). Uses the Hindi model. */
+    val roman: Boolean = false,
+    /** False for languages written without spaces between words (Chinese, Japanese). */
+    val spaced: Boolean = true,
+) {
+    EN_IN("English (India)", "vosk-model-small-en-in-0.4", 36, "India"),
+    HI("Hindi", "vosk-model-small-hi-0.22", 45, "India"),
+    HINGLISH("Hinglish", "vosk-model-small-hi-0.22", 45, "India", roman = true),
+    TE("Telugu", "vosk-model-small-te-0.42", 58, "India"),
+    GU("Gujarati", "vosk-model-small-gu-0.42", 100, "India"),
     EN_US("English (US)", "vosk-model-small-en-us-0.15", 40),
-    HI("Hindi", "vosk-model-small-hi-0.22", 45);
+    ES("Spanish", "vosk-model-small-es-0.42", 39),
+    FR("French", "vosk-model-small-fr-0.22", 41),
+    DE("German", "vosk-model-small-de-0.15", 45),
+    PT("Portuguese", "vosk-model-small-pt-0.3", 31),
+    IT("Italian", "vosk-model-small-it-0.22", 48),
+    RU("Russian", "vosk-model-small-ru-0.22", 45),
+    TR("Turkish", "vosk-model-small-tr-0.3", 35),
+    VI("Vietnamese", "vosk-model-small-vn-0.4", 32),
+    KO("Korean", "vosk-model-small-ko-0.22", 82),
+    JA("Japanese", "vosk-model-small-ja-0.22", 48, spaced = false),
+    ZH("Chinese", "vosk-model-small-cn-0.22", 42, spaced = false);
 
     val url: String get() = "https://alphacephei.com/vosk/models/$model.zip"
+
+    /** What the caption shows for a line the model wrote. */
+    fun shown(text: String): String = CaptionText.tidy(if (roman) Hinglish.convert(text) else text)
 }
 
 /** A word heard in the sound, with when it was said (milliseconds into the piece of sound). */
@@ -57,6 +84,7 @@ object CaptionText {
         maxMs: Long = 2_600,
         pauseMs: Long = 600,
         holdMs: Long = 400,
+        spaced: Boolean = true,
     ): List<CaptionLine> {
         val lines = mutableListOf<MutableList<SpokenWord>>()
         for (word in words.sortedBy { it.startMs }) {
@@ -71,7 +99,7 @@ object CaptionText {
         return lines.mapIndexed { i, line ->
             val nextStart = lines.getOrNull(i + 1)?.first()?.startMs ?: Long.MAX_VALUE
             val end = minOf(line.last().endMs + holdMs, nextStart).coerceAtLeast(line.first().startMs + 300)
-            CaptionLine(line.joinToString(" ") { it.text }, line.first().startMs, end)
+            CaptionLine(line.joinToString(if (spaced) " " else "") { it.text }, line.first().startMs, end)
         }
     }
 
@@ -101,7 +129,9 @@ object CaptionModels {
                 while (true) {
                     val entry = input.nextEntry ?: break
                     // The zip holds one folder named after the model; its contents go into target.
-                    val name = entry.name.removePrefix("${language.model}/").trimStart('/')
+                    // (Some zips name that folder a little differently, so any "vosk-model…" folder counts.)
+                    val raw = entry.name.trimStart('/')
+                    val name = if (raw.substringBefore('/').startsWith("vosk-model")) raw.substringAfter('/', "") else raw
                     if (name.isEmpty()) continue
                     val out = File(target, name)
                     if (!out.canonicalPath.startsWith(base)) continue // never write outside

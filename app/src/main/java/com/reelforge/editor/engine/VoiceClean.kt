@@ -137,11 +137,15 @@ class LiveAudioFx : BaseAudioProcessor() {
     @Volatile var clean: Boolean = false
     /** How strong the effect is (0..1); changes are heard without restarting it. */
     @Volatile var amount: Float = 1f
+    /** Noise remover strength (heard a few milliseconds late in the preview; exact in the export). */
+    @Volatile var denoise: com.reelforge.editor.model.NoiseRemoval = com.reelforge.editor.model.NoiseRemoval.OFF
 
     private var usedFx = AudioFx.NONE
     private var usedClean = false
+    private var usedDenoise = com.reelforge.editor.model.NoiseRemoval.OFF
     private var effects: Array<FxChannel> = emptyArray()
     private var cleaners: Array<VoiceCleaner> = emptyArray()
+    private var removers: Array<NoiseRemover> = emptyArray()
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
@@ -155,8 +159,12 @@ class LiveAudioFx : BaseAudioProcessor() {
         val rate = inputAudioFormat.sampleRate.coerceAtLeast(8_000)
         usedFx = fx
         usedClean = clean
+        usedDenoise = denoise
         effects = Array(count) { FxChannel(usedFx, rate) }
         cleaners = if (usedClean) Array(count) { VoiceCleaner(rate) } else emptyArray()
+        removers = if (usedDenoise != com.reelforge.editor.model.NoiseRemoval.OFF) {
+            Array(count) { NoiseRemover(rate, usedDenoise) }
+        } else emptyArray()
     }
 
     override fun onFlush() = rebuild()
@@ -166,20 +174,25 @@ class LiveAudioFx : BaseAudioProcessor() {
         // buffer into itself, which throws and stopped the preview with
         // ERROR_CODE_FAILED_RUNTIME_CHECK.)
         if (!inputBuffer.hasRemaining()) return
-        if (effects.isEmpty() || fx != usedFx || clean != usedClean) {
+        if (effects.isEmpty() || fx != usedFx || clean != usedClean || denoise != usedDenoise) {
             // A problem setting up the effect must never stop playback: play the sound as it is.
-            runCatching { rebuild() }.onFailure { usedFx = AudioFx.NONE; usedClean = false }
+            runCatching { rebuild() }.onFailure {
+                usedFx = AudioFx.NONE; usedClean = false
+                usedDenoise = com.reelforge.editor.model.NoiseRemoval.OFF; removers = emptyArray()
+            }
         }
+        val denoising = removers.isNotEmpty()
         val count = effects.size.coerceAtLeast(1)
         val mix = amount
         for (effect in effects) effect.amount = mix
         val out = replaceOutputBuffer(inputBuffer.remaining())
-        if ((usedFx.filterless && !usedClean) || effects.isEmpty()) {
+        if ((usedFx.filterless && !usedClean && !denoising) || effects.isEmpty()) {
             out.put(inputBuffer)
         } else {
             while (inputBuffer.remaining() >= 2 * count) {
                 for (channel in 0 until count) {
                     var y = inputBuffer.short / 32768f
+                    if (denoising) y = removers[channel].process(y)
                     if (usedClean) y = cleaners[channel].process(y)
                     if (!usedFx.filterless) y = effects[channel].process(y)
                     out.putShort((y * 32767f).toInt().coerceIn(-32768, 32767).toShort())
@@ -193,6 +206,7 @@ class LiveAudioFx : BaseAudioProcessor() {
     override fun onReset() {
         effects = emptyArray()
         cleaners = emptyArray()
+        removers = emptyArray()
     }
 }
 
