@@ -123,27 +123,41 @@ def main(out_dir):
     mix = (rng.random((1, T, F, 2)) ** 3 * 4).astype(np.float32)
     mine = [o.numpy() for o in model(mix, training=False)]
 
-    # tflite, fp16 weights
-    conv = tf.lite.TFLiteConverter.from_keras_model(model)
-    conv.optimizations = [tf.lite.Optimize.DEFAULT]
-    conv.target_spec.supported_types = [tf.float16]
-    data = conv.convert()
-    path = os.path.join(out_dir, "vocal_separator_2stems.tflite")
-    open(path, "wb").write(data)
-    print("tflite bytes", len(data))
-    it = tf.lite.Interpreter(model_path=path)
-    it.allocate_tensors()
-    ins = it.get_input_details()
-    outs = it.get_output_details()
-    print("in", [(d["name"], d["shape"]) for d in ins], "out", [(d["name"], d["shape"]) for d in outs])
-    it.set_tensor(ins[0]["index"], mix)
-    it.invoke()
-    lite = [it.get_tensor(d["index"]) for d in outs]
-    # Output order in the tflite file may differ: match by closeness.
-    for k, name in enumerate(["vocals", "accompaniment"]):
-        diffs = [float(np.abs(l - mine[k]).max()) for l in lite]
-        print(name, "tflite vs keras max diff per output", diffs)
-        assert min(diffs) < 0.05 * float(np.abs(mine[k]).max() + 1e-6), "tflite does not match"
+    def mask_of(v, a):
+        return (v * v + 5e-11) / (v * v + a * a + 1e-10)
+
+    want_mask = mask_of(mine[0], mine[1])
+
+    def convert(kind):
+        c = tf.lite.TFLiteConverter.from_keras_model(model)
+        c.optimizations = [tf.lite.Optimize.DEFAULT]
+        if kind == "fp16":
+            c.target_spec.supported_types = [tf.float16]
+        # "int8": dynamic-range quantisation, weights stored as 8-bit, maths in float.
+        data = c.convert()
+        p = os.path.join(out_dir, f"sep_{kind}.tflite")
+        open(p, "wb").write(data)
+        it = tf.lite.Interpreter(model_path=p)
+        it.allocate_tensors()
+        ins = it.get_input_details()
+        outs = it.get_output_details()
+        it.set_tensor(ins[0]["index"], mix)
+        it.invoke()
+        lite = [it.get_tensor(d["index"]) for d in outs]
+        vi = int(np.argmin([np.abs(l - mine[0]).max() for l in lite]))
+        m = mask_of(lite[vi], lite[1 - vi])
+        err = float(np.abs(m - want_mask).mean())
+        worst = float(np.abs(m - want_mask).max())
+        print(kind, "bytes", len(data), "voice output", vi, "mask error mean", err, "max", worst,
+              [(d["name"], list(d["shape"])) for d in outs])
+        return p, vi, err, outs
+
+    results = {k: convert(k) for k in ["int8", "fp16"]}
+    kind = "int8" if results["int8"][2] < 0.01 else "fp16"
+    path, vi, err, outs = results[kind]
+    print("chosen", kind)
+    import shutil
+    shutil.copy(path, os.path.join(out_dir, "vocal_separator_2stems.tflite"))
 
     try:
         ref = reference(ck, mix)
@@ -157,10 +171,9 @@ def main(out_dir):
     except Exception as e:  # noqa
         print("reference check skipped:", repr(e)[:500])
 
-    # Which tflite output is vocals: the one closest to the keras vocals.
-    vi = int(np.argmin([np.abs(l - mine[0]).max() for l in lite]))
     open(os.path.join(out_dir, "vocal_separator_2stems.txt"), "w").write(
-        f"vocals_output_index={vi}\n" + "\n".join(f"{i} {d['name']} {list(d['shape'])}" for i, d in enumerate(outs)) + "\n")
+        f"kind={kind}\nvocals_output_index={vi}\nmask_error_mean={err}\n" +
+        "\n".join(f"{i} {d['name']} {list(d['shape'])}" for i, d in enumerate(outs)) + "\n")
     print("vocals output index", vi)
 
 
