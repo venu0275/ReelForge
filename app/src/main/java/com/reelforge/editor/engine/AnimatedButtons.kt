@@ -20,6 +20,9 @@ import kotlin.math.sin
  *    bell that rings.
  *  - LIKE: an outlined button pops in, the 👍 bounces and the button fills with colour.
  *  - FOLLOW, SHARE, COMMENT: slide in, pulse, and slide out at the end.
+ *  - BELL: a bell pops in and rings, a red "1" badge appears and "NOTIFICATIONS ON" slides out.
+ *
+ * [ButtonSounds] has matching sounds, for the "with sound" versions.
  */
 enum class AnimatedButton(
     override val title: String,
@@ -33,7 +36,8 @@ enum class AnimatedButton(
     LIKE("Like", "LIKE", 0xFF1565C0.toInt(), defaultMs = 3_000),
     FOLLOW("Follow", "FOLLOW", 0xFF1E88E5.toInt(), defaultMs = 3_500),
     SHARE("Share", "↗ SHARE", 0xFF2E7D32.toInt(), defaultMs = 3_500),
-    COMMENT("Comment", "💬 COMMENT", 0xFFEF6C00.toInt(), defaultMs = 3_500);
+    COMMENT("Comment", "💬 COMMENT", 0xFFEF6C00.toInt(), defaultMs = 3_500),
+    BELL("Notification bell", "NOTIFICATIONS ON", 0xFFFFB300.toInt(), 0xFF212121.toInt(), defaultMs = 3_500);
 
     override fun aspect(frameAspect: Float): Float = AnimatedButtons.aspect(this)
 
@@ -98,6 +102,7 @@ object AnimatedButtons {
         return when (b) {
             AnimatedButton.SUBSCRIBE -> (w + h * 1.5f) / (h * 2.1f)
             AnimatedButton.LIKE -> (w + h * 0.8f) / (h * 2.1f)
+            AnimatedButton.BELL -> (w + h * 1.75f) / (h * 2.1f)
             else -> (w * 1.25f) / (h * 1.5f)
         }
     }
@@ -112,6 +117,7 @@ object AnimatedButtons {
         when (b) {
             AnimatedButton.SUBSCRIBE -> subscribe(canvas, b, tMs.toFloat(), w, h)
             AnimatedButton.LIKE -> like(canvas, b, tMs.toFloat(), w, h)
+            AnimatedButton.BELL -> bell(canvas, b, tMs.toFloat(), durationMs.toFloat(), w, h)
             else -> slide(canvas, b, tMs.toFloat(), durationMs.toFloat(), w, h)
         }
     }
@@ -260,6 +266,68 @@ object AnimatedButtons {
         }
     }
 
+    private fun bell(c: Canvas, b: AnimatedButton, t: Float, duration: Float, w: Float, h: Float) {
+        val bh = h / 2.1f
+        val bw = buttonWidth(b, bh)
+        val bellX = bh * 0.95f
+        val cy = h * 0.5f
+        val fadeOut = 1f - span(t, duration - 400f, duration)
+        c.saveLayerAlpha(0f, 0f, w, h, (255 * fadeOut).toInt())
+
+        // The label slides out from behind the bell.
+        val reveal = easeOut(span(t, 900f, 1_300f))
+        if (reveal > 0f) {
+            val left = bellX + bh * 0.2f
+            c.save()
+            c.clipRect(left, 0f, left + (bw + bh * 0.4f) * reveal, h)
+            val cx = left + bh * 0.4f + bw / 2f
+            roundButton(c, cx, cy, bw, bh * 0.82f, b.colour)
+            label(c, b.label, cx, cy, bh * 0.82f, b.textColour)
+            c.restore()
+        }
+
+        // Sound waves while it rings.
+        val waves = span(t, 500f, 1_700f)
+        if (waves in 0.001f..0.999f) {
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0xFFFFFFFF.toInt()
+                style = Paint.Style.STROKE
+                strokeWidth = bh * 0.06f
+                strokeCap = Paint.Cap.ROUND
+            }
+            for (k in 0 until 2) {
+                val phase = ((t - 500f) / 400f + k * 0.5f) % 1f
+                p.alpha = (200 * (1f - phase) * (1f - waves)).toInt()
+                val r = bh * (0.55f + 0.35f * phase)
+                c.drawArc(RectF(bellX - r, cy - r, bellX + r, cy + r), 150f, 60f, false, p)
+                c.drawArc(RectF(bellX - r, cy - r, bellX + r, cy + r), -30f, 60f, false, p)
+            }
+        }
+
+        // The bell: pops in, swings and slowly stops.
+        val s = popIn(span(t, 0f, 380f))
+        val ring = if (t >= 500f) {
+            val since = (t - 500f) / 1000f
+            (26.0 * sin(since * 2 * PI * 4.5) * exp(-since * 1.6)).toFloat()
+        } else 0f
+        c.save()
+        c.scale(s, s, bellX, cy)
+        emoji(c, BELL, bellX, cy, bh * 1.05f, ring, pivotY = 0.12f)
+        c.restore()
+
+        // A red badge with "1".
+        val badge = popIn(span(t, 560f, 860f))
+        if (badge > 0f) {
+            val bx = bellX + bh * 0.36f
+            val by = cy - bh * 0.36f
+            val r = bh * 0.2f * badge
+            c.drawCircle(bx, by, r, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE53935.toInt() })
+            val p = textPaint(bh * 0.55f * badge, 0xFFFFFFFF.toInt())
+            c.drawText("1", bx, by - (p.descent() + p.ascent()) / 2f, p)
+        }
+        c.restore()
+    }
+
     private fun slide(c: Canvas, b: AnimatedButton, t: Float, duration: Float, w: Float, h: Float) {
         val bh = h / 1.5f
         val bw = buttonWidth(b, bh)
@@ -296,5 +364,13 @@ object AnimatedButtons {
 
     /** The still used for the layer's thumbnail and size: the button in its finished state. */
     fun still(b: AnimatedButton, height: Int = 240): Bitmap =
-        render(b, if (b == AnimatedButton.SUBSCRIBE || b == AnimatedButton.LIKE) 3_000 else 1_000, 10_000, height)
+        render(
+            b,
+            when (b) {
+                AnimatedButton.SUBSCRIBE, AnimatedButton.LIKE -> 3_000
+                AnimatedButton.BELL -> 2_500
+                else -> 1_000
+            },
+            10_000, height,
+        )
 }

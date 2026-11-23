@@ -1881,7 +1881,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
      * Adds an animated channel button (Subscribe + bell, Like, Follow, Share, Comment) at the red
      * line. It is a normal layer (move, resize, time it), drawn frame by frame.
      */
-    fun addAnimatedButton(kind: com.reelforge.editor.engine.AnimatedButton) {
+    /**
+     * Adds an animated button at the red line. [withSound] also adds its sounds (pop, click,
+     * bell...) as a sound clip starting at the same moment, timed to the animation.
+     */
+    fun addAnimatedButton(kind: com.reelforge.editor.engine.AnimatedButton, withSound: Boolean = false) {
         val p = project ?: return
         viewModelScope.launch {
             val file = withContext(Dispatchers.IO) {
@@ -1899,8 +1903,28 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 scale = if (kind == com.reelforge.editor.engine.AnimatedButton.SUBSCRIBE) 0.2f else 0.16f,
                 y = -0.6f, button = kind.name,
             )
-            mutate { it.copy(layers = it.layers + layer) }
-            toast("${kind.title} added at the red line. Play to see it move.", undo = true)
+            val sound = if (withSound) withContext(Dispatchers.IO) {
+                runCatching {
+                    val length = end - start
+                    val f = File(File(ctx.filesDir, "sounds").apply { mkdirs() }, "button_${kind.name.lowercase()}_$length.wav")
+                    if (f.length() == 0L) {
+                        f.writeBytes(SoundMaker.wav(com.reelforge.editor.engine.ButtonSounds.track(kind, length)))
+                    }
+                    AudioClip(
+                        uri = Uri.fromFile(f).toString(), title = "${kind.title} sound",
+                        startMs = start, durationMs = length,
+                    )
+                }.getOrNull()
+            } else null
+            mutate { it.copy(layers = it.layers + layer, audio = it.audio + listOfNotNull(sound)) }
+            toast(
+                when {
+                    sound != null -> "${kind.title} added with sound. If you move it, move its sound clip too."
+                    withSound -> "${kind.title} added, but its sound could not be made"
+                    else -> "${kind.title} added at the red line. Play to see it move."
+                },
+                undo = true,
+            )
         }
     }
 

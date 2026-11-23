@@ -106,6 +106,26 @@ fun StorePanel(vm: EditorViewModel) {
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            Text("With sound 🔊", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "The same buttons with matching sounds: a pop, a mouse click on Subscribe, the bell " +
+                    "ringing, sparkles on Like. The sound is added as its own clip, so you can make it " +
+                    "quieter or remove it.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                com.reelforge.editor.engine.AnimatedButton.entries.forEach { kind ->
+                    AnimatedButtonCard(kind, withSound = true) {
+                        vm.addAnimatedButton(kind, withSound = true)
+                        added()
+                    }
+                }
+            }
         }
         0 -> {
             val missing = vm.storeStickers.size - vm.installedStickers.size
@@ -320,10 +340,14 @@ fun MusicFinder(vm: EditorViewModel) {
 
 /** A Store card playing an animated button on a loop, with its name under it. */
 @Composable
-private fun AnimatedButtonCard(kind: com.reelforge.editor.engine.AnimatedButton, onClick: () -> Unit) {
+private fun AnimatedButtonCard(
+    kind: com.reelforge.editor.engine.AnimatedButton,
+    withSound: Boolean = false,
+    onClick: () -> Unit,
+) {
     // Plays the animation, rests a moment on the last frame, and starts again.
     val cycle = (kind.defaultMs + 700).toInt()
-    val time by androidx.compose.animation.core.rememberInfiniteTransition(label = kind.name).animateFloat(
+    val time by androidx.compose.animation.core.rememberInfiniteTransition(label = kind.name + withSound).animateFloat(
         0f, cycle.toFloat(),
         androidx.compose.animation.core.infiniteRepeatable(
             androidx.compose.animation.core.tween(cycle, easing = androidx.compose.animation.core.LinearEasing),
@@ -353,7 +377,10 @@ private fun AnimatedButtonCard(kind: com.reelforge.editor.engine.AnimatedButton,
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text(kind.title, style = MaterialTheme.typography.labelMedium)
+            Text(
+                if (withSound) "🔊 ${kind.title}" else kind.title,
+                style = MaterialTheme.typography.labelMedium,
+            )
         }
     }
 }
