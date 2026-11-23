@@ -343,7 +343,41 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * [uri] when the player reads the picture as it is, else a JPEG/PNG copy of it; null when the
+     * phone cannot open it. Reads the file, so call it off the main thread.
+     */
+    private fun playablePicture(uri: Uri): Uri? {
+        val format = MediaUtils.imageFormat(ctx, uri)
+        if (MediaUtils.playableImage(format)) return uri
+        return MediaUtils.playableCopy(ctx, uri)?.let { Uri.fromFile(it) }
+    }
+
+    /**
+     * Pictures added before the app made copies of unreadable formats: swaps them for readable
+     * copies so the preview and export work. Not an undo step.
+     */
+    private fun fixUnreadablePictures(p: Project) {
+        val pictures = p.clips.filter { it.type == ClipType.IMAGE }.map { it.uri }.distinct()
+        if (pictures.isEmpty()) return
+        viewModelScope.launch {
+            val swaps = withContext(Dispatchers.IO) {
+                pictures.mapNotNull { old ->
+                    val uri = Uri.parse(old)
+                    // Unknown (or no longer allowed to read): leave it as it is.
+                    val format = MediaUtils.imageFormat(ctx, uri) ?: return@mapNotNull null
+                    if (MediaUtils.playableImage(format)) return@mapNotNull null
+                    playablePicture(uri)?.let { old to it.toString() }
+                }.toMap()
+            }
+            val now = project ?: return@launch
+            if (swaps.isEmpty() || now.id != p.id) return@launch
+            commit(now.copy(clips = now.clips.map { c -> swaps[c.uri]?.let { c.copy(uri = it) } ?: c }))
+        }
+    }
+
     fun openProject(p: Project) {
+        fixUnreadablePictures(p)
         project = p
         history.clear()
         canUndo = false
@@ -476,8 +510,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                     MediaUtils.probe(ctx, uri)?.let { info ->
+                        // Pictures the player cannot read (WebP, HEIC, AVIF, GIF...) are used
+                        // through a JPEG/PNG copy; a picture the phone cannot open is left out.
+                        val playable = if (info.type == ClipType.IMAGE) playablePicture(uri) ?: return@let null else uri
                         Clip(
-                            uri = uri.toString(),
+                            uri = playable.toString(),
                             name = MediaUtils.displayName(ctx, uri),
                             type = info.type,
                             sourceDurationMs = if (info.type == ClipType.IMAGE) settings.photoMs else info.durationMs,
@@ -1223,14 +1260,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
                 }
-                MediaUtils.probe(ctx, uri) to MediaUtils.displayName(ctx, uri)
+                val probed = MediaUtils.probe(ctx, uri)
+                // A picture the player cannot read is used through a JPEG/PNG copy.
+                val playable = if (probed?.type == ClipType.IMAGE) playablePicture(uri) else uri
+                (if (playable == null) null else probed to playable) to MediaUtils.displayName(ctx, uri)
             }
-            if (info == null) {
+            val (probed, playable) = info ?: (null to uri)
+            if (probed == null) {
                 message = "That file could not be read"
                 return@launch
             }
             mutate {
-                val replaced = ProjectOps.replaceMedia(it, id, uri.toString(), info.type, info.durationMs, info.hasAudio)
+                val replaced = ProjectOps.replaceMedia(it, id, playable.toString(), probed.type, probed.durationMs, probed.hasAudio)
                 replaced.copy(clips = replaced.clips.map { c -> if (c.id == id) c.copy(name = name) else c })
             }
         }
@@ -3856,13 +3897,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private fun shownClip(p: Project): Pair<Int, Long>? =
         ProjectOps.fromPlayPosition(p.clips, playGroups, player.currentMediaItemIndex, player.currentPosition)
 
+    /** Picture formats already read, by uri (the preview asks often, on the main thread). */
+    private val pictureFormats = HashMap<String, String?>()
+
+    private fun pictureFormat(uri: Uri): String? =
+        pictureFormats.getOrPut(uri.toString()) { MediaUtils.imageFormat(ctx, uri) }
+
     private fun toMediaItem(clip: Clip): MediaItem {
         val uri = Uri.parse(clip.uri)
         val builder = MediaItem.Builder().setUri(uri).setMediaId(clip.id)
         if (clip.type == ClipType.IMAGE) {
             builder.setImageDurationMs(clip.durationMs)
-            val mime = if (uri.scheme == "file") "image/jpeg" else ctx.contentResolver.getType(uri)
-            if (mime != null) builder.setMimeType(mime)
+            builder.setMimeType(MediaUtils.imageMime(pictureFormat(uri)))
         } else {
             builder.setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()

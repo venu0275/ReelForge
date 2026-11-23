@@ -21,8 +21,9 @@ object MediaUtils {
     fun probe(context: Context, uri: Uri): MediaInfo? {
         val mime = context.contentResolver.getType(uri).orEmpty()
         val picture = mime.isEmpty() &&
-            uri.path.orEmpty().lowercase().let { p -> listOf(".png", ".jpg", ".jpeg", ".webp").any { p.endsWith(it) } }
-        if (mime.startsWith("image") || picture) {
+            uri.path.orEmpty().lowercase().let { p -> listOf(".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".avif", ".gif", ".bmp").any { p.endsWith(it) } }
+        // Also by the bytes: files apps often call a picture "application/octet-stream".
+        if (mime.startsWith("image") || picture || (!mime.startsWith("video") && imageFormat(context, uri) != null)) {
             return MediaInfo(ClipType.IMAGE, DEFAULT_IMAGE_DURATION_MS, false)
         }
         val r = MediaMetadataRetriever()
@@ -155,6 +156,81 @@ object MediaUtils {
         }
     } catch (e: Exception) {
         null
+    }
+
+    /**
+     * A picture's real format from its first bytes ("jpeg", "png", "webp", "gif", "bmp", "heif",
+     * "avif"), or null when it is not a picture we know. The name and the type the gallery gives
+     * are often wrong (a WebP saved as .png, an AVIF from a download), so the bytes decide.
+     */
+    fun imageFormat(context: Context, uri: Uri): String? = try {
+        val head = ByteArray(32)
+        val n = context.contentResolver.openInputStream(uri)?.use { input ->
+            var read = 0
+            while (read < head.size) {
+                val r = input.read(head, read, head.size - read)
+                if (r <= 0) break
+                read += r
+            }
+            read
+        } ?: 0
+        imageFormat(head, n)
+    } catch (e: Exception) {
+        null
+    }
+
+    /** [imageFormat] from the first [n] bytes of a file. */
+    fun imageFormat(head: ByteArray, n: Int): String? {
+        fun at(i: Int) = if (i < n) head[i].toInt() and 0xFF else -1
+        fun text(from: Int, len: Int) =
+            if (from + len <= n) String(head, from, len, Charsets.US_ASCII) else ""
+        return when {
+            at(0) == 0xFF && at(1) == 0xD8 && at(2) == 0xFF -> "jpeg"
+            at(0) == 0x89 && text(1, 3) == "PNG" -> "png"
+            text(0, 4) == "RIFF" && text(8, 4) == "WEBP" -> "webp"
+            text(0, 4) == "GIF8" -> "gif"
+            text(0, 2) == "BM" -> "bmp"
+            text(4, 4) == "ftyp" -> when (text(8, 4)) {
+                "avif", "avis" -> "avif"
+                "heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1" -> "heif"
+                else -> null
+            }
+            else -> null
+        }
+    }
+
+    /** True for picture formats the preview player and the exporter read directly. */
+    fun playableImage(format: String?) = format == "jpeg" || format == "png"
+
+    /** The type to tell the player for a picture of [format]. */
+    fun imageMime(format: String?) = if (format == "png") "image/png" else "image/jpeg"
+
+    /**
+     * A copy of the picture at [uri] that the player can read: a JPEG, or a PNG when it has
+     * see-through parts. Kept in the app's files (made once per picture). Turned upright, and at
+     * most 4096 pixels on its long side. Null when the phone cannot open the picture at all.
+     */
+    fun playableCopy(context: Context, uri: Uri): File? {
+        val dir = File(context.filesDir, "photos").apply { mkdirs() }
+        val key = Integer.toHexString(uri.toString().hashCode())
+        File(dir, "photo_$key.jpg").takeIf { it.length() > 0 }?.let { return it }
+        File(dir, "photo_$key.png").takeIf { it.length() > 0 }?.let { return it }
+        val bitmap = decodeImage(context, uri, 4096) ?: return null
+        val alpha = bitmap.hasAlpha()
+        val out = File(dir, if (alpha) "photo_$key.png" else "photo_$key.jpg")
+        val temp = File(dir, out.name + ".tmp")
+        return try {
+            temp.outputStream().use {
+                bitmap.compress(if (alpha) Bitmap.CompressFormat.PNG else Bitmap.CompressFormat.JPEG, 95, it)
+            }
+            if (!temp.renameTo(out)) return null
+            out
+        } catch (e: Exception) {
+            temp.delete()
+            null
+        } finally {
+            bitmap.recycle()
+        }
     }
 
     /** Copies an exported file into the shared Movies/CutMitra folder and returns its Uri. */

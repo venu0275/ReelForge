@@ -530,9 +530,7 @@ object ExportManager {
         val mediaItem = MediaItem.Builder().setUri(uri).apply {
             if (isImage) {
                 setImageDurationMs(clip.durationMs)
-                val mime = if (uri.scheme == "file") MimeTypes.IMAGE_JPEG
-                else context.contentResolver.getType(uri)
-                if (mime != null) setMimeType(mime)
+                setMimeType(com.reelforge.editor.util.MediaUtils.imageMime(com.reelforge.editor.util.MediaUtils.imageFormat(context, uri)))
             } else {
                 setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder()
