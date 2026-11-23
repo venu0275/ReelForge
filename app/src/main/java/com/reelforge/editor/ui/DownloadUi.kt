@@ -127,11 +127,14 @@ fun DownloadButton(
             is Dl.Working -> sawWorking = true
             Dl.Ready -> if (sawWorking) {
                 sawWorking = false
-                if (!still) {
-                    cheering = true
-                    kotlinx.coroutines.delay(1_300)
+                try {
+                    if (!still) {
+                        cheering = true
+                        kotlinx.coroutines.delay(1_300)
+                    }
+                } finally {
+                    cheering = false
                 }
-                cheering = false
             }
             else -> sawWorking = false
         }
@@ -337,10 +340,17 @@ fun Modifier.shakeOnFail(state: Dl): Modifier {
     val still = animationsOff()
     LaunchedEffect(state is Dl.Failed) {
         if (state is Dl.Failed && !still) {
-            x.animateTo(0f, keyframes {
-                durationMillis = 360
-                -8f at 60; 8f at 140; -6f at 220; 4f at 290; 0f at 360
-            })
+            x.animateTo(
+                0f,
+                keyframes {
+                    durationMillis = 360
+                    (-8f).at(60)
+                    (8f).at(140)
+                    (-6f).at(220)
+                    (4f).at(290)
+                    (0f).at(360)
+                },
+            )
         }
     }
     return this.offset { IntOffset(x.value.dp.roundToPx(), 0) }
