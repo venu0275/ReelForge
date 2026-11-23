@@ -24,7 +24,48 @@ data class Template(
     val titleBox: Boolean,
     /** A suggestion shown after applying, for finding matching music. */
     val musicHint: String,
+    /** "Moments" (birthday, travel...) or "YouTube" (intros, outros, Shorts...). */
+    val group: String = "Moments",
+    /** The video shape the template is made for (null = keep the project's). */
+    val aspect: AspectRatio? = null,
+    /** Effects, animated buttons and styled texts the template adds. */
+    val parts: List<TemplatePart> = emptyList(),
+    /** False when [parts] place the title and closing line themselves. */
+    val plainTexts: Boolean = true,
+    /** Asks for the channel name (remembered for next time). */
+    val usesChannel: Boolean = false,
+    /** Suggests Auto captions after applying (Shorts, tutorials, podcasts). */
+    val suggestCaptions: Boolean = false,
 )
+
+/** Where a template part sits in time: counted from the start, or back from the end. */
+enum class At { START, END }
+
+/** Something a template adds on top of the clips. Times are clamped to the video's length. */
+sealed interface TemplatePart {
+    val at: At
+    /** From the start (START) or before the end (END) to where it begins. */
+    val offsetMs: Long
+    val lengthMs: Long
+
+    /** A full-screen effect (a SceneEffect name: "CONFETTI", "SPARKLES"...). */
+    data class Effect(val effect: String, override val at: At, override val offsetMs: Long, override val lengthMs: Long) : TemplatePart
+
+    /** An animated button (an AnimatedButton name: "SUBSCRIBE", "LIKE"...), [scale] of the frame's height. */
+    data class Button(
+        val button: String, override val at: At, override val offsetMs: Long, override val lengthMs: Long,
+        val x: Float = 0f, val y: Float = -0.6f, val scale: Float = 0.18f,
+    ) : TemplatePart
+
+    /**
+     * A text. Its words come from [source] ("title", "ending" or "channel", as typed when applying)
+     * or are [words]; [look] gives everything else (colour, size, place, movement).
+     */
+    data class Words(
+        val source: String?, val words: String, override val at: At, override val offsetMs: Long,
+        override val lengthMs: Long, val look: TextItem,
+    ) : TemplatePart
+}
 
 object Templates {
     /** Texts added by a template have ids starting with this, so applying again replaces them. */
@@ -91,9 +132,32 @@ object Templates {
             titleColor = 0xFFFFFFFF.toInt(), titleFont = TextFont.SANS, titleBox = true,
             musicHint = "edm beat",
         ),
-    )
+    ) + YouTubeTemplates.all
+
+    /** Template groups in the order the picker shows them. */
+    val groups = listOf("YouTube", "Moments")
 
     fun byId(id: String) = all.firstOrNull { it.id == id }
+
+    /** When [part] shows in a video [total] long, or null when it does not fit at all. */
+    fun timing(part: TemplatePart, total: Long): Pair<Long, Long>? {
+        if (total <= 0) return null
+        val start = when (part.at) {
+            At.START -> part.offsetMs
+            At.END -> total - part.offsetMs
+        }.coerceIn(0, total)
+        val end = (start + part.lengthMs).coerceAtMost(total)
+        return if (end - start < 300) null else start to end
+    }
+
+    /** Names of the effects and buttons [template] uses (their pictures are made before applying). */
+    fun movingArt(template: Template): List<String> = template.parts.mapNotNull {
+        when (it) {
+            is TemplatePart.Effect -> it.effect
+            is TemplatePart.Button -> it.button
+            else -> null
+        }
+    }.distinct()
 
     /**
      * Applies [template] to the clips already in [project]: photo and video lengths, colour,
@@ -101,10 +165,19 @@ object Templates {
      * (blank to leave one out). Texts from an earlier template are replaced; everything else the
      * user added stays.
      */
-    fun apply(project: Project, template: Template, title: String, ending: String): Project {
+    fun apply(
+        project: Project,
+        template: Template,
+        title: String,
+        ending: String,
+        channel: String = "",
+        /** Picture files for the effects and buttons, by name (the preview shows them while loading). */
+        stills: Map<String, String> = emptyMap(),
+    ): Project {
         if (project.clips.isEmpty()) return project
         var photoIndex = 0
         var p = project.copy(
+            aspect = template.aspect ?: project.aspect,
             clips = project.clips.map { c ->
                 val shaped = when (c.type) {
                     ClipType.IMAGE -> {
@@ -129,6 +202,32 @@ object Templates {
 
         val total = p.durationMs
         val texts = p.texts.filterNot { it.id.startsWith(TEXT_PREFIX) }.toMutableList()
+        val layers = p.layers.filterNot { it.id.startsWith(TEXT_PREFIX) }.toMutableList()
+        for (part in template.parts) {
+            val (start, end) = timing(part, total) ?: continue
+            when (part) {
+                is TemplatePart.Effect -> layers += ImageLayer(
+                    id = TEXT_PREFIX + newId(), uri = stills[part.effect] ?: continue,
+                    startMs = start, endMs = end, scale = 1f, x = 0f, y = 0f, button = part.effect,
+                )
+                is TemplatePart.Button -> layers += ImageLayer(
+                    id = TEXT_PREFIX + newId(), uri = stills[part.button] ?: continue,
+                    startMs = start, endMs = end, scale = part.scale, x = part.x, y = part.y, button = part.button,
+                )
+                is TemplatePart.Words -> {
+                    val words = when (part.source) {
+                        "title" -> title
+                        "ending" -> ending
+                        "channel" -> channel
+                        else -> part.words
+                    }.trim()
+                    if (words.isEmpty()) continue
+                    texts += part.look.copy(id = TEXT_PREFIX + newId(), text = words, startMs = start, endMs = end)
+                }
+            }
+        }
+        p = p.copy(layers = layers)
+        if (!template.plainTexts) return p.copy(texts = texts)
         val titleEnd = minOf(2_500L, total)
         if (title.isNotBlank()) {
             texts += TextItem(

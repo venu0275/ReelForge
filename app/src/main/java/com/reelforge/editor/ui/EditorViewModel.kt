@@ -3586,15 +3586,59 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------ templates
 
-    fun applyTemplate(template: com.reelforge.editor.model.Template, title: String, ending: String) {
+    /** The channel name typed last time (for templates that show it). */
+    fun savedChannel(): String = templatePrefs().getString("channel", "") ?: ""
+
+    private fun templatePrefs() = ctx.getSharedPreferences("templates", android.content.Context.MODE_PRIVATE)
+
+    /** The picture of an animated button or scene effect, made once and kept (null for an unknown name). */
+    private fun movingArtStill(name: String, aspect: com.reelforge.editor.model.AspectRatio): File? {
+        val dir = StickerCatalog.dir(ctx)
+        com.reelforge.editor.engine.AnimatedButton.of(name)?.let { kind ->
+            return File(dir, "animated_${kind.name.lowercase()}.png").also { f ->
+                if (f.length() == 0L) f.outputStream().use {
+                    com.reelforge.editor.engine.AnimatedButtons.still(kind)
+                        .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+            }
+        }
+        val effect = com.reelforge.editor.engine.SceneEffect.of(name) ?: return null
+        val frame = aspect.w.toFloat() / aspect.h.coerceAtLeast(1)
+        return File(dir, "scene_${effect.name.lowercase()}_${aspect.name.lowercase()}.png").also { f ->
+            if (f.length() == 0L) f.outputStream().use {
+                com.reelforge.editor.engine.MovingArt.render(effect, 1_500, effect.defaultMs, 480, frame)
+                    .compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }
+    }
+
+    fun applyTemplate(
+        template: com.reelforge.editor.model.Template, title: String, ending: String, channel: String = "",
+    ) {
         val p = project ?: return
         if (p.clips.isEmpty()) {
             message = "Add your photos or videos first, then pick a template"
             return
         }
-        mutate { com.reelforge.editor.model.Templates.apply(it, template, title, ending) }
-        seekTo(0)
-        message = "${template.name} look applied. Tip: add music (try \"${template.musicHint}\" in Free music)."
+        if (template.usesChannel) templatePrefs().edit().putString("channel", channel.trim()).apply()
+        viewModelScope.launch {
+            val aspect = template.aspect ?: p.aspect
+            val stills = withContext(Dispatchers.IO) {
+                com.reelforge.editor.model.Templates.movingArt(template).mapNotNull { name ->
+                    runCatching { movingArtStill(name, aspect) }.getOrNull()?.let { name to Uri.fromFile(it).toString() }
+                }.toMap()
+            }
+            mutate { com.reelforge.editor.model.Templates.apply(it, template, title, ending, channel, stills) }
+            seekTo(0)
+            val shape = if (template.aspect != null && template.aspect != p.aspect) " Video shape set to ${template.aspect.label}." else ""
+            if (template.suggestCaptions) {
+                toast("${template.name} applied.$shape Add captions so people can watch without sound.", "Captions") {
+                    panelRequest = Panel.CAPTIONS
+                }
+            } else {
+                message = "${template.name} applied.$shape Tip: add music (try \"${template.musicHint}\" in Free music)."
+            }
+        }
     }
 
     // ------------------------------------------------------------ cover

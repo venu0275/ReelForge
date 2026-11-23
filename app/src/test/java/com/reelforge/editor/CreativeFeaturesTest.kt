@@ -176,7 +176,7 @@ class TemplateTest {
     @Test fun `every template is complete`() {
         assertTrue(Templates.all.size >= 5)
         assertEquals(Templates.all.size, Templates.all.map { it.id }.distinct().size)
-        assertTrue(Templates.all.all { it.photoMs >= 500 && it.motions.isNotEmpty() && it.title.isNotBlank() })
+        assertTrue(Templates.all.all { it.photoMs >= 500 && it.motions.isNotEmpty() && (it.title.isNotBlank() || it.ending.isNotBlank()) })
         // Nothing happens without clips.
         val empty = Project(name = "p")
         assertEquals(empty, Templates.apply(empty, Templates.all.first(), "x", "y"))

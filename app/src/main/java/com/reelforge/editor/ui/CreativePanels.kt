@@ -47,6 +47,7 @@ import com.reelforge.editor.model.CreativeOps
 import com.reelforge.editor.model.PhotoMotion
 import com.reelforge.editor.model.Project
 import com.reelforge.editor.model.SpeedRamp
+import com.reelforge.editor.model.TemplatePart
 import com.reelforge.editor.model.Templates
 import kotlinx.coroutines.delay
 
@@ -160,26 +161,44 @@ fun TemplatesPanel(vm: EditorViewModel, project: Project, onDone: () -> Unit) {
             if (project.clips.isEmpty()) "Add your photos or videos first, then pick a look."
             else "Pick a look. It sets photo length, colour, movement, transitions and titles for your clips.",
         )
-        Spacer(Modifier.height(8.dp))
-        Templates.all.forEach { t ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                    .clickable {
-                        if (project.clips.isNotEmpty()) picked = t.id
-                        else hint("Add your photos or videos first, then pick a template")
+        Templates.groups.forEach { group ->
+            val inGroup = Templates.all.filter { it.group == group }
+            if (inGroup.isEmpty()) return@forEach
+            Spacer(Modifier.height(10.dp))
+            Text(
+                if (group == "YouTube") "For YouTube creators" else group,
+                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+            )
+            inGroup.forEach { t ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
+                        .clickable {
+                            if (project.clips.isNotEmpty()) picked = t.id
+                            else hint("Add your photos or videos first, then pick a template")
+                        }
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(t.icon, style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(t.name, fontWeight = FontWeight.Bold)
+                        Text(t.about, style = MaterialTheme.typography.bodySmall)
                     }
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(t.icon, style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(t.name, fontWeight = FontWeight.Bold)
-                    Text(t.about, style = MaterialTheme.typography.bodySmall)
+                    t.aspect?.let { a ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            a.label, style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
                 }
             }
         }
@@ -187,19 +206,37 @@ fun TemplatesPanel(vm: EditorViewModel, project: Project, onDone: () -> Unit) {
     }
     var title by remember(template.id) { mutableStateOf(template.title) }
     var ending by remember(template.id) { mutableStateOf(template.ending) }
+    var channel by remember(template.id) { mutableStateOf(vm.savedChannel()) }
+    val usesTitle = template.plainTexts || template.parts.any { it is TemplatePart.Words && it.source == "title" }
+    val usesEnding = template.plainTexts || template.parts.any { it is TemplatePart.Words && it.source == "ending" }
     Text("${template.icon} ${template.name}", fontWeight = FontWeight.Bold)
     Text(template.about, style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(title, { title = it }, label = { Text("Opening title") }, modifier = Modifier.fillMaxWidth())
-    OutlinedTextField(ending, { ending = it }, label = { Text("Closing line") }, modifier = Modifier.fillMaxWidth())
+    if (template.usesChannel) {
+        OutlinedTextField(
+            channel, { channel = it }, label = { Text("Channel name") }, singleLine = true,
+            placeholder = { Text("e.g. Venu Vlogs") }, modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    if (usesTitle) {
+        OutlinedTextField(title, { title = it }, label = { Text("Opening title") }, modifier = Modifier.fillMaxWidth())
+    }
+    if (usesEnding) {
+        OutlinedTextField(ending, { ending = it }, label = { Text("Closing line") }, modifier = Modifier.fillMaxWidth())
+    }
+    val notes = buildList {
+        add("Photos: ${template.photoMs / 1000f} s each")
+        template.aspect?.takeIf { it != project.aspect }?.let { add("video shape becomes ${it.label}") }
+        if (template.parts.any { it is TemplatePart.Button }) add("Subscribe/Like buttons move by themselves")
+    }
     Text(
-        "Photos: ${template.photoMs / 1000f} s each. Leave a box empty to skip that text.",
+        notes.joinToString(" · ") + ". Leave a box empty to skip that text.",
         style = MaterialTheme.typography.bodySmall,
     )
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(onClick = {
-            vm.applyTemplate(template, title, ending)
+            vm.applyTemplate(template, title, ending, channel)
             onDone()
         }) { Text("Apply") }
         TextButton(onClick = { picked = null }) { Text("Back") }
