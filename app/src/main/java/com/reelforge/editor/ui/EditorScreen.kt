@@ -453,6 +453,14 @@ fun EditorScreen(vm: EditorViewModel) {
     }
     // A tool that is opened has been seen: its "new" dot goes.
     LaunchedEffect(panel) { panel?.let { vm.newIn.remove(it) } }
+    // A text sticker was added: open it so the words can be changed straight away.
+    LaunchedEffect(vm.editTextRequest) {
+        val id = vm.editTextRequest ?: return@LaunchedEffect
+        vm.editTextRequest = null
+        editingTextId = id
+        previewPick = id
+        panel = Panel.TEXT
+    }
     // "Use" on something downloaded in the Store: go to the tool it is for.
     LaunchedEffect(vm.useRequest) {
         val use = vm.useRequest ?: return@LaunchedEffect

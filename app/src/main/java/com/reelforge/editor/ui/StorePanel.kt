@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -128,6 +130,17 @@ fun StorePanel(vm: EditorViewModel) {
             }
         }
         0 -> {
+            // Text & Titles and Action: words in a shape, editable after adding.
+            var kind by remember { mutableStateOf(com.reelforge.editor.model.TextStickers.TITLES) }
+            HintRow(spacing = 8.dp) {
+                (com.reelforge.editor.model.TextStickers.GROUPS + EMOJI_STICKERS).forEach { k ->
+                    FilterChip(selected = kind == k, onClick = { kind = k }, label = { Text(k) })
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            if (kind != EMOJI_STICKERS) {
+                TextStickerPacks(vm, kind)
+            } else {
             val missing = vm.storeStickers.size - vm.installedStickers.size
             val pack = vm.stickerPackProgress
             if (pack != null) {
@@ -188,6 +201,7 @@ fun StorePanel(vm: EditorViewModel) {
                     TextButton(onClick = { vm.removeUnusedStickers() }) { Text("Delete unused") }
                 }
             }
+        }
         }
         1 -> {
             Text("Tap a button to add it at the red line. No download needed.", style = MaterialTheme.typography.bodySmall)
@@ -381,6 +395,60 @@ private fun AnimatedButtonCard(
                 if (withSound) "🔊 ${kind.title}" else kind.title,
                 style = MaterialTheme.typography.labelMedium,
             )
+        }
+    }
+}
+
+
+private const val EMOJI_STICKERS = "Stickers"
+
+/** The text sticker packs of [group], each a row of live previews; tap one to add it. */
+@Composable
+private fun TextStickerPacks(vm: EditorViewModel, group: String) {
+    Text(
+        "Tap one to add it at the red line, then type your own words. Colours and movement can be " +
+            "changed like any text.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    com.reelforge.editor.model.TextStickers.packs(group).forEach { pack ->
+        Text(pack.name, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp, bottom = 4.dp))
+        HintRow(spacing = 8.dp) {
+            pack.stickers.forEachIndexed { index, sticker ->
+                TextStickerCard(vm, sticker, "${pack.id}_$index")
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextStickerCard(vm: EditorViewModel, sticker: com.reelforge.editor.model.TextItem, key: String) {
+    val added = LocalStoreAdded.current
+    // Drawn by the same code as the video.
+    val picture by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, key) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                com.reelforge.editor.engine.EffectFactory.renderText(sticker.copy(rotation = 0f), 360).asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    androidx.compose.material3.Surface(
+        onClick = {
+            vm.addTextSticker(sticker)
+            added()
+        },
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF2A2D35),
+        modifier = Modifier
+            .size(width = 150.dp, height = 96.dp)
+            .testTag("sticker_$key"),
+    ) {
+        Box(Modifier.padding(8.dp), contentAlignment = Alignment.Center) {
+            picture?.let {
+                androidx.compose.foundation.Image(
+                    it, sticker.text, contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().height(80.dp),
+                )
+            }
         }
     }
 }

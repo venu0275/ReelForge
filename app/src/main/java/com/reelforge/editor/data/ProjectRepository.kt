@@ -215,6 +215,9 @@ object ProjectJson {
         put("outlineWidth", t.outlineWidth.toDouble())
         put("loop", t.loop.name)
         put("reveal", t.reveal.name)
+        put("frame", t.frame.name)
+        put("frameColor", t.frameColor)
+        put("accentColor", t.accentColor)
     }
 
     private fun keysToJson(keys: List<Keyframe>) = JSONArray().apply {
@@ -337,6 +340,10 @@ object ProjectJson {
                     .getOrDefault(com.reelforge.editor.model.LoopFx.NONE),
                 reveal = runCatching { com.reelforge.editor.model.TextReveal.valueOf(t.optString("reveal")) }
                     .getOrDefault(com.reelforge.editor.model.TextReveal.NONE),
+                frame = runCatching { com.reelforge.editor.model.TextFrame.valueOf(t.optString("frame")) }
+                    .getOrDefault(com.reelforge.editor.model.TextFrame.NONE),
+                frameColor = t.optInt("frameColor", 0xFFFFFFFF.toInt()),
+                accentColor = t.optInt("accentColor", 0xFF2979FF.toInt()),
             )
         }
         val music = o.optJSONObject("music")?.let { m ->

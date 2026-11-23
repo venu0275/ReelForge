@@ -297,6 +297,22 @@ enum class TextFont(val label: String, val family: String) {
 
 enum class TextAlignH(val label: String) { LEFT("Left"), CENTER("Centre"), RIGHT("Right") }
 
+/**
+ * A shape drawn around a text, making it a text sticker (chat bubble, terminal window, HUD...).
+ * The words stay editable like any text; [TextItem.frameColor] fills it and
+ * [TextItem.accentColor] colours its details. Drawn by the app, so nothing to license.
+ */
+enum class TextFrame(val label: String) {
+    NONE("None"),
+    // Text & Titles
+    CHAT_IN("Chat (received)"), CHAT_OUT("Chat (sent)"), TERMINAL("Terminal"), ALERT("Warning"),
+    FROSTED("Frosted glass"), NOTIFICATION("Notification"), TOGGLE("Switch"), STICKY("Sticky note"),
+    NEON("Neon sign"), MOVIE("Movie title"), CLOUD("Thought cloud"), RIBBON("Ribbon"),
+    // Action
+    VERSUS("Versus"), HUD("HUD frame"), HUD_RING("HUD target"), ERROR("Error box"), LEVEL_UP("Level up"),
+    DANGER("Danger tape"), BURST("Comic burst"), PROGRESS("Loading bar"), HEX("Hex badge"),
+}
+
 data class TextItem(
     val id: String = newId(),
     val text: String,
@@ -334,6 +350,10 @@ data class TextItem(
     val outlineWidth: Float = 1f,    // 1 = normal thickness
     val loop: LoopFx = LoopFx.NONE,  // movement that repeats while the text is showing
     val reveal: TextReveal = TextReveal.NONE,
+    /** A sticker shape around the words (NONE = plain text). */
+    val frame: TextFrame = TextFrame.NONE,
+    val frameColor: Int = 0xFFFFFFFF.toInt(),
+    val accentColor: Int = 0xFF2979FF.toInt(),
 ) {
     /** This text with the look (colour, font, effects) of [other]; words, place and timing stay. */
     fun withLookOf(other: TextItem): TextItem = copy(
@@ -344,6 +364,7 @@ data class TextItem(
         background = other.background, boxColor = other.boxColor,
         shadow = other.shadow, shadowColor = other.shadowColor, shadowStrength = other.shadowStrength,
         glow = other.glow, glowColor = other.glowColor,
+        frame = other.frame, frameColor = other.frameColor, accentColor = other.accentColor,
     )
 
     /** This text with the movement (in, out, keep moving, reveal) of [other]. */

@@ -750,6 +750,13 @@ object EffectFactory {
      * The preview and the export both draw this bitmap, so they look the same.
      */
     fun renderText(item: TextItem, frameHeight: Int, visibleChars: Int = Int.MAX_VALUE): Bitmap {
+        // A text sticker: the words as plain text, inside the shape drawn around them.
+        if (item.frame != com.reelforge.editor.model.TextFrame.NONE) {
+            val words = renderText(
+                item.copy(frame = com.reelforge.editor.model.TextFrame.NONE, background = false), frameHeight, visibleChars,
+            )
+            return TextFrames.render(item, words, max(8f, item.size * frameHeight))
+        }
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = item.color
             textSize = max(8f, item.size * frameHeight)

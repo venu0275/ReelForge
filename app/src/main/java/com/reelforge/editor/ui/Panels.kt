@@ -463,6 +463,20 @@ fun TextPanel(
 
     when (tab) {
         TextTab.LOOK -> {
+            if (editing.frame != com.reelforge.editor.model.TextFrame.NONE) {
+                // A text sticker: its shape's colours (see-through shapes stay see-through).
+                Text("Sticker: ${editing.frame.label}", style = MaterialTheme.typography.labelLarge)
+                Text("Shape colour", style = MaterialTheme.typography.bodySmall)
+                ColorPicker(editing.frameColor or 0xFF000000.toInt()) { c ->
+                    vm.updateText(id) { it.copy(frameColor = (c and 0x00FFFFFF) or (it.frameColor and 0xFF000000.toInt())) }
+                }
+                Text("Detail colour", style = MaterialTheme.typography.bodySmall)
+                ColorPicker(editing.accentColor) { c -> vm.updateText(id) { it.copy(accentColor = c) } }
+                TextButton(onClick = { vm.updateText(id) { it.copy(frame = com.reelforge.editor.model.TextFrame.NONE) } }) {
+                    Text("Remove the shape, keep the words")
+                }
+                Spacer(Modifier.height(4.dp))
+            }
             Text("Colour", style = MaterialTheme.typography.labelLarge)
             ColorPicker(editing.color) { c -> vm.updateText(id) { it.copy(color = c) } }
             LabeledSlider("Size", editing.size, 0.02f..0.4f) { v -> vm.updateText(id) { it.copy(size = v) } }

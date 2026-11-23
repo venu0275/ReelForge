@@ -1735,6 +1735,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val presetBusy = mutableStateMapOf<String, Boolean>()
 
     /** Adds a ready-made text at the red line, downloading its font first if needed. */
+    /** A text the editor should open for editing (set after adding a text sticker). */
+    var editTextRequest by mutableStateOf<String?>(null)
+
+    /** Adds a text sticker (words in a shape) at the red line and opens it to change the words. */
+    fun addTextSticker(sticker: TextItem) {
+        if (project == null) return
+        val id = addTextItem(sticker.copy(id = com.reelforge.editor.model.newId()))
+        if (id.isEmpty()) return
+        editTextRequest = id
+        toast("Sticker added. Type your own words at the top.", undo = true)
+    }
+
     fun addTextPreset(preset: com.reelforge.editor.model.TextPreset) {
         if (project == null || presetBusy.containsKey(preset.id)) return
         val font = preset.fontId?.let { id -> storeFonts.firstOrNull { it.id == id } }
