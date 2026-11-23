@@ -313,6 +313,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
 
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // The player can finish between two ticks (they come a few times a second), which
+                // left the red line short of the end (seen: 4.1 s of a 4.5 s video). Put it there.
+                if (playbackState == Player.STATE_ENDED && !isRecording) {
+                    project?.let { if (playheadMs != it.durationMs) playheadMs = it.durationMs }
+                }
+            }
+
             override fun onPlayerError(error: PlaybackException) = recoverFromPlayerError(error)
         })
         refreshProjects()

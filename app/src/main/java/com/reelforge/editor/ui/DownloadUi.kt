@@ -122,21 +122,26 @@ fun DownloadButton(
     // A finish seen here (not one from before this screen opened) gets the celebration.
     var sawWorking by remember { mutableStateOf(false) }
     var cheering by remember { mutableStateOf(false) }
+    // The ring keeps its last value while it fades out (the state has already moved on).
+    val held = remember { floatArrayOf(0f) }
+    if (state is Dl.Working) held[0] = state.progress
+    val lastProgress = if (state is Dl.Working) state.progress else held[0]
     LaunchedEffect(state) {
-        when (state) {
-            is Dl.Working -> sawWorking = true
-            Dl.Ready -> if (sawWorking) {
-                sawWorking = false
-                try {
-                    if (!still) {
-                        cheering = true
-                        kotlinx.coroutines.delay(1_300)
-                    }
-                } finally {
-                    cheering = false
+        if (state is Dl.Working) {
+            sawWorking = true
+        } else if (state == Dl.Ready && sawWorking) {
+            sawWorking = false
+            held[0] = 1f
+            try {
+                if (!still) {
+                    cheering = true
+                    kotlinx.coroutines.delay(1_300)
                 }
+            } finally {
+                cheering = false
             }
-            else -> sawWorking = false
+        } else if (state != Dl.Ready) {
+            sawWorking = false
         }
     }
     val face = when {
@@ -159,7 +164,7 @@ fun DownloadButton(
     ) { f ->
         when (f) {
             Face.DOWNLOAD -> Pill(label, Icons.Rounded.Download, ToolColors.Style, onDownload)
-            Face.RING -> ProgressRing((state as? Dl.Working)?.progress ?: 0f, still, onStop)
+            Face.RING -> ProgressRing(lastProgress, still, onStop)
             Face.CHEER -> Cheer()
             Face.USE -> if (onUse != null) UsePill(still, onUse) else Installed()
             Face.RETRY -> Pill("Retry", Icons.Rounded.Refresh, MaterialTheme.colorScheme.error, onDownload)
