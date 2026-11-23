@@ -1585,6 +1585,36 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         com.reelforge.editor.data.FontPacks.packs(storeFonts)
     }
 
+    /** Why the last download of a Store item failed, by its key ("pack:Telugu", "speech:…", "vocal"). */
+    val downloadErrors = mutableStateMapOf<String, String>()
+
+    /** A font pack's download state, for the Store's download button. */
+    fun packState(pack: com.reelforge.editor.data.FontPack): Dl {
+        val progress = packProgress[pack.group]
+        if (progress != null) {
+            val (done, total) = progress
+            // Fonts finished, plus how far the one downloading now has got.
+            val partial = pack.fonts.sumOf { (fontProgress[it.id] ?: 0) } / 100f
+            val p = ((done + partial) / total.coerceAtLeast(1)).coerceIn(0.02f, 1f)
+            val have = pack.fonts.count { it.id in installedFonts }
+            return Dl.Working(p, "$have of ${pack.fonts.size} fonts")
+        }
+        downloadErrors["pack:${pack.group}"]?.let { return Dl.Failed(it) }
+        return if (pack.fonts.any { it.id in installedFonts }) Dl.Ready else Dl.Idle
+    }
+
+    fun speechState(language: com.reelforge.editor.engine.CaptionLanguage): Dl {
+        speechProgress[language.model]?.let { return Dl.Working(it / 100f) }
+        downloadErrors["speech:${language.model}"]?.let { return Dl.Failed(it) }
+        return if (language.model in speechModels) Dl.Ready else Dl.Idle
+    }
+
+    fun vocalState(): Dl {
+        vocalModelProgress?.let { return Dl.Working(it / 100f) }
+        downloadErrors["vocal"]?.let { return Dl.Failed(it) }
+        return if (vocalModelReady) Dl.Ready else Dl.Idle
+    }
+
     /** (fonts done, fonts in the pack) per pack group while a whole pack downloads. */
     val packProgress = mutableStateMapOf<String, Pair<Int, Int>>()
     private val packJobs = HashMap<String, kotlinx.coroutines.Job>()
@@ -1603,6 +1633,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             toast("${pack.group} fonts are already on your phone", ToastKind.INFO)
             return
         }
+        downloadErrors.remove("pack:${pack.group}")
         packProgress[pack.group] = 0 to missing.size
         packJobs[pack.group] = viewModelScope.launch {
             var failed = 0
@@ -1628,7 +1659,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 newIn[Panel.TEXT] = true
                 toast("${pack.group} fonts are ready", "Use now") { useFromStore(StoreUse.Fonts(pack.group)) }
             }
-            else toast("$failed of ${missing.size} fonts could not download. Check the internet and try again.", ToastKind.ERROR)
+            else {
+                downloadErrors["pack:${pack.group}"] = "$failed of ${missing.size} fonts did not download. Check the internet."
+                toast("$failed of ${missing.size} fonts could not download. Check the internet and try again.", ToastKind.ERROR)
+            }
         }
     }
 
@@ -2782,6 +2816,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             toast("${language.label} captions are ready", ToastKind.INFO)
             return
         }
+        downloadErrors.remove("speech:$key")
         speechProgress[key] = 0
         speechJobs[key] = viewModelScope.launch {
             try {
@@ -2796,6 +2831,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 toast("Download stopped", ToastKind.INFO)
                 throw e
             } catch (e: Throwable) {
+                downloadErrors["speech:$key"] = "Download failed. Check the internet and try again."
                 toast("Could not download ${language.label}. Check the internet and try again.", ToastKind.ERROR)
             } finally {
                 speechJobs.remove(key)
@@ -3277,6 +3313,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         if (vocalModelReady) return
+        downloadErrors.remove("vocal")
         vocalModelProgress = 0
         vocalModelJob = viewModelScope.launch {
             try {
@@ -3294,6 +3331,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 toast("Download stopped", ToastKind.INFO)
                 throw e
             } catch (e: Throwable) {
+                downloadErrors["vocal"] = "Download failed. Check the internet and try again."
                 toast("Could not download the Vocal Separator. Check the internet and try again.", ToastKind.ERROR)
             } finally {
                 vocalModelJob = null

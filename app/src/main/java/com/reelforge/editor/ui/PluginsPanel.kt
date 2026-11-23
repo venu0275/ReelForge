@@ -329,14 +329,15 @@ private fun downloadedFamily(vm: EditorViewModel, font: FontAsset?): FontFamily?
 private fun FontPackCard(vm: EditorViewModel, pack: FontPack) {
     var open by rememberSaveable(pack.group) { mutableStateOf(false) }
     val have = pack.fonts.count { it.id in vm.installedFonts }
-    val progress = vm.packProgress[pack.group]
+    val state = vm.packState(pack)
     val showcase = pack.fonts.firstOrNull { it.id in vm.installedFonts } ?: pack.fonts.first()
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).animateContentSize()
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).shakeOnFail(state).animateContentSize()
             .testTag("fontpack_${pack.group}"),
     ) {
+      Box {
         Column(Modifier.clickable { open = !open }.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -352,13 +353,18 @@ private fun FontPackCard(vm: EditorViewModel, pack: FontPack) {
                 Column(Modifier.weight(1f)) {
                     Text("${pack.group} fonts", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     Text(
-                        listOf(
-                            "${pack.fonts.size} fonts",
-                            FontPacks.size(pack.bytes),
-                            if (have in 1 until pack.fonts.size) "$have on phone" else "",
-                        ).filter { it.isNotEmpty() }.joinToString(" · "),
+                        downloadLine(
+                            state, pack.bytes,
+                            idle = "${pack.fonts.size} fonts · ${FontPacks.size(pack.bytes)}",
+                            ready = if (have < pack.fonts.size) "$have of ${pack.fonts.size} fonts on phone"
+                            else "${pack.fonts.size} fonts · ready, work offline",
+                        ),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = when (state) {
+                            is Dl.Failed -> MaterialTheme.colorScheme.error
+                            Dl.Ready -> ToolColors.Look
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                     Text(
                         pack.sample, fontFamily = downloadedFamily(vm, showcase), maxLines = 1,
@@ -366,14 +372,17 @@ private fun FontPackCard(vm: EditorViewModel, pack: FontPack) {
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                if (have > 0 && progress == null) {
-                    UseButton { vm.useFromStore(StoreUse.Fonts(pack.group)) }
-                    if (have < pack.fonts.size) {
-                        Spacer(Modifier.width(4.dp))
-                        PackButton(have, pack.fonts.size, null) { vm.downloadFontPack(pack) }
-                    }
-                } else {
-                    PackButton(have, pack.fonts.size, progress) { vm.downloadFontPack(pack) }
+                DownloadButton(
+                    state,
+                    onDownload = { vm.downloadFontPack(pack) },
+                    onStop = { vm.downloadFontPack(pack) },
+                    onUse = { vm.useFromStore(StoreUse.Fonts(pack.group)) },
+                )
+            }
+            if (state is Dl.Working) FontTicks(have, pack.fonts.size)
+            if (state == Dl.Ready && have < pack.fonts.size) {
+                TextButton(onClick = { vm.downloadFontPack(pack) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text("Get the other ${pack.fonts.size - have} fonts")
                 }
             }
             if (open) {
@@ -395,59 +404,8 @@ private fun FontPackCard(vm: EditorViewModel, pack: FontPack) {
                 )
             }
         }
-    }
-}
-
-/** "Use": after a download, takes the user to the tool where the plug-in is used. */
-@Composable
-private fun UseButton(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(50),
-        color = ToolColors.Create,
-        contentColor = Color.White,
-        modifier = Modifier.testTag("store_use"),
-    ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.CheckCircle, null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Use", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-/** Download / progress ring / installed, the way the store shows each plug-in's state. */
-@Composable
-private fun PackButton(have: Int, total: Int, progress: Pair<Int, Int>?, onClick: () -> Unit) {
-    when {
-        progress != null -> Box(
-            Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            CircularProgressIndicator(
-                progress = { progress.first / progress.second.coerceAtLeast(1).toFloat() },
-                modifier = Modifier.size(40.dp),
-                strokeWidth = 3.dp,
-            )
-            Icon(Icons.Rounded.Stop, "Stop download", modifier = Modifier.size(18.dp))
-        }
-        have >= total -> Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Rounded.CheckCircle, null, tint = ToolColors.Create, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("Installed", style = MaterialTheme.typography.labelMedium, color = ToolColors.Create)
-        }
-        else -> Surface(
-            onClick = onClick,
-            shape = RoundedCornerShape(50),
-            color = ToolColors.Style,
-            contentColor = Color.White,
-        ) {
-            Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Rounded.Download, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text(if (have > 0) "Get ${total - have}" else "Download", style = MaterialTheme.typography.labelMedium)
-            }
-        }
+        DownloadBar(state, Modifier.align(Alignment.BottomStart))
+      }
     }
 }
 
@@ -475,7 +433,7 @@ private fun FontLine(vm: EditorViewModel, font: FontAsset) {
             )
         }
         when {
-            percent != null -> Text("$percent%", style = MaterialTheme.typography.labelMedium)
+            percent != null -> MiniRing(percent)
             installed -> Icon(Icons.Rounded.CheckCircle, "On phone", tint = ToolColors.Create, modifier = Modifier.size(20.dp))
             else -> Icon(Icons.Rounded.Download, "Download ${font.name}", modifier = Modifier.size(20.dp))
         }
@@ -559,13 +517,14 @@ private fun speechSample(language: CaptionLanguage): String = when (language) {
 
 @Composable
 private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
-    val installed = language.model in vm.speechModels
-    val percent = vm.speechProgress[language.model]
+    val state = vm.speechState(language)
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("speech_${language.name.lowercase()}"),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).shakeOnFail(state)
+            .testTag("speech_${language.name.lowercase()}"),
     ) {
+      Box {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(ToolColors.Create.copy(alpha = 0.18f)),
@@ -581,24 +540,29 @@ private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "Auto captions · ${language.sizeMb} MB",
+                    downloadLine(
+                        state, language.sizeMb * 1_000_000L,
+                        idle = "Auto captions · ${language.sizeMb} MB",
+                        ready = "Ready · works offline",
+                    ),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = when (state) {
+                        is Dl.Failed -> MaterialTheme.colorScheme.error
+                        Dl.Ready -> ToolColors.Look
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
             Spacer(Modifier.width(8.dp))
-            when {
-                percent != null -> Box(
-                    Modifier.size(44.dp).clip(CircleShape).clickable { vm.downloadCaptionModel(language) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(progress = { percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
-                    Text("$percent", fontSize = 10.sp)
-                }
-                installed -> UseButton { vm.useFromStore(StoreUse.Captions(language)) }
-                else -> PackButton(0, 1, null) { vm.downloadCaptionModel(language) }
-            }
+            DownloadButton(
+                state,
+                onDownload = { vm.downloadCaptionModel(language) },
+                onStop = { vm.downloadCaptionModel(language) },
+                onUse = { vm.useFromStore(StoreUse.Captions(language)) },
+            )
         }
+        DownloadBar(state, Modifier.align(Alignment.BottomStart))
+      }
     }
 }
 
@@ -606,12 +570,13 @@ private fun SpeechCard(vm: EditorViewModel, language: CaptionLanguage) {
 
 @Composable
 private fun VocalSeparatorCard(vm: EditorViewModel) {
-    val percent = vm.vocalModelProgress
+    val state = vm.vocalState()
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).testTag("vocal_separator_card"),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).shakeOnFail(state).testTag("vocal_separator_card"),
     ) {
+      Box {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
@@ -626,23 +591,26 @@ private fun VocalSeparatorCard(vm: EditorViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        "AI · about ${com.reelforge.editor.engine.VocalModel.SIZE_MB} MB · works offline after download",
+                        downloadLine(
+                            state, com.reelforge.editor.engine.VocalModel.SIZE_MB * 1_000_000L,
+                            idle = "AI · about ${com.reelforge.editor.engine.VocalModel.SIZE_MB} MB · works offline after download",
+                            ready = "Ready · works offline",
+                        ),
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = when (state) {
+                            is Dl.Failed -> MaterialTheme.colorScheme.error
+                            Dl.Ready -> ToolColors.Look
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                when {
-                    percent != null -> Box(
-                        Modifier.size(44.dp).clip(CircleShape).clickable { vm.downloadVocalModel() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(progress = { percent / 100f }, modifier = Modifier.size(40.dp), strokeWidth = 3.dp)
-                        Text("$percent", fontSize = 10.sp)
-                    }
-                    vm.vocalModelReady -> UseButton { vm.useFromStore(StoreUse.VocalSeparator) }
-                    else -> PackButton(0, 1, null) { vm.downloadVocalModel() }
-                }
+                DownloadButton(
+                    state,
+                    onDownload = { vm.downloadVocalModel() },
+                    onStop = { vm.downloadVocalModel() },
+                    onUse = { vm.useFromStore(StoreUse.VocalSeparator) },
+                )
             }
             Text(
                 "How: select a song in Music, a sound, or a video clip's Volume, then Split voice and music.",
@@ -651,6 +619,8 @@ private fun VocalSeparatorCard(vm: EditorViewModel) {
                 modifier = Modifier.padding(top = 6.dp),
             )
         }
+        DownloadBar(state, Modifier.align(Alignment.BottomStart))
+      }
     }
 }
 

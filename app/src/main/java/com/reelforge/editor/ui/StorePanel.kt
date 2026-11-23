@@ -115,9 +115,9 @@ fun StorePanel(vm: EditorViewModel) {
                     "Downloading ${pack.first} of ${pack.second}…", "Tap to stop. Stickers already downloaded stay.",
                     I.Downloading, ToolColors.Style, main = true,
                 ) { vm.downloadAllStickers() }
-                androidx.compose.material3.LinearProgressIndicator(
-                    progress = { pack.first / pack.second.coerceAtLeast(1).toFloat() },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                DownloadBar(
+                    Dl.Working(pack.first / pack.second.coerceAtLeast(1).toFloat(), null),
+                    Modifier.padding(vertical = 4.dp),
                 )
             } else if (missing > 0) {
                 ActionCard(
