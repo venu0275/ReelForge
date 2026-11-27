@@ -25,6 +25,12 @@ object Reverser {
     /** How long to wait for the encoder's last frames once all frames are in. */
     private const val END_OF_STREAM_WAIT_MS = 5_000L
 
+    /** Frames that may wait inside the encoder before the next one is drawn. */
+    private const val MAX_FRAMES_IN_FLIGHT = 4
+
+    /** How long to wait for the encoder to catch up before going on anyway. */
+    private const val CATCH_UP_WAIT_MS = 1_000L
+
     /** Output sides are a multiple of 16, which every phone encoder accepts. */
     fun outputSize(width: Int, height: Int, maxSide: Int = 1280): Pair<Int, Int> {
         val scale = minOf(1f, maxSide.toFloat() / maxOf(width, height))
@@ -98,17 +104,22 @@ object Reverser {
 
             // Takes whatever the encoder has finished. Times are set here, one frame apart,
             // because the times the encoder sees are just when each frame was drawn.
-            fun drain(endOfStream: Boolean) {
+            // [untilWritten] >= 0: wait (briefly) until that many frames are written, so the
+            // encoder is never more than a few frames behind.
+            fun drain(endOfStream: Boolean, untilWritten: Int = -1) {
                 // Some phones' encoders never send the end-of-stream flag. Stop waiting after a
                 // while with nothing new, and keep what was written, instead of hanging at 100%.
+                val waiting = endOfStream || untilWritten >= 0
                 var idleSince = android.os.SystemClock.elapsedRealtime()
                 while (true) {
-                    val index = codec.dequeueOutputBuffer(info, if (endOfStream) 10_000 else 0)
+                    if (!endOfStream && untilWritten >= 0 && written >= untilWritten) return
+                    val index = codec.dequeueOutputBuffer(info, if (waiting) 10_000 else 0)
                     if (index != MediaCodec.INFO_TRY_AGAIN_LATER) idleSince = android.os.SystemClock.elapsedRealtime()
                     when {
                         index == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                            if (!endOfStream) return
-                            if (android.os.SystemClock.elapsedRealtime() - idleSince > END_OF_STREAM_WAIT_MS) return
+                            if (!waiting) return
+                            val limit = if (endOfStream) END_OF_STREAM_WAIT_MS else CATCH_UP_WAIT_MS
+                            if (android.os.SystemClock.elapsedRealtime() - idleSince > limit) return
                         }
                         index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                             track = mux.addTrack(codec.outputFormat)
@@ -136,11 +147,18 @@ object Reverser {
             val target = Rect(0, 0, w, h)
             var done = 0
             var end = last
+            val paceStart = android.os.SystemClock.elapsedRealtime()
             while (end >= first) {
                 if (stop()) throw InterruptedException("stopped")
                 val start = maxOf(first, end - batch + 1)
                 val frames: List<Bitmap> = retriever.getFramesAtIndex(start, end - start + 1)
                 for (frame in frames.asReversed()) {
+                    // Frames go in at their real pace. The encoder stamps each frame with the
+                    // time it arrives; frames that arrive much faster than the frame rate can be
+                    // skipped by its rate control, which made reversed clips shorter.
+                    val dueAt = paceStart + done * frameUs / 1000
+                    val wait = dueAt - android.os.SystemClock.elapsedRealtime()
+                    if (wait > 0) Thread.sleep(wait)
                     val canvas = input.lockHardwareCanvas()
                     try {
                         canvas.drawColor(android.graphics.Color.BLACK)
@@ -149,8 +167,9 @@ object Reverser {
                         input.unlockCanvasAndPost(canvas)
                     }
                     frame.recycle()
-                    drain(false)
                     done++
+                    // Let the encoder catch up when it falls more than a few frames behind.
+                    drain(false, untilWritten = (done - MAX_FRAMES_IN_FLIGHT).takeIf { it > 0 } ?: -1)
                     progress(done.toFloat() / total)
                 }
                 end = start - 1
