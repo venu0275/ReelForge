@@ -1153,6 +1153,103 @@ class ExportDeviceTest {
         assertTrue("expected an export error but got ${outcome.error}", outcome.error is ExportException)
     }
 
+    /** Positive: a project whose files are all there passes the check before export. */
+    @Test
+    fun missingMediaCheck_passesWhenEveryFileIsThere() {
+        val picture = photo("all_there", 640, 360, Color.rgb(20, 90, 60))
+        val sound = Uri.fromFile(baseVideo(2_000)).toString()
+        val project = Project(
+            name = "all_there",
+            clips = listOf(imageClip(picture, 1_000), videoClip(baseVideo(1_000))),
+            music = MusicTrack(sound, "song", 2_000),
+            audio = listOf(AudioClip(uri = sound, title = "voice", startMs = 0, durationMs = 1_000)),
+        )
+        assertEquals(emptyList<String>(), ExportManager.missingMedia(context, project))
+    }
+
+    /** Negative: every missing clip, song and sound is named, and only those. */
+    @Test
+    fun missingMediaCheck_namesEveryMissingFile() {
+        val good = imageClip(photo("still_here", 640, 360, Color.BLUE), 1_000)
+        val gone = Clip(
+            uri = "file:///does/not/exist/holiday.mp4", type = ClipType.VIDEO,
+            sourceDurationMs = 2_000, name = "holiday.mp4",
+        )
+        val goneContent = Clip(
+            uri = "content://media/external/video/media/987654321", type = ClipType.VIDEO,
+            sourceDurationMs = 2_000,
+        )
+        val project = Project(
+            name = "missing_check",
+            clips = listOf(good, gone, goneContent),
+            music = MusicTrack("file:///does/not/exist/song.mp3", "My song", 2_000),
+            audio = listOf(AudioClip(uri = "file:///nope.m4a", title = "Voice 1", startMs = 0, durationMs = 500)),
+        )
+        val missing = ExportManager.missingMedia(context, project)
+        assertEquals(listOf("holiday.mp4", "Clip 3", "My song", "Voice 1"), missing)
+    }
+
+    /** Edge: a photo exactly at the limit is used as it is; one pixel more is shrunk. */
+    @Test
+    fun photoSizeLimit_boundaryAndUnreadableFiles() {
+        val atLimit = photo("at_limit", ExportManager.MAX_PHOTO_SIDE, 200, Color.GRAY)
+        assertEquals(ExportManager.MAX_PHOTO_SIDE, MediaUtils.imageLongSide(context, atLimit))
+        val overLimit = photo("over_limit", ExportManager.MAX_PHOTO_SIDE + 1, 200, Color.GRAY)
+        val copy = MediaUtils.playableCopy(context, overLimit)
+        assertTrue("over-limit photo gets a copy", copy != null)
+        assertTrue(MediaUtils.imageLongSide(context, Uri.fromFile(copy!!)) <= ExportManager.MAX_PHOTO_SIDE)
+        // Not a picture, or not there at all: size unknown (0), never a crash.
+        val text = File(context.cacheDir, "not_a_photo.jpg").apply { writeText("hello") }
+        assertEquals(0, MediaUtils.imageLongSide(context, Uri.fromFile(text)))
+        assertEquals(0, MediaUtils.imageLongSide(context, Uri.parse("file:///does/not/exist.jpg")))
+        // An at-limit photo exports.
+        val outcome = export(Project(name = "at_limit", clips = listOf(imageClip(atLimit, 1_000))), shortSide = 360)
+        assertNull("export failed: ${outcome.error}", outcome.error)
+    }
+
+    /** Positive: reverse makes a playable video of the same length. */
+    @Test
+    fun reverse_makesAPlayableVideoOfTheSameLength() {
+        val source = baseVideo(2_000)
+        val out = File(context.cacheDir, "reversed_${System.nanoTime()}.mp4")
+        var lastProgress = 0f
+        val lengthMs = com.reelforge.editor.engine.Reverser.reverse(
+            context, Uri.fromFile(source), 0, 2_000, out, stop = { false }, progress = { lastProgress = it },
+        )
+        assertTrue("file written", out.length() > 0)
+        assertNear("reported length", 2_000, lengthMs, 300)
+        assertNear("file length", 2_000, inspect(out).durationMs, 300)
+        assertTrue("progress reached the end, was $lastProgress", lastProgress > 0.99f)
+    }
+
+    /** Negative: stopping a reverse throws and leaves no half-written file. */
+    @Test
+    fun reverse_stoppedPartWay_leavesNoFile() {
+        val source = baseVideo(2_000)
+        val out = File(context.cacheDir, "reversed_stop_${System.nanoTime()}.mp4")
+        var frames = 0
+        val result = runCatching {
+            com.reelforge.editor.engine.Reverser.reverse(
+                context, Uri.fromFile(source), 0, 2_000, out, stop = { frames > 0 }, progress = { frames++ },
+            )
+        }
+        assertTrue("a stop ends with an error", result.isFailure)
+        assertFalse("no half-written file is left", out.exists())
+    }
+
+    /** Negative: reversing a file that is not there fails cleanly. */
+    @Test
+    fun reverse_missingFile_failsCleanly() {
+        val out = File(context.cacheDir, "reversed_missing_${System.nanoTime()}.mp4")
+        val result = runCatching {
+            com.reelforge.editor.engine.Reverser.reverse(
+                context, Uri.parse("file:///does/not/exist.mp4"), 0, 1_000, out, stop = { false }, progress = {},
+            )
+        }
+        assertTrue(result.isFailure)
+        assertFalse(out.exists())
+    }
+
     @Test
     fun corruptPhoto_reportsAnErrorInsteadOfHanging() {
         val file = File(context.cacheDir, "corrupt.jpg")
