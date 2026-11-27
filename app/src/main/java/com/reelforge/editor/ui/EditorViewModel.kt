@@ -300,6 +300,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val history = History<Project>()
     private var saveJob: Job? = null
     private var transformer: Transformer? = null
+
+    /** Rough seconds until the running export finishes, once there is enough progress to tell. */
+    var exportSecondsLeft by mutableStateOf<Long?>(null)
+        private set
     private val requested = mutableSetOf<String>()
 
     init {
@@ -4497,9 +4501,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 t.start(composition, output.absolutePath)
                 val holder = ProgressHolder()
                 val stall = StallGuard()
+                val startedAt = SystemClock.elapsedRealtime()
+                exportSecondsLeft = null
                 while (export is ExportState.Running && transformer === t) {
                     val known = t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE
-                    if (known) export = ExportState.Running(holder.progress)
+                    if (known) {
+                        export = ExportState.Running(holder.progress)
+                        val pct = holder.progress
+                        // From the pace so far; too unsteady to show in the first few percent.
+                        exportSecondsLeft = if (pct >= 3) {
+                            (SystemClock.elapsedRealtime() - startedAt) / 1000 * (100 - pct) / pct
+                        } else null
+                    }
                     if (stall.check(if (known) holder.progress else -1)) {
                         // Stuck for minutes: stop it (cancel does not call onError) and retry.
                         runCatching { t.cancel() }

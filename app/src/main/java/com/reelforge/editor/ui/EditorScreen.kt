@@ -2560,6 +2560,9 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         val (w, h) = ExportManager.outputSize(project.aspect, 720)
         ExportManager.canEncode(true, w, h, 30)
     }
+    // HEVC chosen earlier (or on another phone) but this phone has no hardware HEVC encoder:
+    // the option is hidden, so it must not be used either.
+    if (!canHevc && hevc) hevc = false
     if (sizes.none { it.first == shortSide }) shortSide = sizes.last().first
 
     // Keep the screen on while exporting: some phones slow or pause apps soon after the screen
@@ -2619,6 +2622,16 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                     }
                     is ExportState.Running -> {
                         Text("Rendering… ${state.progress}%")
+                        vm.exportSecondsLeft?.let { left ->
+                            Text(
+                                when {
+                                    left < 60 -> "Less than a minute left"
+                                    left < 120 -> "About 1 minute left"
+                                    else -> "About ${left / 60} minutes left"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                         Spacer(Modifier.height(12.dp))
                         LinearProgressIndicator(
                             progress = { state.progress / 100f },

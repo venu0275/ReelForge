@@ -476,13 +476,15 @@ private class BackgroundFitProgram(
                 gl_FragColor = texture2D(uTexSampler, p * 0.5 + 0.5);
               } else if (uBlur > 0.5) {
                 vec2 uv = vPos * uBg * 0.5 + 0.5;
+                // 5 x 5 samples over the same area as the earlier 7 x 7 (half as much GPU work
+                // on every background pixel of every frame; slow phones could not keep up).
                 vec3 sum = vec3(0.0);
-                for (int i = -3; i <= 3; i++) {
-                  for (int j = -3; j <= 3; j++) {
-                    sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * 0.024).rgb;
+                for (int i = -2; i <= 2; i++) {
+                  for (int j = -2; j <= 2; j++) {
+                    sum += texture2D(uTexSampler, uv + vec2(float(i), float(j)) * 0.036).rgb;
                   }
                 }
-                gl_FragColor = vec4(sum / 49.0 * 0.7, 1.0);
+                gl_FragColor = vec4(sum / 25.0 * 0.7, 1.0);
               } else {
                 gl_FragColor = uColor;
               }

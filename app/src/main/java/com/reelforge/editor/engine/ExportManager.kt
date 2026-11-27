@@ -82,14 +82,16 @@ object ExportManager {
     }
 
     /** Whether this phone has an encoder for that format, size and frame rate. */
-    fun canEncode(hevc: Boolean, width: Int, height: Int, fps: Int): Boolean {
+    fun canEncode(hevc: Boolean, width: Int, height: Int, fps: Int, hardwareOnly: Boolean = true): Boolean {
         val mime = if (hevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264
         // Portrait video is encoded sideways, so check the landscape orientation.
         val long = max(width, height)
         val short = min(width, height)
         return runCatching {
             MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
-                info.isEncoder &&
+                // Only the phone's hardware encoder counts. Android's software encoders can also
+                // make HEVC or large sizes, but 5-10 times slower, which makes exports crawl.
+                info.isEncoder && (!hardwareOnly || (info.isHardwareAccelerated && !info.isSoftwareOnly)) &&
                     info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
                     info.getCapabilitiesForType(mime).videoCapabilities
                         .areSizeAndRateSupported(long, short, fps.toDouble())

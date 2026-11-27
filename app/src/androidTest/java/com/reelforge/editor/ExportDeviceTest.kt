@@ -898,7 +898,8 @@ class ExportDeviceTest {
         )
         val (w, h) = ExportManager.outputSize(project.aspect, 360)
         for (hevc in listOf(false, true)) {
-            if (!ExportManager.canEncode(hevc, w, h, 60)) {
+            // Emulators only have software encoders, so any encoder counts here.
+            if (!ExportManager.canEncode(hevc, w, h, 60, hardwareOnly = false)) {
                 log("SKIP 60 fps hevc=$hevc: this device has no encoder for it")
                 continue
             }
