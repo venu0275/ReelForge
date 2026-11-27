@@ -353,6 +353,35 @@ object ExportManager {
      * seen: the compositor only shows this track during the layer's own time range.
      */
     /**
+     * Names of the clips, layers and sounds whose files can no longer be opened (deleted from the
+     * gallery, on a removed SD card, or access lost). Checked before an export starts, so the
+     * user hears which file is missing instead of the export failing part way. Reads files, so
+     * call it off the main thread.
+     */
+    fun missingMedia(context: Context, project: Project): List<String> {
+        fun readable(uri: String): Boolean {
+            if (uri.isBlank()) return true // not a file (e.g. an animated button)
+            val parsed = Uri.parse(uri)
+            return when (parsed.scheme) {
+                "file" -> parsed.path?.let { it.startsWith("/android_asset/") || java.io.File(it).canRead() } ?: false
+                "content" -> runCatching {
+                    context.contentResolver.openFileDescriptor(parsed, "r")?.use { true } ?: false
+                }.getOrDefault(false)
+                else -> true // bundled assets and the like are always there
+            }
+        }
+        val missing = mutableListOf<String>()
+        project.clips.forEachIndexed { i, c ->
+            if (!readable(c.uri)) missing += c.name.ifBlank { "Clip ${i + 1}" }
+        }
+        project.videoLayers.forEachIndexed { i, l -> if (!readable(l.uri)) missing += "Video layer ${i + 1}" }
+        project.layers.forEachIndexed { i, l -> if (!readable(l.uri)) missing += "Picture layer ${i + 1}" }
+        project.music?.let { if (!readable(it.uri)) missing += it.title.ifBlank { "Music" } }
+        project.audio.forEachIndexed { i, a -> if (!readable(a.uri)) missing += a.title.ifBlank { "Sound ${i + 1}" } }
+        return missing.distinct()
+    }
+
+    /**
      * Photos larger than [MAX_PHOTO_SIDE] are swapped for a smaller, upright copy. Phones now take
      * 50 to 200 megapixel photos; Media3 decodes a photo at full size, which can take seconds, run
      * out of memory, or exceed the GPU's largest texture on some phones and stall the export.

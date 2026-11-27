@@ -22,6 +22,9 @@ object Reverser {
     /** Longest part that can be reversed; every frame has to be decoded and encoded again. */
     const val MAX_MS = 30_000L
 
+    /** How long to wait for the encoder's last frames once all frames are in. */
+    private const val END_OF_STREAM_WAIT_MS = 5_000L
+
     /** Output sides are a multiple of 16, which every phone encoder accepts. */
     fun outputSize(width: Int, height: Int, maxSide: Int = 1280): Pair<Int, Int> {
         val scale = minOf(1f, maxSide.toFloat() / maxOf(width, height))
@@ -96,10 +99,17 @@ object Reverser {
             // Takes whatever the encoder has finished. Times are set here, one frame apart,
             // because the times the encoder sees are just when each frame was drawn.
             fun drain(endOfStream: Boolean) {
+                // Some phones' encoders never send the end-of-stream flag. Stop waiting after a
+                // while with nothing new, and keep what was written, instead of hanging at 100%.
+                var idleSince = android.os.SystemClock.elapsedRealtime()
                 while (true) {
                     val index = codec.dequeueOutputBuffer(info, if (endOfStream) 10_000 else 0)
+                    if (index != MediaCodec.INFO_TRY_AGAIN_LATER) idleSince = android.os.SystemClock.elapsedRealtime()
                     when {
-                        index == MediaCodec.INFO_TRY_AGAIN_LATER -> if (!endOfStream) return
+                        index == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                            if (!endOfStream) return
+                            if (android.os.SystemClock.elapsedRealtime() - idleSince > END_OF_STREAM_WAIT_MS) return
+                        }
                         index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                             track = mux.addTrack(codec.outputFormat)
                             mux.start()

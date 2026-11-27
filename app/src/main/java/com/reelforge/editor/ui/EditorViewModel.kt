@@ -4489,6 +4489,21 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch {
             try {
+                if (attempt == 1) {
+                    val missing = withContext(Dispatchers.IO) { ExportManager.missingMedia(ctx, p) }
+                    if (missing.isNotEmpty()) {
+                        if (export is ExportState.Running) {
+                            export = ExportState.Failed(
+                                "These files can no longer be opened. They may have been deleted or " +
+                                    "moved. Replace or remove them and try again:\n" +
+                                    missing.take(5).joinToString("\n") { "• $it" } +
+                                    (if (missing.size > 5) "\n…and ${missing.size - 5} more" else ""),
+                            )
+                        }
+                        finishExport()
+                        return@launch
+                    }
+                }
                 val composition = withContext(Dispatchers.IO) {
                     ExportManager.buildComposition(ctx, p, shortSide, fps)
                 }
