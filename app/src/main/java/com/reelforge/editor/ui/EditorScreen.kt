@@ -2625,10 +2625,14 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(10.dp))
+                        // Many phones slow down or pause apps when the screen goes off or the user
+                        // switches away, which leaves the export stuck at the same percent.
                         Text(
-                            "You can use other apps or turn the screen off: the export keeps going and " +
-                                "a notification shows its progress.",
-                            style = MaterialTheme.typography.bodySmall,
+                            "Please stay on this screen and don't turn the screen off until the " +
+                                "export finishes. Some phones pause the export otherwise.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                     is ExportState.Done -> Text("Saved to Movies/CutMitra in your gallery.")
