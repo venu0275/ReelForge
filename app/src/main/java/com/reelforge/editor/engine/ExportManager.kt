@@ -5,6 +5,7 @@ import android.media.MediaCodecList
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.annotation.OptIn
+import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -97,13 +98,36 @@ object ExportManager {
         }.getOrDefault(false)
     }
 
+    /**
+     * Free space an export needs: the video and audio at their bitrates, twice over (the file is
+     * written to the cache and then copied to the gallery), plus a 20% margin.
+     */
+    fun bytesNeeded(videoBitrate: Int, durationMs: Long): Long {
+        val bitsPerSecond = videoBitrate.toLong() + AUDIO_BITRATE_ESTIMATE
+        val fileBytes = bitsPerSecond * durationMs / 8 / 1000
+        return fileBytes * 2 * 12 / 10
+    }
+
+    private const val AUDIO_BITRATE_ESTIMATE = 192_000L
+
+    /**
+     * A Transformer builder for every render in the app. Media3 aborts a render with
+     * ERROR_CODE_MUXING_TIMEOUT when no audio or video sample reaches the muxer for 10 seconds.
+     * Long videos, heavy overlays, a throttled encoder or a slow-starting track can all pause
+     * one track that long without anything being wrong, so that watchdog is turned off. Real
+     * failures still come through as their own errors.
+     */
+    fun transformerBuilder(context: Context): Transformer.Builder =
+        Transformer.Builder(context)
+            .setMaxDelayBetweenMuxerSamplesMs(C.TIME_UNSET)
+
     fun createTransformer(
         context: Context,
         listener: Transformer.Listener,
         videoBitrate: Int,
         hevc: Boolean = false,
     ): Transformer =
-        Transformer.Builder(context)
+        transformerBuilder(context)
             .setVideoMimeType(if (hevc) MimeTypes.VIDEO_H265 else MimeTypes.VIDEO_H264)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .setEncoderFactory(

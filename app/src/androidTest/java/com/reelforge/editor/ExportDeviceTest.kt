@@ -307,6 +307,46 @@ class ExportDeviceTest {
         assertNear("duration", 3_000, info.durationMs, 600)
     }
 
+    /**
+     * A long, heavy export like the one that failed for a user with ERROR_CODE_MUXING_TIMEOUT:
+     * real video mixed with photos, many text overlays across the whole video, looping music
+     * and a voice-over. The audio is cheap to make and runs ahead of the slow video, which is
+     * what used to trip Media3's 10-second muxer timeout.
+     */
+    @Test
+    fun longHeavyExport_finishesWithoutMuxerTimeout() {
+        val video = videoClip(baseVideo(10_000))
+        val photo = photo("long_bg", 1280, 720, Color.rgb(40, 70, 110))
+        val clips = (0 until 9).map { i -> if (i % 3 == 2) imageClip(photo, 10_000) else video.copy(id = "long_v$i") }
+        val totalMs = 90_000L
+        val texts = (0 until 45).map { i ->
+            TextItem(
+                text = "Line $i", size = 0.07f, x = -0.8f + (i % 5) * 0.4f, y = 0.7f - (i % 4) * 0.45f,
+                startMs = i * 2_000L, endMs = i * 2_000L + 6_000L,
+                outline = true, animIn = OverlayAnim.FADE, animOut = OverlayAnim.FADE,
+                moving = i % 3 == 0, x2 = 0.6f, y2 = -0.6f,
+            )
+        }
+        val sound = Uri.fromFile(baseVideo(4_000)).toString()
+        val project = Project(
+            name = "long_heavy",
+            clips = clips,
+            texts = texts,
+            music = MusicTrack(sound, "loop", 4_000, volume = 0.6f, loop = true),
+            audio = listOf(AudioClip(uri = sound, title = "voice", startMs = 30_000, durationMs = 4_000)),
+        )
+        val outcome = export(project, shortSide = 540, timeoutSec = 1_200)
+        val error = outcome.error
+        if (error is ExportException) {
+            fail("export failed with ${error.errorCodeName}: ${error.message}")
+        }
+        if (error != null) fail("export failed: $error")
+        log("PERF long heavy export of ${totalMs / 1000} s took ${outcome.millis} ms")
+        val info = inspect(outcome.file!!)
+        assertNear("duration", totalMs, info.durationMs, 1_500)
+        assertTrue("has sound", info.hasAudio)
+    }
+
     @Test
     fun fortyOverlaysOnOneClip_export() {
         val uri = photo("many_overlays", 640, 360, Color.rgb(30, 30, 30))

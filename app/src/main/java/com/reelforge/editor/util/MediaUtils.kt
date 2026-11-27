@@ -245,12 +245,18 @@ object MediaUtils {
         val collection = MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val uri = resolver.insert(collection, values)
             ?: throw IllegalStateException("Could not create gallery entry")
-        resolver.openOutputStream(uri)?.use { out ->
-            file.inputStream().use { it.copyTo(out) }
-        } ?: throw IllegalStateException("Could not open gallery entry")
-        values.clear()
-        values.put(MediaStore.Video.Media.IS_PENDING, 0)
-        resolver.update(uri, values, null, null)
+        try {
+            resolver.openOutputStream(uri)?.use { out ->
+                file.inputStream().use { it.copyTo(out) }
+            } ?: throw IllegalStateException("Could not open gallery entry")
+            values.clear()
+            values.put(MediaStore.Video.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        } catch (e: Exception) {
+            // Don't leave a half-copied, never-finished video behind in the gallery.
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
         file.delete()
         return uri
     }

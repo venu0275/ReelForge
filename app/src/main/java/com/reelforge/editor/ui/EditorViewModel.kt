@@ -50,7 +50,9 @@ import com.reelforge.editor.data.FontAsset
 import com.reelforge.editor.data.ProjectRepository
 import com.reelforge.editor.engine.ChromaKeyEffect
 import com.reelforge.editor.engine.EffectFactory
+import com.reelforge.editor.engine.ExportErrors
 import com.reelforge.editor.engine.ExportManager
+import com.reelforge.editor.engine.StallGuard
 import com.reelforge.editor.engine.fadeAlpha
 import com.reelforge.editor.model.AspectRatio
 import com.reelforge.editor.model.AudioClip
@@ -132,7 +134,11 @@ private const val MAX_FRAMES = 400
 
 // Full-size photo stills kept for the preview (up to about 4 MB each).
 private const val MAX_STILLS = 16
-private const val MAX_LAYERED_EXPORT_ATTEMPTS = 3
+// A failed export is tried this many times in all, each time with safer settings.
+private const val MAX_EXPORT_ATTEMPTS = 3
+
+// The short side used by the last export attempt when the chosen size keeps failing.
+private const val FALLBACK_SHORT_SIDE = 720
 
 sealed interface ExportState {
     data object Idle : ExportState
@@ -2142,7 +2148,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 )
             )
             .build()
-        val transformer = Transformer.Builder(ctx)
+        val transformer = ExportManager.transformerBuilder(ctx)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                     file.delete()
@@ -3146,7 +3152,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 ).build()
                 kotlinx.coroutines.suspendCancellableCoroutine<Unit> { done ->
-                    val t = Transformer.Builder(ctx)
+                    val t = ExportManager.transformerBuilder(ctx)
                         .setVideoMimeType(androidx.media3.common.MimeTypes.VIDEO_H264)
                         .addListener(object : Transformer.Listener {
                             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -3166,11 +3172,17 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     t.start(item, out.absolutePath)
                     // Show progress while it works.
                     val holder = ProgressHolder()
+                    val stall = StallGuard()
                     val poll = object : Runnable {
                         override fun run() {
                             if (!done.isActive) return
-                            if (t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-                                cutoutWork = "Removing the background… ${holder.progress}%"
+                            val known = t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE
+                            if (known) cutoutWork = "Removing the background… ${holder.progress}%"
+                            if (stall.check(if (known) holder.progress else -1)) {
+                                runCatching { t.cancel() }
+                                out.delete()
+                                done.resumeWith(Result.failure(IllegalStateException("Background removal stopped making progress")))
+                                return
                             }
                             cutoutHandler.postDelayed(this, 500)
                         }
@@ -4358,20 +4370,70 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun startExport(shortSide: Int, quality: Int, fps: Int = 30, hevc: Boolean = false) {
         val p = project ?: return
         if (p.clips.isEmpty() || export is ExportState.Running) return
+        // Make sure the finished video will fit before spending minutes making it.
+        val (w, h) = ExportManager.outputSize(p.aspect, shortSide)
+        val needed = ExportManager.bytesNeeded(ExportManager.bitrate(w, h, quality, fps, hevc), p.durationMs)
+        val free = ctx.cacheDir.usableSpace
+        if (free in 1 until needed) {
+            export = ExportState.Failed(ExportErrors.notEnoughSpace(needed shr 20, free shr 20))
+            return
+        }
         if (isRecording) stopRecording()
         player.pause()
         player.stop() // free hardware decoders for the export
         layerPlayers.values.forEach { it.stop() }
+        deleteLeftoverExports()
         export = ExportState.Running(0)
         runExport(p, shortSide, quality, fps, hevc, attempt = 1)
     }
 
     /**
-     * One export attempt. Exports with video layers occasionally fail at start-up inside Media3,
-     * so those are retried automatically before an error is shown.
+     * Removes half-written exports from the cache. An export that was stopped, or whose app was
+     * closed by the system, leaves its file behind, and those can be hundreds of MB each.
+     */
+    private fun deleteLeftoverExports() {
+        ctx.cacheDir.listFiles { f -> f.name.startsWith("export_") && f.name.endsWith(".mp4") }
+            ?.forEach { runCatching { it.delete() } }
+    }
+
+    /**
+     * One export attempt. When an attempt fails in a way that may pass with simpler settings, it
+     * is tried again: first with H.264 instead of HEVC, then also at [FALLBACK_SHORT_SIDE] and
+     * 30 fps. Exports with video layers are always retried, as they occasionally fail at
+     * start-up inside Media3.
      */
     private fun runExport(p: Project, shortSide: Int, quality: Int, fps: Int, hevc: Boolean, attempt: Int) {
         val output = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
+
+        /** Tries again with safer settings, or shows [failure] when no tries are left. */
+        fun failed(retryable: Boolean, failure: String, reason: String, cause: Throwable?, shrink: Boolean = false) {
+            output.delete()
+            transformer = null
+            android.util.Log.e(
+                "CutMitra", "Export attempt $attempt failed (${shortSide}p ${fps}fps hevc=$hevc): $reason", cause,
+            )
+            if (retryable && attempt < MAX_EXPORT_ATTEMPTS && export is ExportState.Running) {
+                val next = attempt + 1
+                val smaller = shrink || next >= 3
+                val nextShortSide = if (smaller) minOf(shortSide, FALLBACK_SHORT_SIDE) else shortSide
+                val nextFps = if (smaller) minOf(fps, ExportManager.DEFAULT_FRAME_RATE) else fps
+                export = ExportState.Running(0)
+                viewModelScope.launch {
+                    delay(500) // let the failed attempt release its encoders and decoders
+                    if (export is ExportState.Running) {
+                        runExport(p, nextShortSide, quality, nextFps, hevc = false, attempt = next)
+                    }
+                }
+            } else {
+                if (export is ExportState.Running) {
+                    export = ExportState.Failed(failure)
+                    com.reelforge.editor.work.WorkService.finished(
+                        ctx, "Export did not finish", "Open CutMitra to see why and try again.",
+                    )
+                }
+                finishExport()
+            }
+        }
 
         val listener = object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -4387,10 +4449,14 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         )
                         ExportState.Done(uri)
                     } catch (e: Exception) {
+                        output.delete()
                         com.reelforge.editor.work.WorkService.finished(
                             ctx, "Export did not finish", "Open CutMitra to try again.",
                         )
-                        ExportState.Failed(e.message ?: "Could not save the video")
+                        ExportState.Failed(
+                            "The video was made but could not be saved to the gallery. " +
+                                "Check that there is free space on the phone.\n(${e.message ?: "save failed"})"
+                        )
                     }
                     finishExport()
                 }
@@ -4401,24 +4467,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 exportResult: ExportResult,
                 exportException: ExportException,
             ) {
-                output.delete()
-                transformer = null
-                val retry = p.videoLayers.isNotEmpty() && attempt < MAX_LAYERED_EXPORT_ATTEMPTS &&
-                    export is ExportState.Running
-                if (retry) {
-                    export = ExportState.Running(0)
-                    viewModelScope.launch {
-                        delay(500) // let the failed attempt release its encoders and decoders
-                        if (export is ExportState.Running) {
-                            runExport(p, shortSide, quality, fps, hevc, attempt + 1)
-                        }
-                    }
-                } else {
-                    export = ExportState.Failed(
-                        "${exportException.errorCodeName}: ${exportException.message ?: "export failed"}"
-                    )
-                    finishExport()
-                }
+                failed(
+                    retryable = p.videoLayers.isNotEmpty() || ExportErrors.isRetryable(exportException.errorCode),
+                    failure = ExportErrors.message(exportException),
+                    reason = exportException.errorCodeName,
+                    cause = exportException,
+                )
             }
         }
 
@@ -4435,15 +4489,25 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 transformer = t
                 t.start(composition, output.absolutePath)
                 val holder = ProgressHolder()
+                val stall = StallGuard()
                 while (export is ExportState.Running && transformer === t) {
-                    if (t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-                        export = ExportState.Running(holder.progress)
+                    val known = t.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE
+                    if (known) export = ExportState.Running(holder.progress)
+                    if (stall.check(if (known) holder.progress else -1)) {
+                        // Stuck for minutes: stop it (cancel does not call onError) and retry.
+                        runCatching { t.cancel() }
+                        failed(true, ExportErrors.STALLED_MESSAGE, "stalled at ${holder.progress}%", null)
+                        break
                     }
                     delay(300)
                 }
+            } catch (e: OutOfMemoryError) {
+                // Overlays are drawn at the output size, so a smaller size often fits.
+                failed(true, ExportErrors.OUT_OF_MEMORY_MESSAGE, "out of memory", e, shrink = true)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                export = ExportState.Failed(e.message ?: "Could not start export")
-                finishExport()
+                failed(false, "Could not start the export.\n(${e.message ?: e.javaClass.simpleName})", "start failed", e)
             }
         }
     }
