@@ -5,7 +5,6 @@ import android.media.MediaCodecList
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.annotation.OptIn
-import androidx.media3.common.C
 import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -111,15 +110,20 @@ object ExportManager {
     private const val AUDIO_BITRATE_ESTIMATE = 192_000L
 
     /**
-     * A Transformer builder for every render in the app. Media3 aborts a render with
-     * ERROR_CODE_MUXING_TIMEOUT when no audio or video sample reaches the muxer for 10 seconds.
-     * Long videos, heavy overlays, a throttled encoder or a slow-starting track can all pause
-     * one track that long without anything being wrong, so that watchdog is turned off. Real
-     * failures still come through as their own errors.
+     * A Transformer builder for every render in the app.
+     *
+     * Media3 stops a render with ERROR_CODE_MUXING_TIMEOUT when no audio or video sample reaches
+     * the muxer for a while. Its default of 10 seconds stopped healthy long or heavy exports, but
+     * turning the check off entirely made exports hang forever on chipsets where the hardware
+     * codec gets stuck (Media3's own guide warns about this). So the limit is raised to
+     * [MUXER_TIMEOUT_MS]: a stuck codec still ends in an error, which the export retries with
+     * safer settings.
      */
     fun transformerBuilder(context: Context): Transformer.Builder =
         Transformer.Builder(context)
-            .setMaxDelayBetweenMuxerSamplesMs(C.TIME_UNSET)
+            .setMaxDelayBetweenMuxerSamplesMs(MUXER_TIMEOUT_MS)
+
+    const val MUXER_TIMEOUT_MS = 60_000L
 
     fun createTransformer(
         context: Context,
@@ -162,10 +166,11 @@ object ExportManager {
     /** Builds the composition. Decodes images and writes files, so call it off the main thread. */
     fun buildComposition(
         context: Context,
-        project: Project,
+        source: Project,
         shortSide: Int,
         fps: Int = DEFAULT_FRAME_RATE,
     ): Composition {
+        val project = withExportablePhotos(context, source)
         val (width, height) = outputSize(project.aspect, shortSide)
 
         // Image layers sit below text and stickers.
@@ -304,6 +309,10 @@ object ExportManager {
         }
 
         val builder = Composition.Builder(sequences).experimentalSetForceAudioTrack(!layered)
+            // Many phones now record 10-bit HDR by default. Mixing an HDR clip with photos or SDR
+            // clips, or drawing SDR text on it, is not supported when HDR is kept, and some
+            // phones stall or fail on it. Exports are SDR anyway, so HDR clips are tone-mapped.
+            .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
         if (layered) {
             builder.setVideoCompositorSettings(LayerCompositorSettings(width, height, placements))
             val onTop = specs.map { s ->
@@ -341,6 +350,28 @@ object ExportManager {
      * a blank picture to the end, so the track always spans the whole video. The blanks are never
      * seen: the compositor only shows this track during the layer's own time range.
      */
+    /**
+     * Photos larger than [MAX_PHOTO_SIDE] are swapped for a smaller, upright copy. Phones now take
+     * 50 to 200 megapixel photos; Media3 decodes a photo at full size, which can take seconds, run
+     * out of memory, or exceed the GPU's largest texture on some phones and stall the export.
+     */
+    private fun withExportablePhotos(context: Context, project: Project): Project {
+        if (project.clips.none { it.type == ClipType.IMAGE }) return project
+        return project.copy(
+            clips = project.clips.map { clip ->
+                if (clip.type != ClipType.IMAGE) return@map clip
+                val uri = Uri.parse(clip.uri)
+                if (MediaUtils.imageLongSide(context, uri) <= MAX_PHOTO_SIDE) return@map clip
+                MediaUtils.playableCopy(context, uri)
+                    ?.let { clip.copy(uri = Uri.fromFile(it).toString()) }
+                    ?: clip
+            },
+        )
+    }
+
+    /** The largest photo side sent to Media3; 4096 is a texture size every phone supports. */
+    const val MAX_PHOTO_SIDE = 4096
+
     private fun buildVideoLayerSequence(
         layer: VideoLayer,
         totalMs: Long,

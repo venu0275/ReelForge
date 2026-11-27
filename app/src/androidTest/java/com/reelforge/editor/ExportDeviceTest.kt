@@ -347,6 +347,25 @@ class ExportDeviceTest {
         assertTrue("has sound", info.hasAudio)
     }
 
+    /**
+     * Photos bigger than 4096 pixels are swapped for a smaller copy before export. Full-size
+     * 50-200 MP photos made exports stall on some phones.
+     */
+    @Test
+    fun hugePhoto_isShrunkAndExports() {
+        val big = photo("huge_photo", 5200, 3000, Color.rgb(90, 40, 60))
+        assertEquals(5200, MediaUtils.imageLongSide(context, big))
+        val copy = MediaUtils.playableCopy(context, big)
+        assertTrue("a copy was made", copy != null)
+        val copySide = MediaUtils.imageLongSide(context, Uri.fromFile(copy!!))
+        assertTrue("copy is at most ${ExportManager.MAX_PHOTO_SIDE} px, was $copySide", copySide in 1..ExportManager.MAX_PHOTO_SIDE)
+
+        val project = Project(name = "huge_photo", clips = listOf(imageClip(big, 3_000), imageClip(big, 2_000)))
+        val outcome = export(project, shortSide = 720)
+        assertNull("export failed: ${outcome.error}", outcome.error)
+        assertNear("duration", 5_000, inspect(outcome.file!!).durationMs, 500)
+    }
+
     @Test
     fun fortyOverlaysOnOneClip_export() {
         val uri = photo("many_overlays", 640, 360, Color.rgb(30, 30, 30))

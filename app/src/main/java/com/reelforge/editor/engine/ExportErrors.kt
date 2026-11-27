@@ -3,10 +3,10 @@ package com.reelforge.editor.engine
 import androidx.media3.transformer.ExportException
 
 /**
- * Notices a render that has stopped moving. Media3's own 10-second muxer timeout is turned off
- * (see ExportManager.transformerBuilder) because it stops healthy long exports, so this takes
- * its place with a much longer limit: only a render whose progress has not changed at all for
- * [limitMs] counts as stuck. Call [check] each time progress is polled.
+ * Notices a render that has stopped moving. Media3's muxer timeout (see
+ * ExportManager.transformerBuilder) catches a codec that stops producing samples; this is the
+ * backstop for anything else, such as a render that never gets going: a render whose progress
+ * has not changed at all for [limitMs] counts as stuck. Call [check] each time progress is polled.
  */
 class StallGuard(
     private val limitMs: Long = DEFAULT_LIMIT_MS,
@@ -28,7 +28,7 @@ class StallGuard(
 
     companion object {
         // Long enough for 1% of a 45-minute 4K video on a slow phone.
-        const val DEFAULT_LIMIT_MS = 5 * 60_000L
+        const val DEFAULT_LIMIT_MS = 3 * 60_000L
     }
 }
 

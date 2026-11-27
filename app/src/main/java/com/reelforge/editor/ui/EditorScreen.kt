@@ -2562,6 +2562,15 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
     }
     if (sizes.none { it.first == shortSide }) shortSide = sizes.last().first
 
+    // Keep the screen on while exporting: some phones slow or pause apps soon after the screen
+    // goes off, which leaves the export sitting at the same percent.
+    val hostView = androidx.compose.ui.platform.LocalView.current
+    val exporting = state is ExportState.Running
+    androidx.compose.runtime.DisposableEffect(exporting) {
+        hostView.keepScreenOn = exporting
+        onDispose { hostView.keepScreenOn = false }
+    }
+
     CutDialog(
         icon = Icons.Rounded.IosShare,
         centred = false,

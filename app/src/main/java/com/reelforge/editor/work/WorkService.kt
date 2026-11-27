@@ -29,7 +29,36 @@ object AppVisibility {
  */
 class WorkService : Service() {
 
+    /**
+     * Keeps the CPU awake while a job runs. A foreground service keeps the app alive, but with
+     * the screen off the CPU still sleeps, and an export then sits at the same percent until the
+     * screen comes back on. Some phones (Xiaomi, Oppo, Vivo, Realme) are quick to do this.
+     */
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        releaseWakeLock()
+        super.onDestroy()
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        wakeLock = runCatching {
+            getSystemService(android.os.PowerManager::class.java)
+                ?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "CutMitra:work")
+                ?.apply {
+                    setReferenceCounted(false)
+                    acquire(WAKE_LOCK_LIMIT_MS) // released earlier when the job ends
+                }
+        }.getOrNull()
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -55,6 +84,7 @@ class WorkService : Service() {
                 stopSelf()
             }
         }
+        if (started) acquireWakeLock() else releaseWakeLock()
         return START_NOT_STICKY
     }
 
@@ -70,6 +100,7 @@ class WorkService : Service() {
         private const val CHANNEL = "work"
         private const val DONE_CHANNEL = "work_done"
         private const val NOTE_ID = 4101
+        private const val WAKE_LOCK_LIMIT_MS = 6 * 60 * 60_000L
         private const val DONE_ID = 4102
         private const val ACTION_STOP = "com.reelforge.editor.work.STOP"
 

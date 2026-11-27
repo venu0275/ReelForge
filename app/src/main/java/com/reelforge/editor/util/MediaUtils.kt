@@ -151,11 +151,23 @@ object MediaUtils {
         val source = ImageDecoder.createSource(context.contentResolver, uri)
         ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             val largest = max(info.size.width, info.size.height)
-            decoder.setTargetSampleSize(max(1, largest / maxSide))
+            // Rounded up, so the result is never larger than maxSide (16320 / 4096 must give 4).
+            decoder.setTargetSampleSize(max(1, (largest + maxSide - 1) / maxSide))
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         }
     } catch (e: Exception) {
         null
+    }
+
+    /** The longer side of the picture at [uri] in pixels, read from its header; 0 if unknown. */
+    fun imageLongSide(context: Context, uri: Uri): Int = try {
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use {
+            android.graphics.BitmapFactory.decodeStream(it, null, options)
+        }
+        max(options.outWidth, options.outHeight).coerceAtLeast(0)
+    } catch (e: Exception) {
+        0
     }
 
     /**

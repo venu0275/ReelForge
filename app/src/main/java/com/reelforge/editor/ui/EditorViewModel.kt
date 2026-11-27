@@ -4296,6 +4296,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                     // Wait for work; while frames are waiting to be shown, wait only briefly.
                     val next = if (ready.isEmpty()) frameQueue.receive()
                     else withTimeoutOrNull(120) { frameQueue.receive() }
+                    // Thumbnails wait while a video is exporting: on many phones there are only a
+                    // few hardware decoders, and the export needs all it can get.
+                    if (export is ExportState.Running) {
+                        open.values.forEach { runCatching { it.release() } }
+                        open.clear()
+                        while (export is ExportState.Running) delay(500)
+                    }
                     if (next != null) {
                         val (uri, second) = next
                         val key = "$uri#$second"

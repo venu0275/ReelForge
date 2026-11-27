@@ -72,4 +72,11 @@ class ExportRobustnessTest {
         assertTrue("about double the size, not wildly more", oneMinute < fileOnly * 3)
         assertTrue("longer videos need more", ExportManager.bytesNeeded(bitrate, 120_000) > oneMinute)
     }
+
+    @Test
+    fun muxerTimeout_isLongerThanMedia3sDefaultButNeverOff() {
+        // Off (C.TIME_UNSET) makes exports hang forever on chipsets where the codec gets stuck.
+        assertTrue(ExportManager.MUXER_TIMEOUT_MS > 10_000)
+        assertTrue(ExportManager.MUXER_TIMEOUT_MS <= 120_000)
+    }
 }
