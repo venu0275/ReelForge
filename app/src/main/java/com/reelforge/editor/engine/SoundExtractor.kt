@@ -70,7 +70,7 @@ object SoundExtractor {
             .setRemoveVideo(true)
             .setEffects(Effects(audio, emptyList()))
             .build()
-        val transformer = Transformer.Builder(context)
+        val transformer = ExportManager.transformerBuilder(context)
             .setAudioMimeType(MimeTypes.AUDIO_AAC)
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
@@ -90,10 +90,16 @@ object SoundExtractor {
             })
             .build()
         val holder = ProgressHolder()
+        val stall = StallGuard()
         val poll = object : Runnable {
             override fun run() {
-                if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
-                    progress(holder.progress / 100f)
+                val known = transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE
+                if (known) progress(holder.progress / 100f)
+                if (stall.check(if (known) holder.progress else -1)) {
+                    runCatching { transformer.cancel() }
+                    out.delete()
+                    if (cont.isActive) cont.resumeWithException(IllegalStateException("Taking the sound out stopped making progress"))
+                    return
                 }
                 handler.postDelayed(this, 250)
             }
