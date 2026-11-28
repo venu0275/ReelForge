@@ -28,7 +28,7 @@ class StallGuard(
 
     companion object {
         // Long enough for 1% of a 45-minute 4K video on a slow phone.
-        const val DEFAULT_LIMIT_MS = 3 * 60_000L
+        const val DEFAULT_LIMIT_MS = 2 * 60_000L
     }
 }
 

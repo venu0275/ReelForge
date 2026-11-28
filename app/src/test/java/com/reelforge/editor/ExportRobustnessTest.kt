@@ -79,4 +79,18 @@ class ExportRobustnessTest {
         assertTrue(ExportManager.MUXER_TIMEOUT_MS > 10_000)
         assertTrue(ExportManager.MUXER_TIMEOUT_MS <= 120_000)
     }
+
+    @Test
+    fun exportSizes_areOnly480p720pAnd1080pOnEveryPhone() {
+        assertTrue(com.reelforge.editor.data.AppSettings.SIDES == listOf(480, 720, 1080))
+    }
+
+    @Test
+    fun savedLargeExportSize_becomes1080p() {
+        val base = com.reelforge.editor.data.AppSettings()
+        assertTrue(base.copy(exportSide = 1440).sanitized().exportSide == 1080)
+        assertTrue(base.copy(exportSide = 2160).sanitized().exportSide == 1080)
+        assertTrue(base.copy(exportSide = 480).sanitized().exportSide == 480)
+        assertTrue(base.copy(exportSide = 1080).sanitized().exportSide == 1080)
+    }
 }

@@ -41,7 +41,11 @@ data class AppSettings(
     fun sanitized(): AppSettings = copy(
         photoMs = photoMs.coerceIn(500, 20_000),
         itemMs = itemMs.coerceIn(500, 20_000),
-        exportSide = if (exportSide in SIDES) exportSide else 720,
+        exportSide = when {
+            exportSide in SIDES -> exportSide
+            exportSide > SIDES.last() -> SIDES.last() // 1440p and 4K were offered before
+            else -> 720
+        },
         exportFps = if (exportFps in FPS) exportFps else 30,
         exportQuality = exportQuality.coerceIn(0, 2),
         voiceCountdown = voiceCountdown.coerceIn(0, 5),
@@ -49,7 +53,9 @@ data class AppSettings(
     )
 
     companion object {
-        val SIDES = listOf(480, 720, 1080, 1440, 2160)
+        // Export sizes offered on every phone. Larger sizes were dropped: many phones cannot
+        // encode them in hardware, and they made exports slow or stall.
+        val SIDES = listOf(480, 720, 1080)
         val FPS = listOf(24, 25, 30, 50, 60)
         val LENGTHS = listOf(1000L, 2000L, 3000L, 5000L, 8000L, 10_000L)
     }

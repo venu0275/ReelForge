@@ -125,7 +125,9 @@ object ExportManager {
         Transformer.Builder(context)
             .setMaxDelayBetweenMuxerSamplesMs(MUXER_TIMEOUT_MS)
 
-    const val MUXER_TIMEOUT_MS = 60_000L
+    // 30 s: well above the 10 s that stopped healthy exports, short enough that a stuck codec
+    // is retried with safer settings before the user gives up on it.
+    const val MUXER_TIMEOUT_MS = 30_000L
 
     fun createTransformer(
         context: Context,

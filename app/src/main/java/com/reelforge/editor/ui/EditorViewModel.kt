@@ -51,6 +51,7 @@ import com.reelforge.editor.data.ProjectRepository
 import com.reelforge.editor.engine.ChromaKeyEffect
 import com.reelforge.editor.engine.EffectFactory
 import com.reelforge.editor.engine.ExportErrors
+import com.reelforge.editor.engine.ExportLog
 import com.reelforge.editor.engine.ExportManager
 import com.reelforge.editor.engine.StallGuard
 import com.reelforge.editor.engine.fadeAlpha
@@ -300,6 +301,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val history = History<Project>()
     private var saveJob: Job? = null
     private var transformer: Transformer? = null
+
+    /** Which try the running export is on (1 to MAX_EXPORT_ATTEMPTS), shown when above 1. */
+    var exportAttempt by mutableStateOf(1)
+        private set
 
     /** Rough seconds until the running export finishes, once there is enough progress to tell. */
     var exportSecondsLeft by mutableStateOf<Long?>(null)
@@ -4378,8 +4383,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------------ export
 
-    fun startExport(shortSide: Int, quality: Int, fps: Int = 30, hevc: Boolean = false) {
+    fun startExport(requestedSide: Int, quality: Int, fps: Int = 30, hevc: Boolean = false) {
         val p = project ?: return
+        val shortSide = requestedSide.coerceAtMost(com.reelforge.editor.data.AppSettings.SIDES.last())
         if (p.clips.isEmpty() || export is ExportState.Running) return
         // Make sure the finished video will fit before spending minutes making it.
         val (w, h) = ExportManager.outputSize(p.aspect, shortSide)
@@ -4415,6 +4421,15 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun runExport(p: Project, shortSide: Int, quality: Int, fps: Int, hevc: Boolean, attempt: Int) {
         val output = File(ctx.cacheDir, "export_${System.currentTimeMillis()}.mp4")
+        val attemptStarted = SystemClock.elapsedRealtime()
+        exportAttempt = attempt
+        val photos = p.clips.count { it.type == ClipType.IMAGE }
+        ExportLog.add(
+            ctx,
+            "Export try $attempt/$MAX_EXPORT_ATTEMPTS: ${shortSide}p ${fps}fps ${if (hevc) "H.265" else "H.264"} " +
+                "quality $quality · ${p.durationMs / 1000}s · ${p.clips.size} clips ($photos photos) · " +
+                "${p.videoLayers.size} video layers · ${p.texts.size} texts · ${p.layers.size} picture layers",
+        )
 
         /** Tries again with safer settings, or shows [failure] when no tries are left. */
         fun failed(retryable: Boolean, failure: String, reason: String, cause: Throwable?, shrink: Boolean = false) {
@@ -4422,6 +4437,13 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
             transformer = null
             android.util.Log.e(
                 "CutMitra", "Export attempt $attempt failed (${shortSide}p ${fps}fps hevc=$hevc): $reason", cause,
+            )
+            val at = (export as? ExportState.Running)?.progress ?: 0
+            val secs = (SystemClock.elapsedRealtime() - attemptStarted) / 1000
+            ExportLog.add(
+                ctx,
+                "  try $attempt failed at $at% after ${secs}s: $reason" +
+                    (cause?.let { " (${it.javaClass.simpleName}: ${it.message?.take(160)})" } ?: ""),
             )
             if (retryable && attempt < MAX_EXPORT_ATTEMPTS && export is ExportState.Running) {
                 val next = attempt + 1
@@ -4458,6 +4480,10 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                         com.reelforge.editor.work.WorkService.finished(
                             ctx, "Your video is saved", "Tap to watch it. It is also in your gallery.", uri, video = true,
                         )
+                        ExportLog.add(
+                            ctx,
+                            "  try $attempt finished in ${(SystemClock.elapsedRealtime() - attemptStarted) / 1000}s",
+                        )
                         ExportState.Done(uri)
                     } catch (e: Exception) {
                         output.delete()
@@ -4492,6 +4518,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 if (attempt == 1) {
                     val missing = withContext(Dispatchers.IO) { ExportManager.missingMedia(ctx, p) }
                     if (missing.isNotEmpty()) {
+                        ExportLog.add(ctx, "  stopped before starting: ${missing.size} missing files")
                         if (export is ExportState.Running) {
                             export = ExportState.Failed(
                                 "These files can no longer be opened. They may have been deleted or " +
@@ -4591,9 +4618,18 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelExport() {
+        ExportLog.add(ctx, "  cancelled by the user at ${(export as? ExportState.Running)?.progress ?: 0}%")
         transformer?.cancel()
         export = ExportState.Idle
         finishExport()
+    }
+
+    /** The export report a user can share when something went wrong (see ExportLog). */
+    fun exportReport(): String {
+        val version = runCatching {
+            ctx.packageManager.getPackageInfo(ctx.packageName, 0).let { "${it.versionName} (${it.longVersionCode})" }
+        }.getOrDefault("?")
+        return ExportLog.report(ctx, version)
     }
 
     fun dismissExport() {

@@ -81,7 +81,7 @@ fun SettingsScreen(vm: EditorViewModel) {
         Section("Export (what the Export window starts with)")
         Label("Resolution")
         Choice(
-            AppSettings.SIDES.map { it to if (it == 2160) "4K" else "${it}p" }, s.exportSide,
+            AppSettings.SIDES.map { it to "${it}p" }, s.exportSide,
         ) { v -> vm.updateSettings { it.copy(exportSide = v) } }
         Label("Frames per second")
         Choice(AppSettings.FPS.map { it to "$it" }, s.exportFps) { v -> vm.updateSettings { it.copy(exportFps = v) } }

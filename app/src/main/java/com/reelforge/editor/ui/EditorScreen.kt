@@ -2549,13 +2549,8 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
         else vm.startExport(shortSide, quality, fps, hevc)
     }
 
-    // Only offer what this phone's encoder can actually produce.
-    val sizes = remember(project.aspect, fps, hevc) {
-        listOf(480 to "480p", 720 to "720p", 1080 to "1080p", 1440 to "1440p", 2160 to "4K").filter { (side, _) ->
-            val (w, h) = ExportManager.outputSize(project.aspect, side)
-            side <= 720 || ExportManager.canEncode(hevc, w, h, fps)
-        }
-    }
+    // The same three sizes on every phone (see AppSettings.SIDES).
+    val sizes = remember { com.reelforge.editor.data.AppSettings.SIDES.map { it to "${it}p" } }
     val canHevc = remember(project.aspect) {
         val (w, h) = ExportManager.outputSize(project.aspect, 720)
         ExportManager.canEncode(true, w, h, 30)
@@ -2563,7 +2558,7 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
     // HEVC chosen earlier (or on another phone) but this phone has no hardware HEVC encoder:
     // the option is hidden, so it must not be used either.
     if (!canHevc && hevc) hevc = false
-    if (sizes.none { it.first == shortSide }) shortSide = sizes.last().first
+    if (sizes.none { it.first == shortSide }) shortSide = if (shortSide > sizes.last().first) sizes.last().first else 720
 
     // Keep the screen on while exporting: some phones slow or pause apps soon after the screen
     // goes off, which leaves the export sitting at the same percent.
@@ -2621,6 +2616,14 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                         )
                     }
                     is ExportState.Running -> {
+                        if (vm.exportAttempt > 1) {
+                            // Progress went back to 0: say why, so it does not look stuck.
+                            Text(
+                                "Trying again with safer settings (${vm.exportAttempt} of 3)…",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            )
+                        }
                         Text("Rendering… ${state.progress}%")
                         vm.exportSecondsLeft?.let { left ->
                             Text(
@@ -2666,7 +2669,14 @@ private fun ExportDialog(vm: EditorViewModel, project: Project, onClose: () -> U
                         .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     context.startActivity(android.content.Intent.createChooser(send, "Share video"))
                 }) { Text("Share") }
-                is ExportState.Failed -> Unit
+                is ExportState.Failed -> WideOutlinedButton(onClick = {
+                    // Lets the user send what happened on their phone to the developer.
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND)
+                        .setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_SUBJECT, "CutMitra export problem")
+                        .putExtra(android.content.Intent.EXTRA_TEXT, vm.exportReport())
+                    context.startActivity(android.content.Intent.createChooser(send, "Share report"))
+                }) { Text("Share report") }
             }
         },
         dismissButton = {
